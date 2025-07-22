@@ -1,0 +1,19 @@
+image: python:3.10
+
+pipelines:
+  default:
+    - step:
+        name: "Build & Validate Python Environment"
+        services:
+          - postgres
+        caches:
+          - pip
+        script:
+          - echo "Installing dependencies..."
+          - pip install --upgrade pip
+          - pip install -r requirements.txt
+
+          - echo "Successfully installed requirements."
+
+          # Don't fail for now – no test commands
+          - echo "Skipping tests for now – no test files yet."
