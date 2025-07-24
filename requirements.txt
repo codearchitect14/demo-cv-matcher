@@ -7,3 +7,9 @@ psycopg2-binary
 scikit-learn
 xgboost
 python-dotenv
+asyncpg
+pydantic
+alembic
+pytest
+pytest-asyncio
+httpx
