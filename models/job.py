@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, ARRAY, Float
+from sqlalchemy import Column, String, Integer, Text, ARRAY, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from models.base import BaseModel
 
@@ -26,7 +26,7 @@ class JobMandatorySkill(BaseModel):
     """Job mandatory skills model"""
     __tablename__ = "job_mandatory_skills"
     
-    job_id = Column(Integer, nullable=False, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     skill = Column(String(100), nullable=False, index=True)
     min_experience = Column(Integer, nullable=False, default=0)
     

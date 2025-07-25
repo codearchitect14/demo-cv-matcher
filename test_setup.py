@@ -13,6 +13,7 @@ from db.connection import init_database, reset_database
 from services.candidate_service import CandidateService
 from schemas.candidate import CandidateCreate, CandidateExperienceCreate
 from schemas.search import CandidateSearchFilter
+from sqlalchemy import text
 
 
 async def test_database_connection():
@@ -20,7 +21,7 @@ async def test_database_connection():
     print("=== Testing Database Connection ===")
     try:
         async with AsyncSessionLocal() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
             print("✅ Database connection successful")
             return True
     except Exception as e:

@@ -1,21 +1,38 @@
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# import sys
+# import os
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.database import engine, Base
-from db.models_registry import ALL_MODELS  # Import to register models
 import asyncio
+
+# Import models to register them with SQLAlchemy
+def import_all_models():
+    """Import all models to register with SQLAlchemy"""
+    try:
+        from models.candidate import Candidate, CandidateExperience
+        from models.job import Job, JobMandatorySkill
+        from models.application import Application
+        from models.interaction import InteractionLog
+        
+        models = [Candidate, CandidateExperience, Job, JobMandatorySkill, Application, InteractionLog]
+        print(f"Registered {len(models)} models with SQLAlchemy")
+        return models
+    except ImportError as e:
+        print(f"Error importing models: {e}")
+        return []
 
 
 async def create_tables():
     """Create all database tables"""
+    models = import_all_models()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        print(f"Created {len(ALL_MODELS)} tables: {[model.__tablename__ for model in ALL_MODELS]}")
+        print(f"Created tables for {len(models)} models")
 
 
 async def drop_tables():
     """Drop all database tables"""
+    import_all_models()  # Register models first
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         print("All tables dropped successfully!")
