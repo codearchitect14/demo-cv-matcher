@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, ARRAY, Float, ForeignKey
+from sqlalchemy import Column, String, Integer, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from models.base import BaseModel
 
@@ -14,7 +14,6 @@ class Job(BaseModel):
     domain = Column(String(100), nullable=False, index=True)
     total_years_required = Column(Integer, nullable=False, default=0)
     job_description = Column(Text, nullable=False)
-    embedding = Column(ARRAY(Float), nullable=True)
     
     # Relationships
     mandatory_skills = relationship("JobMandatorySkill", back_populates="job", cascade="all, delete-orphan")
