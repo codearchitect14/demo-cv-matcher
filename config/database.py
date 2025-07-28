@@ -48,6 +48,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
 import logging
+from sqlalchemy import text
 
 # Load environment variables
 load_dotenv(dotenv_path=".env.template")
@@ -96,7 +97,7 @@ async def get_db_session() -> AsyncSession:
         try:
             async with AsyncSessionLocal() as session:
                 # Test connection
-                await session.execute("SELECT 1")
+                await session.execute(text("SELECT 1"))
                 yield session
                 return
         except Exception as e:

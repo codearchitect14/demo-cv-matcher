@@ -37,7 +37,7 @@
 #     candidate = relationship("Candidate", back_populates="experiences")
 
 # Removed manual path manipulation (Issue #3)
-from sqlalchemy import Column, String, Integer, Text, ARRAY, Float, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from .base import BaseModel  # Use relative import
 
@@ -56,7 +56,7 @@ class Candidate(BaseModel):
     expected_salary_min = Column(Integer, nullable=True)
     expected_salary_max = Column(Integer, nullable=True)
     domain = Column(String(100), nullable=False, index=True)
-    summary_embedding = Column(ARRAY(Float), nullable=True)
+    summary = Column(Text, nullable=True)  # Only summary, no embedding
     
     # Relationships
     experiences = relationship("CandidateExperience", back_populates="candidate", cascade="all, delete-orphan")
@@ -77,7 +77,5 @@ class CandidateExperience(BaseModel):
     skill = Column(String(100), nullable=False, index=True)
     years = Column(Integer, nullable=False)
     description = Column(Text, nullable=True)
-    embedding = Column(ARRAY(Float), nullable=True)
-    
-    # Relationships
+    # No embedding column
     candidate = relationship("Candidate", back_populates="experiences")
