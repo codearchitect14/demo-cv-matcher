@@ -1,6 +1,7 @@
 from pydantic import BaseModel, validator
-from typing import Optional, List
 from enum import Enum
+from typing import Optional, List, Dict, Any
+
 
 
 class SortOrder(str, Enum):
@@ -53,3 +54,52 @@ class SearchQuery(BaseModel):
         if v < 0:
             raise ValueError('Offset cannot be negative')
         return v
+
+class SearchFilter(BaseModel):
+    """Base search filter"""
+    location: Optional[str] = None
+    domain: Optional[str] = None
+    min_salary: Optional[int] = None
+    max_salary: Optional[int] = None
+    skills: Optional[List[str]] = None
+    min_experience: Optional[int] = None
+
+class JobRecommendation(BaseModel):
+    """Job recommendation from semantic search with filtering and ML ranking"""
+    job_id: int
+    title: str
+    company: str
+    location: str
+    salary_min: Optional[int]
+    salary_max: Optional[int]
+    domain: Optional[str]
+    similarity_score: float
+    combined_score: Optional[float] = None
+    filter_score: Optional[float] = None
+    ml_score: Optional[float] = None
+    is_valid: Optional[bool] = True
+    validation_reasons: Optional[List[str]] = []
+    explanation: str
+
+class CandidateRecommendation(BaseModel):
+    """Candidate recommendation from semantic search with filtering and ML ranking"""
+    candidate_id: int
+    name: str
+    location: str
+    domain: Optional[str]
+    expected_salary_min: Optional[int]
+    expected_salary_max: Optional[int]
+    similarity_score: float
+    combined_score: Optional[float] = None
+    filter_score: Optional[float] = None
+    ml_score: Optional[float] = None
+    is_valid: Optional[bool] = True
+    validation_reasons: Optional[List[str]] = []
+    explanation: str
+
+class SearchResponse(BaseModel):
+    """Generic search response"""
+    results: List[Dict[str, Any]]
+    total: int
+    page: int
+    limit: int
