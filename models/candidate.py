@@ -37,7 +37,7 @@
 #     candidate = relationship("Candidate", back_populates="experiences")
 
 # Removed manual path manipulation (Issue #3)
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index, Boolean
 from sqlalchemy.orm import relationship
 from .base import BaseModel  # Use relative import
 
@@ -50,18 +50,21 @@ class Candidate(BaseModel):
         Index('idx_candidate_domain_location', 'domain', 'location'),
         Index('idx_candidate_salary', 'expected_salary_min', 'expected_salary_max'),
     )
-    
-    name = Column(String(255), nullable=False, index=True)
+    id = Column(Integer, primary_key=True, index=True)
+
+    name = Column(String(100), nullable=False, index=True)
     location = Column(String(100), nullable=False, index=True)
+    password = Column(String(255), nullable=False)
     expected_salary_min = Column(Integer, nullable=True)
     expected_salary_max = Column(Integer, nullable=True)
     domain = Column(String(100), nullable=False, index=True)
     summary = Column(Text, nullable=True)  # Only summary, no embedding
+    email = Column(String(255), nullable=False, unique=True, index=True)
     
     # Relationships
     experiences = relationship("CandidateExperience", back_populates="candidate", cascade="all, delete-orphan")
-    applications = relationship("Application", back_populates="candidate")
-    interactions = relationship("InteractionLog", back_populates="candidate")
+    applications = relationship("Application", back_populates="candidate", cascade="all, delete-orphan")
+    interactions = relationship("InteractionLog", back_populates="candidate", cascade="all, delete-orphan")
 
 class CandidateExperience(BaseModel):
     """Candidate experience model"""

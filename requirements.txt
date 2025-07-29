@@ -19,3 +19,7 @@ httpx
 pytest
 pytest-asyncio
 pandas
+django
+django-admin-charts
+django-extensions
+PyJWT

@@ -1,21 +1,21 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from enum import Enum
+from typing import Optional
 from datetime import datetime
-from models.interaction import InteractionTypeEnum
 
+class InteractionTypeEnum(str, Enum):
+    VIEWED = "viewed"
+    APPLIED = "applied"
+    REJECTED = "rejected"
 
-class InteractionLogBase(BaseModel):
-    job_id: int
-    candidate_id: int
+class InteractionLogCreate(BaseModel):
+    user_id: int = Field(..., gt=0)
+    job_id: int = Field(..., gt=0)
     interaction_type: InteractionTypeEnum
 
-
-class InteractionLogCreate(InteractionLogBase):
-    pass
-
-
-class InteractionLogResponse(InteractionLogBase):
+class InteractionLogResponse(BaseModel):
     id: int
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+    user_id: int
+    job_id: int
+    interaction_type: InteractionTypeEnum
+    timestamp: datetime
