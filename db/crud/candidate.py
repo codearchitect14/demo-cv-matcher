@@ -130,28 +130,28 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         return result.scalars().all()
 
     async def add_experience(
-        self, db: AsyncSession, candidate_id: int, skill: str, years: int, description: str = None
+        self, db: AsyncSession, candidate_id: int, experience_data: dict
     ) -> Candidate:
-        """Add new experience to candidate via CRUD (Issue #5)"""
+        """Add experience to candidate using experience data dictionary"""
         # Check if skill already exists
         existing_exp = await db.execute(
             select(CandidateExperience).where(
                 and_(
                     CandidateExperience.candidate_id == candidate_id,
-                    CandidateExperience.skill == skill
+                    CandidateExperience.skill == experience_data.get('skill')
                 )
             )
         )
         if existing_exp.scalar_one_or_none():
             from core.exceptions import ValidationException
-            raise ValidationException(f"Experience for skill '{skill}' already exists")
+            raise ValidationException(f"Experience for skill '{experience_data.get('skill')}' already exists")
 
         # Create new experience
         new_experience = CandidateExperience(
             candidate_id=candidate_id,
-            skill=skill,
-            years=years,
-            description=description
+            skill=experience_data.get('skill'),
+            years=experience_data.get('years'),
+            description=experience_data.get('description')
         )
         db.add(new_experience)
         await db.commit()
@@ -160,14 +160,14 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         return await self.get_with_experiences(db, candidate_id)
 
     async def update_experience(
-        self, db: AsyncSession, candidate_id: int, skill: str, years: int, description: str = None
-    ) -> Candidate:
-        """Update existing experience via CRUD (Issue #5)"""
+        self, db: AsyncSession, candidate_id: int, experience_id: int, experience_data: dict
+    ) -> CandidateExperience:
+        """Update existing experience using experience data dictionary"""
         experience = await db.execute(
             select(CandidateExperience).where(
                 and_(
                     CandidateExperience.candidate_id == candidate_id,
-                    CandidateExperience.skill == skill
+                    CandidateExperience.id == experience_id
                 )
             )
         )
@@ -175,14 +175,40 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         
         if not experience:
             from core.exceptions import NotFoundException
-            raise NotFoundException(f"Experience for skill '{skill}' not found")
+            raise NotFoundException(f"Experience with ID {experience_id} not found for candidate {candidate_id}")
 
-        experience.years = years
-        if description is not None:
-            experience.description = description
+        # Update experience fields
+        if 'skill' in experience_data:
+            experience.skill = experience_data['skill']
+        if 'years' in experience_data:
+            experience.years = experience_data['years']
+        if 'description' in experience_data:
+            experience.description = experience_data['description']
         
         await db.commit()
-        return await self.get_with_experiences(db, candidate_id)
+        await db.refresh(experience)
+        return experience
+
+    async def remove_experience(
+        self, db: AsyncSession, candidate_id: int, experience_id: int
+    ) -> None:
+        """Remove experience from candidate via CRUD"""
+        experience = await db.execute(
+            select(CandidateExperience).where(
+                and_(
+                    CandidateExperience.candidate_id == candidate_id,
+                    CandidateExperience.id == experience_id
+                )
+            )
+        )
+        experience = experience.scalar_one_or_none()
+        
+        if not experience:
+            from core.exceptions import NotFoundException
+            raise NotFoundException(f"Experience with ID {experience_id} not found for candidate {candidate_id}")
+
+        await db.delete(experience)
+        await db.commit()
 
     async def check_skill_requirements(
         self, db: AsyncSession, candidate_id: int, job_id: int
@@ -228,6 +254,52 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
             "insufficient_experience": insufficient_experience,
             "candidate_skills": candidate_skills
         }
+
+    async def get_candidates_zero_visibility(self, db: AsyncSession, days_threshold: int = 30, limit: int = 20) -> List[Candidate]:
+        """Get candidates with zero visibility/activity in the last N days"""
+        from datetime import datetime, timedelta
+        from db.crud.application import application as application_crud
+        from services.interaction_service import interaction_service
+        
+        cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
+        
+        # Get all candidates
+        result = await db.execute(
+            select(self.model).limit(limit)
+        )
+        candidates = result.scalars().all()
+        
+        # Filter candidates with no recent activity
+        candidates_zero_visibility = []
+        for candidate in candidates:
+            # Check for recent applications
+            applications = await application_crud.get_by_candidate(db, candidate.id)
+            recent_applications = [app for app in applications if app.created_at >= cutoff_date]
+            
+            # Check for recent interactions
+            interactions = await interaction_service.get_user_interactions(db, candidate.id, days_back=days_threshold)
+            
+            if not recent_applications and not interactions:
+                candidates_zero_visibility.append(candidate)
+        
+        return candidates_zero_visibility
+
+    async def count_recent(self, db: AsyncSession, days_back: int = 7) -> int:
+        """Get count of recent candidates"""
+        from datetime import datetime, timedelta
+        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        
+        result = await db.execute(
+            select(self.model).where(self.model.created_at >= cutoff_date)
+        )
+        return len(result.scalars().all())
+
+    async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Candidate]:
+        """Get candidate by email"""
+        result = await db.execute(
+            select(self.model).where(self.model.email == email)
+        )
+        return result.scalar_one_or_none()
 
 
 candidate = CRUDCandidate(Candidate)

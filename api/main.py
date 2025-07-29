@@ -3,14 +3,18 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import time
 import logging
 
 from config.database import init_db
-from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search
+from config.logging import setup_logging, log_api_request, log_security_event
+from middleware.rate_limiter import rate_limiter
+from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr
+from services.api_service import api_service
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Setup logging
+loggers = setup_logging()
+logger = loggers["api"]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +46,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Rate limiting middleware"""
+    return await rate_limiter(request, call_next)
+
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests_middleware(request: Request, call_next):
+    """Log all API requests"""
+    start_time = time.time()
+    
+    # Log request
+    request_data = {
+        "method": request.method,
+        "path": str(request.url.path),
+        "client_ip": request.client.host,
+        "user_agent": request.headers.get("user-agent", "")
+    }
+    
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+        
+        # Log response
+        response_data = {
+            "status_code": response.status_code,
+            "duration": duration
+        }
+        
+        log_api_request(request_data, response_data, duration)
+        
+        # Log security events for certain status codes
+        if response.status_code in [401, 403, 429]:
+            log_security_event("Unauthorized Access", {
+                "ip": request.client.host,
+                "path": str(request.url.path),
+                "status_code": response.status_code
+            })
+        
+        return response
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"Request failed: {request_data} - Error: {str(e)}")
+        
+        # Log security event for exceptions
+        log_security_event("Request Exception", {
+            "ip": request.client.host,
+            "path": str(request.url.path),
+            "error": str(e)
+        })
+        
+        raise
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -55,6 +114,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """HTTP exception handler"""
+    logger.warning(f"HTTP Exception: {exc.status_code} - {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail}
@@ -70,11 +130,13 @@ app.include_router(interactions.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
+app.include_router(gdpr.router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")
 async def root():
     """Root endpoint"""
+    logger.info("Root endpoint accessed")
     return {
         "message": "Job Recommendation System API",
         "version": "1.0.0",
@@ -87,6 +149,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    logger.info("Health check endpoint accessed")
     return {
         "status": "healthy",
         "service": "job-recommendation-system",
@@ -97,6 +160,7 @@ async def health_check():
 @app.get("/api/v1/info")
 async def api_info():
     """API information endpoint"""
+    logger.info("API info endpoint accessed")
     return {
         "name": "Job Recommendation System API",
         "version": "1.0.0",

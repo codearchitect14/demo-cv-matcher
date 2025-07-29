@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
-
+from models.candidate import Candidate
 from config.database import get_db_session
 from models.job import Job, JobMandatorySkill
 from db.crud.job import job as job_crud

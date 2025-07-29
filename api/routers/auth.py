@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordBearer
 
 from config.database import get_db_session
 from models.candidate import Candidate
@@ -71,7 +72,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(HTTPException(status_code=401, detail="Invalid token")), 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+async def get_current_user(token: str = Depends(oauth2_scheme), 
                           db: AsyncSession = Depends(get_db_session)) -> Candidate:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
