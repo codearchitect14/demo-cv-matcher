@@ -1,19 +1,75 @@
 image: python:3.10
 
+definitions:
+  services:
+    postgres:
+      image: postgres:15
+      environment:
+        POSTGRES_DB: test_db
+        POSTGRES_USER: test_user
+        POSTGRES_PASSWORD: test_password
+    redis:
+      image: redis:7-alpine
+
 pipelines:
-  default:
-    - step:
-        name: "Build & Validate Python Environment"
-        services:
-          - postgres
-        caches:
-          - pip
-        script:
-          - echo "Installing dependencies..."
-          - pip install --upgrade pip
-          - pip install -r requirements.txt
+  pull-requests:
+    '**':
+      - step:
+          name: "Code Quality & Security"
+          caches:
+            - pip
+          script:
+            - pip install --upgrade pip
+            - pip install -r requirements.txt
+            - pip install black flake8 bandit mypy pytest pytest-cov
+            - black --check --diff .
+            - flake8 . --max-line-length=88 --extend-ignore=E203,W503
+            - bandit -r . -f json -o bandit-report.json || true
+            - mypy . --ignore-missing-imports --no-strict-optional
 
-          - echo "Successfully installed requirements."
+      - step:
+          name: "Unit Tests"
+          services:
+            - postgres
+            - redis
+          caches:
+            - pip
+          script:
+            - pip install -r requirements.txt
+            - pip install pytest pytest-asyncio pytest-cov
+            - export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+            - export REDIS_URL="redis://localhost:6379"
+            - export DEBUG="False"
+            - export SECRET_KEY="test-secret-key"
+            - export MODEL_PATH="models/ml"
+            - export EMBEDDING_MODEL="all-MiniLM-L6-v2"
+            - pytest tests/ -v --cov=. --cov-report=xml --cov-report=html
+            - coverage xml
 
-          # Don't fail for now – no test commands
-          - echo "Skipping tests for now – no test files yet."
+      - step:
+          name: "Integration Tests"
+          services:
+            - postgres
+            - redis
+          caches:
+            - pip
+          script:
+            - pip install -r requirements.txt
+            - export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+            - export REDIS_URL="redis://localhost:6379"
+            - export DEBUG="False"
+            - export SECRET_KEY="test-secret-key"
+            - export MODEL_PATH="models/ml"
+            - export EMBEDDING_MODEL="all-MiniLM-L6-v2"
+            - python -m pytest tests/integration/ -v
+
+  branches:
+    main:
+      - step:
+          name: "Deploy to Production"
+          deployment: production
+          script:
+            - echo "Deploying to production..."
+            - pip install -r requirements.txt
+            - python -m pytest tests/ --cov=. --cov-fail-under=80
+            - echo "Deployment successful"
