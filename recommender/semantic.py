@@ -370,5 +370,133 @@ class SemanticSearchService:
         """Get FAISS index statistics"""
         return self.faiss_manager.get_index_stats()
 
+    async def search_jobs(
+        self,
+        db: AsyncSession,
+        query: str,
+        limit: int = 10,
+        apply_filters: bool = True,
+        strict_mode: bool = False,
+        use_ml_ranking: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Search jobs using semantic similarity"""
+        try:
+            # Generate query embedding
+            query_embedding = self.embedding_service.generate_job_embedding(
+                job_title=query,
+                job_description=query,
+                domain=""
+            )
+            
+            # Search in FAISS index
+            search_results = self.faiss_manager.search(
+                query_embedding, k=limit * 2
+            )
+            
+            # Get job details
+            job_recommendations = []
+            for job_id, similarity in search_results:
+                job = await job_crud.get_with_mandatory_skills(db, id=job_id)
+                if job:
+                    job_data = {
+                        "job_id": job.id,
+                        "title": job.title,
+                        "company": job.company,
+                        "location": job.location,
+                        "domain": job.domain,
+                        "salary_min": job.salary_min,
+                        "salary_max": job.salary_max,
+                        "similarity_score": float(similarity),
+                        "explanation": f"Semantic match for query: '{query}'"
+                    }
+                    job_recommendations.append(job_data)
+            
+            # Apply filters if requested
+            if apply_filters:
+                filtered_jobs = []
+                for job_data in job_recommendations:
+                    if self._check_job_search_filters(job_data, strict_mode):
+                        filtered_jobs.append(job_data)
+                job_recommendations = filtered_jobs
+            
+            # Sort by similarity score
+            job_recommendations.sort(key=lambda x: x['similarity_score'], reverse=True)
+            return job_recommendations[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to search jobs: {e}")
+            return []
+
+    async def search_candidates(
+        self,
+        db: AsyncSession,
+        query: str,
+        limit: int = 10,
+        apply_filters: bool = True,
+        strict_mode: bool = False,
+        use_ml_ranking: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Search candidates using semantic similarity"""
+        try:
+            # Generate query embedding
+            query_embedding = self.embedding_service.generate_candidate_embedding(
+                summary=query,
+                experiences=[]
+            )
+            
+            # Search in FAISS index
+            search_results = self.faiss_manager.search(
+                query_embedding, k=limit * 2
+            )
+            
+            # Get candidate details
+            candidate_recommendations = []
+            for candidate_id, similarity in search_results:
+                candidate = await candidate_crud.get_with_experiences(db, id=candidate_id)
+                if candidate:
+                    candidate_data = {
+                        "candidate_id": candidate.id,
+                        "name": candidate.name,
+                        "location": candidate.location,
+                        "domain": candidate.domain,
+                        "expected_salary_min": candidate.expected_salary_min,
+                        "expected_salary_max": candidate.expected_salary_max,
+                        "similarity_score": float(similarity),
+                        "explanation": f"Semantic match for query: '{query}'"
+                    }
+                    candidate_recommendations.append(candidate_data)
+            
+            # Apply filters if requested
+            if apply_filters:
+                filtered_candidates = []
+                for candidate_data in candidate_recommendations:
+                    if self._check_candidate_search_filters(candidate_data, strict_mode):
+                        filtered_candidates.append(candidate_data)
+                candidate_recommendations = filtered_candidates
+            
+            # Sort by similarity score
+            candidate_recommendations.sort(key=lambda x: x['similarity_score'], reverse=True)
+            return candidate_recommendations[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to search candidates: {e}")
+            return []
+
+    def _check_job_search_filters(self, job_data: Dict[str, Any], strict_mode: bool) -> bool:
+        """Check if job passes search filters"""
+        # Basic filters - can be enhanced
+        if strict_mode:
+            # More strict filtering
+            return True  # Placeholder
+        return True
+
+    def _check_candidate_search_filters(self, candidate_data: Dict[str, Any], strict_mode: bool) -> bool:
+        """Check if candidate passes search filters"""
+        # Basic filters - can be enhanced
+        if strict_mode:
+            # More strict filtering
+            return True  # Placeholder
+        return True
+
 # Global instance
 semantic_search_service = SemanticSearchService()

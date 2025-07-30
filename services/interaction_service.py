@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 class InteractionType:
     """Interaction types for tracking user behavior"""
-    VIEW = "View"
-    APPLIED = "Applied"
-    REJECTED = "Rejected"
-    ACCEPT = "accept"
-    SAVE = "Saved"
-    SHARE = "share"
+    VIEW = "viewed"
+    APPLIED = "applied"
+    REJECTED = "rejected"
+    ACCEPT = "accepted"
+    SAVE = "saved"
+    SHARE = "shared"
 
 class InteractionService:
     """Service for tracking and analyzing user interactions for personalization"""
@@ -53,7 +53,7 @@ class InteractionService:
         """
         try:
             interaction = InteractionLog(
-                candidate_id=candidate_id,
+                user_id=candidate_id,  # Changed from candidate_id to user_id
                 job_id=job_id,
                 interaction_type=interaction_type
             )
@@ -97,8 +97,6 @@ class InteractionService:
                 candidate_id=candidate_id,
                 job_id=job_id,
                 status=status,
-                applied_at=datetime.utcnow(),
-                metadata=metadata or {}
             )
             
             db.add(application)
@@ -142,7 +140,7 @@ class InteractionService:
         """
         try:
             query = select(InteractionLog).where(
-                InteractionLog.candidate_id == candidate_id,
+                InteractionLog.user_id == candidate_id,  # Changed from candidate_id to user_id
                 InteractionLog.created_at >= datetime.utcnow() - timedelta(days=days_back)
             )
             
@@ -194,11 +192,34 @@ class InteractionService:
                     "interaction_types": {}
                 }
             
-            # Analyze patterns
-            total_interactions = len(interactions)
-            applications = [i for i in interactions if i.interaction_type == "Applied"]
-            total_applications = len(applications)
-            application_rate = total_applications / total_interactions if total_interactions > 0 else 0
+            # Filter applications
+            applications = [i for i in interactions if i.interaction_type == "applied"]
+            
+            # Calculate application rate
+            application_rate = len(applications) / len(interactions) if interactions else 0
+            
+            # Get most recent application
+            most_recent_application = None
+            if applications:
+                most_recent_application = max(applications, key=lambda x: x.created_at)
+            
+            # Calculate average time between view and apply
+            view_apply_times = []
+            for interaction in interactions:
+                if interaction.interaction_type == "applied":
+                    # Find corresponding view
+                    view_interaction = next(
+                        (i for i in interactions 
+                         if i.interaction_type == "viewed" 
+                         and i.job_id == interaction.job_id
+                         and i.created_at < interaction.created_at), 
+                        None
+                    )
+                    if view_interaction:
+                        time_diff = (interaction.created_at - view_interaction.created_at).total_seconds() / 3600  # hours
+                        view_apply_times.append(time_diff)
+            
+            avg_view_to_apply_hours = sum(view_apply_times) / len(view_apply_times) if view_apply_times else 0
             
             # Count interaction types
             interaction_types = {}
@@ -229,16 +250,17 @@ class InteractionService:
                         locations[job.location] = locations.get(job.location, 0) + 1
                         
                         # Salary analysis (for applications only)
-                        if interaction.interaction_type == "Applied":
+                        if interaction.interaction_type == "applied":
                             avg_salary = (job.salary_min + job.salary_max) / 2
                             salaries.append(avg_salary)
             
             # Calculate engagement score
-            engagement_weights = {
-                "View": 1, "Applied": 5, "Saved": 3, "share": 2, "Rejected": -1
+            # Weight different interaction types
+            weights = {
+                "viewed": 1, "applied": 5, "saved": 3, "shared": 2, "rejected": -1
             }
             engagement_score = sum(
-                engagement_weights.get(interaction.interaction_type, 0) 
+                weights.get(interaction.interaction_type, 0) 
                 for interaction in interactions
             )
             
@@ -246,9 +268,11 @@ class InteractionService:
             salary_preferences = {"avg": sum(salaries) / len(salaries) if salaries else 0}
             
             patterns = {
-                "total_interactions": total_interactions,
-                "total_applications": total_applications,
+                "total_interactions": len(interactions),
+                "total_applications": len(applications),
                 "application_rate": application_rate,
+                "most_recent_application": most_recent_application.created_at.isoformat() if most_recent_application else None,
+                "avg_view_to_apply_hours": avg_view_to_apply_hours,
                 "engagement_score": engagement_score,
                 "preferred_domains": domains,
                 "preferred_locations": locations,

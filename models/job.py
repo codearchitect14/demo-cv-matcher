@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from models.base import BaseModel
 
@@ -8,6 +8,7 @@ class Job(BaseModel):
     __tablename__ = "jobs"
     
     title = Column(String(255), nullable=False, index=True)
+    company = Column(String(100), nullable=True, index=True)
     location = Column(String(100), nullable=False, index=True)
     salary_min = Column(Integer, nullable=True)
     salary_max = Column(Integer, nullable=True)
@@ -19,6 +20,14 @@ class Job(BaseModel):
     mandatory_skills = relationship("JobMandatorySkill", back_populates="job", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="job")
     interactions = relationship("InteractionLog", back_populates="job")
+    
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_job_location_domain', 'location', 'domain'),
+        Index('idx_job_salary_range', 'salary_min', 'salary_max'),
+        Index('idx_job_domain_years', 'domain', 'total_years_required'),
+        Index('idx_job_company_location', 'company', 'location'),
+    )
 
 
 class JobMandatorySkill(BaseModel):

@@ -29,6 +29,7 @@ class JobMandatorySkillResponse(JobMandatorySkillBase):
 
 class JobBase(BaseModel):
     title: str
+    company: Optional[str] = None
     location: str
     domain: str
     job_description: str
@@ -62,12 +63,14 @@ class JobCreate(JobBase):
 
 class JobUpdate(BaseModel):
     title: Optional[str] = None
+    company: Optional[str] = None
     location: Optional[str] = None
     domain: Optional[str] = None
     job_description: Optional[str] = None
     total_years_required: Optional[int] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    mandatory_skills: Optional[List[JobMandatorySkillCreate]] = None
 
 
 class JobResponse(JobBase):

@@ -525,7 +525,7 @@ class PersonalizationService:
                 )
                 
                 # Create label (1 for apply, 0 for view/reject)
-                label = 1 if interaction.interaction_type == "Applied" else 0
+                label = 1 if interaction.interaction_type == "applied" else 0
                 
                 training_data.append({
                     "features": features,

@@ -21,33 +21,42 @@ async def apply_for_job(
 ):
     """Apply for a job"""
     try:
+        print(f"DEBUG: Checking for existing application - candidate_id: {current_user.id}, job_id: {application_data.job_id}")
+        
         # Check if already applied
         existing_application = await application_crud.get_by_candidate_and_job(
             db, candidate_id=current_user.id, job_id=application_data.job_id
         )
+        
+        print(f"DEBUG: Existing application found: {existing_application}")
+        
         if existing_application:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Already applied for this job"
             )
         
-        # Create application
-        application_dict = application_data.dict()
-        application_dict["candidate_id"] = current_user.id
-        application_dict["applied_at"] = datetime.utcnow()
+        print(f"DEBUG: No existing application found, creating new one")
         
-        application = await application_crud.create(db, obj_in=application_dict)
+        # Create application with current user's ID
+        application_data_dict = application_data.dict()
+        application_data_dict["candidate_id"] = current_user.id
+        
+        print(f"DEBUG: Application data: {application_data_dict}")
+        
+        application = await application_crud.create(db, obj_in=application_data_dict)
         
         # Log interaction
         from services.interaction_service import interaction_service
         await interaction_service.log_interaction(
-            db, current_user.id, application_data.job_id, "Applied"
+            db, current_user.id, application_data.job_id, "applied"
         )
         
         return application
     except HTTPException:
         raise
     except Exception as e:
+        print(f"DEBUG: Exception occurred: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to apply for job: {str(e)}"

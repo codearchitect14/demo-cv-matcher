@@ -7,6 +7,10 @@ from config.database import get_db_session
 from models.candidate import Candidate
 from api.routers.auth import get_current_user
 from services.interaction_service import interaction_service
+from db.crud.interaction import interaction_log
+from db.crud.candidate import candidate as candidate_crud
+from db.crud.job import job as job_crud
+from schemas.interaction import InteractionLogCreate, InteractionLogResponse
 
 router = APIRouter(prefix="/interactions", tags=["Interactions"])
 
@@ -24,36 +28,22 @@ class InteractionResponse(BaseModel):
     class Config:
         from_attributes = True
 
-@router.post("/")
+@router.post("/log-interaction/", response_model=dict)
 async def log_interaction(
-    interaction_data: InteractionCreate,
-    current_user: Candidate = Depends(get_current_user),
+    interaction: InteractionLogCreate,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Log a user interaction with a job"""
-    try:
-        # Validate interaction type
-        valid_types = ["View", "Applied", "Rejected", "Saved"]
-        if interaction_data.interaction_type not in valid_types:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid interaction type. Must be one of: {valid_types}"
-            )
-        
-        # Log the interaction
-        interaction = await interaction_service.log_interaction(
-            db, current_user.id, interaction_data.job_id, interaction_data.interaction_type
-        )
-        
-        return {"message": "Interaction logged successfully", "interaction_id": interaction.id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to log interaction: {str(e)}"
-        )
+    # Validate user
+    user = await candidate_crud.get(db, id=interaction.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Validate job
+    job = await job_crud.get(db, id=interaction.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # Log interaction
+    await interaction_log.log_interaction(db, interaction)
+    return {"message": "Interaction logged successfully"}
 
 @router.get("/candidates/{candidate_id}/interactions")
 async def get_candidate_interactions(

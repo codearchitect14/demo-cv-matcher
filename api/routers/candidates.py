@@ -21,13 +21,42 @@ async def create_candidate(
 ):
     """Create a new candidate profile"""
     try:
+        # Check if candidate with this email already exists
+        existing_candidate = await candidate_crud.get_by_email(db, email=candidate_data.email)
+        if existing_candidate:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email is already in use. Please use a different email address."
+            )
+        
+        # Create the candidate
         candidate = await candidate_crud.create(db, obj_in=candidate_data)
-        return candidate
+        # Get the candidate with loaded relationships
+        candidate_with_relations = await candidate_crud.get_with_experiences(db, candidate.id)
+        return candidate_with_relations
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create candidate: {str(e)}"
-        )
+        # Check if it's a database constraint violation
+        error_str = str(e).lower()
+        if "unique" in error_str and "email" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email is already in use. Please use a different email address."
+            )
+        elif "not null" in error_str and "email" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email address is required."
+            )
+        else:
+            # Log the actual error for debugging but return user-friendly message
+            print(f"Create candidate error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create candidate. Please try again later."
+            )
 
 @router.get("/{candidate_id}", response_model=CandidateResponse)
 async def get_candidate(
@@ -44,11 +73,14 @@ async def get_candidate(
             )
         return candidate
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Get candidate error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve candidate: {str(e)}"
+            detail="Failed to retrieve candidate profile. Please try again later."
         )
 
 @router.put("/{candidate_id}", response_model=CandidateResponse)
@@ -66,14 +98,20 @@ async def update_candidate(
                 detail="Can only update own profile"
             )
         
+        # Update the candidate
         candidate = await candidate_crud.update(db, db_obj=current_user, obj_in=candidate_data)
-        return candidate
+        # Get the candidate with loaded relationships
+        candidate_with_relations = await candidate_crud.get_with_experiences(db, candidate.id)
+        return candidate_with_relations
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Update candidate error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update candidate: {str(e)}"
+            detail="Failed to update profile. Please try again later."
         )
 
 @router.delete("/{candidate_id}")
@@ -91,15 +129,18 @@ async def delete_candidate(
             )
         
         # Delete all related data (applications, interactions, experiences)
-        await candidate_crud.remove(db, id=candidate_id)
+        await candidate_crud.delete(db, id=candidate_id)
         
         return {"message": "Candidate profile deleted successfully"}
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Delete candidate error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete candidate: {str(e)}"
+            detail="Failed to delete profile. Please try again later."
         )
 
 @router.post("/{candidate_id}/experience", response_model=CandidateResponse)
@@ -117,16 +158,22 @@ async def add_candidate_experience(
                 detail="Can only add experience to own profile"
             )
         
+        # Convert Pydantic model to dict
+        experience_dict = experience_data.dict()
+        
         candidate = await candidate_crud.add_experience(
-            db, candidate_id=candidate_id, experience_data=experience_data
+            db, candidate_id=candidate_id, experience_data=experience_dict
         )
         return candidate
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Add experience error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to add experience: {str(e)}"
+            detail="Failed to add experience. Please try again later."
         )
 
 @router.put("/{candidate_id}/experience/{experience_id}")
@@ -145,16 +192,22 @@ async def update_candidate_experience(
                 detail="Can only update own experience"
             )
         
+        # Convert Pydantic model to dict
+        experience_dict = experience_data.dict(exclude_unset=True)
+        
         experience = await candidate_crud.update_experience(
-            db, candidate_id=candidate_id, experience_id=experience_id, experience_data=experience_data
+            db, candidate_id=candidate_id, experience_id=experience_id, experience_data=experience_dict
         )
         return experience
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Update experience error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update experience: {str(e)}"
+            detail="Failed to update experience. Please try again later."
         )
 
 @router.delete("/{candidate_id}/experience/{experience_id}")
@@ -178,11 +231,14 @@ async def delete_candidate_experience(
         
         return {"message": "Experience deleted successfully"}
     except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Delete experience error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete experience: {str(e)}"
+            detail="Failed to delete experience. Please try again later."
         )
 
 @router.get("/{candidate_id}/applications")
