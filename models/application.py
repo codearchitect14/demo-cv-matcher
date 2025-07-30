@@ -19,7 +19,6 @@ class Application(BaseModel):
     job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(SQLEnum(ApplicationStatusEnum), nullable=False, default=ApplicationStatusEnum.APPLIED, index=True)
-    applied_at = Column(String(50), nullable=True)
     
     # Relationships
     job = relationship("Job", back_populates="applications")

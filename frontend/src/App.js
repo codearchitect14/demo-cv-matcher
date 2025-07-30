@@ -1,16 +1,54 @@
-import React, { useState } from 'react';
-import CandidateRegistration from './components/CandidateRegistration';
+import React, { useState, useEffect } from 'react';
+import SignIn from './components/SignIn';
+import SignUp from './components/SignUp';
 import ExperienceForm from './components/ExperienceForm';
 import JobRecommendations from './components/JobRecommendations';
 import JobPosting from './components/JobPosting';
 import CandidateRecommendations from './components/CandidateRecommendations';
 import AdminDashboard from './components/AdminDashboard';
 import GDPRManagement from './components/GDPRManagement';
+import { apiService } from './api';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAuth, setShowAuth] = useState('signin'); // 'signin' or 'signup'
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('candidate');
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [selectedJobId, setSelectedJobId] = useState('');
+
+  // Initialize authentication on app load
+  useEffect(() => {
+    apiService.initializeAuth();
+    const token = apiService.getAuthToken();
+    if (token) {
+      setIsAuthenticated(true);
+      // Try to get current user info
+      apiService.getCurrentUser()
+        .then(user => setCurrentUser(user))
+        .catch(() => {
+          // Token might be invalid, clear it
+          apiService.logout();
+          setIsAuthenticated(false);
+        });
+    }
+  }, []);
+
+  const handleSignInSuccess = (response) => {
+    setIsAuthenticated(true);
+    setShowAuth(null);
+    // Get user info
+    apiService.getCurrentUser()
+      .then(user => setCurrentUser(user))
+      .catch(console.error);
+  };
+
+  const handleLogout = async () => {
+    await apiService.logout();
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setShowAuth('signin');
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -19,12 +57,6 @@ function App() {
           <div>
             <h2>Candidate Functions</h2>
             <div className="grid">
-              <CandidateRegistration 
-                onRegistrationSuccess={(candidate) => {
-                  setSelectedCandidateId(candidate.id);
-                  alert(`Candidate registered with ID: ${candidate.id}`);
-                }}
-              />
               <ExperienceForm 
                 candidateId={selectedCandidateId}
                 onExperienceAdded={() => alert('Experience added successfully!')}
@@ -61,13 +93,59 @@ function App() {
     }
   };
 
+  // Show authentication screens if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div>
+        <nav className="nav">
+          <div className="nav-brand">
+            <h1>Job Recommendation System</h1>
+          </div>
+        </nav>
+        
+        <div className="container">
+          {showAuth === 'signin' && (
+            <SignIn 
+              onSignInSuccess={handleSignInSuccess}
+              onSwitchToSignUp={() => setShowAuth('signup')}
+            />
+          )}
+          
+          {showAuth === 'signup' && (
+            <SignUp 
+              onSwitchToSignIn={() => setShowAuth('signin')}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Show main app if authenticated
   return (
     <div>
       <nav className="nav">
-        <a href="#" onClick={() => setActiveTab('candidate')}>Candidate</a>
-        <a href="#" onClick={() => setActiveTab('employer')}>Employer</a>
-        <a href="#" onClick={() => setActiveTab('admin')}>Admin Dashboard</a>
-        <a href="#" onClick={() => setActiveTab('gdpr')}>GDPR Management</a>
+        <div className="nav-brand">
+          <h1>Job Recommendation System</h1>
+        </div>
+        
+        <div className="nav-links">
+          <a href="#" onClick={() => setActiveTab('candidate')}>Candidate</a>
+          <a href="#" onClick={() => setActiveTab('employer')}>Employer</a>
+          <a href="#" onClick={() => setActiveTab('admin')}>Admin Dashboard</a>
+          <a href="#" onClick={() => setActiveTab('gdpr')}>GDPR Management</a>
+        </div>
+        
+        <div className="nav-user">
+          {currentUser && (
+            <span className="user-info">
+              Welcome, {currentUser.name}!
+            </span>
+          )}
+          <button onClick={handleLogout} className="logout-button">
+            Logout
+          </button>
+        </div>
       </nav>
 
       <div className="container">

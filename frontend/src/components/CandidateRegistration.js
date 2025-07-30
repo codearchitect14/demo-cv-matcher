@@ -14,6 +14,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
     try {
       const candidateData = {
         name: data.name,
+        email: data.email,
         location: data.location,
         domain: data.domain,
         expected_salary_min: parseFloat(data.expected_salary_min),
@@ -54,6 +55,22 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             placeholder="Enter your full name"
           />
           {errors.name && <span style={{color: 'red'}}>{errors.name.message}</span>}
+        </div>
+
+        <div className="form-group">
+          <label>Email *</label>
+          <input
+            type="email"
+            {...register('email', { 
+              required: 'Email is required',
+              pattern: {
+                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                message: 'Invalid email address'
+              }
+            })}
+            placeholder="Enter your email address"
+          />
+          {errors.email && <span style={{color: 'red'}}>{errors.email.message}</span>}
         </div>
 
         <div className="form-group">

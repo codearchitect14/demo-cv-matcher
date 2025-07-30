@@ -104,7 +104,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db_se
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="This email is already in use. Please use a different email address."
             )
         
         # Create new user
@@ -123,11 +123,29 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db_se
         
         return {"access_token": access_token, "token_type": "bearer"}
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed: {str(e)}"
-        )
+        # Check if it's a database constraint violation
+        error_str = str(e).lower()
+        if "unique" in error_str and "email" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email is already in use. Please use a different email address."
+            )
+        elif "not null" in error_str and "email" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email address is required."
+            )
+        else:
+            # Log the actual error for debugging but return user-friendly message
+            print(f"Registration error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Registration failed. Please try again later."
+            )
 
 @router.post("/login", response_model=Token)
 async def login(user_credentials: UserLogin, db: AsyncSession = Depends(get_db_session)):
@@ -137,7 +155,7 @@ async def login(user_credentials: UserLogin, db: AsyncSession = Depends(get_db_s
         if not user or not verify_password(user_credentials.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
+                detail="Incorrect email or password. Please check your credentials and try again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -148,10 +166,15 @@ async def login(user_credentials: UserLogin, db: AsyncSession = Depends(get_db_s
         
         return {"access_token": access_token, "token_type": "bearer"}
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
     except Exception as e:
+        # Log the actual error for debugging but return user-friendly message
+        print(f"Login error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
+            detail="Login failed. Please try again later."
         )
 
 @router.post("/logout")

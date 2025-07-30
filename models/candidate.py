@@ -54,12 +54,13 @@ class Candidate(BaseModel):
 
     name = Column(String(100), nullable=False, index=True)
     location = Column(String(100), nullable=False, index=True)
-    password = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
     expected_salary_min = Column(Integer, nullable=True)
     expected_salary_max = Column(Integer, nullable=True)
     domain = Column(String(100), nullable=False, index=True)
     summary = Column(Text, nullable=True)  # Only summary, no embedding
     email = Column(String(255), nullable=False, unique=True, index=True)
+    consent_given = Column(Boolean, nullable=False, default=False, index=True)
     
     # Relationships
     experiences = relationship("CandidateExperience", back_populates="candidate", cascade="all, delete-orphan")
