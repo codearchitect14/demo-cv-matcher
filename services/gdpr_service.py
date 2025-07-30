@@ -60,8 +60,8 @@ class GDPRService:
                 user_agent=request.headers.get("user-agent") if request else None
             )
             
-            # Delete the candidate (cascade will handle related data)
-            await candidate_crud.remove(db, candidate_id)
+            # Delete candidate and all related data
+            await candidate_crud.delete(db, candidate_id)
             
             self.logger.info(f"GDPR data deletion completed for candidate {candidate_id}")
             

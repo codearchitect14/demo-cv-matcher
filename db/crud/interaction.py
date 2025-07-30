@@ -22,7 +22,7 @@ class CRUDInteractionLog(CRUDBase[InteractionLog, InteractionLogCreate, None]):
     async def get_by_candidate(self, db: AsyncSession, candidate_id: int) -> List[InteractionLog]:
         """Get interactions by candidate"""
         result = await db.execute(
-            select(self.model).where(self.model.candidate_id == candidate_id)
+            select(self.model).where(self.model.user_id == candidate_id)
         )
         return result.scalars().all()
 

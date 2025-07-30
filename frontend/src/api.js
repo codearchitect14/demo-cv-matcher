@@ -12,6 +12,59 @@ const api = axios.create({
 
 // API Service for all backend interactions
 export const apiService = {
+  // Authentication APIs
+  register: async (userData) => {
+    const response = await api.post('/auth/register', userData);
+    return response.data;
+  },
+
+  login: async (credentials) => {
+    const response = await api.post('/auth/login', credentials);
+    return response.data;
+  },
+
+  logout: async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (error) {
+      console.log('Logout request failed:', error);
+    }
+    // Clear local storage regardless of server response
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    api.defaults.headers.common['Authorization'] = null;
+  },
+
+  getCurrentUser: async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  // Token management
+  setAuthToken: (token) => {
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete api.defaults.headers.common['Authorization'];
+    }
+  },
+
+  getAuthToken: () => {
+    return localStorage.getItem('access_token');
+  },
+
+  isAuthenticated: () => {
+    return !!localStorage.getItem('access_token');
+  },
+
+  // Initialize auth token from localStorage
+  initializeAuth: () => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  },
+
   // Candidate APIs
   createCandidate: async (candidateData) => {
     const response = await api.post('/candidates', candidateData);
@@ -223,27 +276,6 @@ export const apiService = {
 
   getConsentStatus: async (candidateId) => {
     const response = await api.get(`/gdpr/consent_status/${candidateId}`);
-    return response.data;
-  },
-
-  // Authentication APIs
-  register: async (userData) => {
-    const response = await api.post('/auth/register', userData);
-    return response.data;
-  },
-
-  login: async (credentials) => {
-    const response = await api.post('/auth/login', credentials);
-    return response.data;
-  },
-
-  logout: async () => {
-    const response = await api.post('/auth/logout');
-    return response.data;
-  },
-
-  getCurrentUser: async () => {
-    const response = await api.get('/auth/me');
     return response.data;
   }
 };

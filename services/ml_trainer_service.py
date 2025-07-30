@@ -120,9 +120,9 @@ class MLTrainerService:
         
         # Interaction history features
         recent_interactions = [i for i in interactions if i.get("job_id") == job_features.get("job_id")]
-        features["recent_views"] = len([i for i in recent_interactions if i.get("interaction_type") == "view"])
-        features["recent_applies"] = len([i for i in recent_interactions if i.get("interaction_type") == "apply"])
-        features["recent_rejections"] = len([i for i in recent_interactions if i.get("interaction_type") == "reject"])
+        features["recent_views"] = len([i for i in recent_interactions if i.get("interaction_type") == "viewed"])
+        features["recent_applies"] = len([i for i in recent_interactions if i.get("interaction_type") == "applied"])
+        features["recent_rejections"] = len([i for i in recent_interactions if i.get("interaction_type") == "rejected"])
         
         # Time-based features
         if recent_interactions:

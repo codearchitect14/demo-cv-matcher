@@ -70,6 +70,7 @@ class JobUpdate(BaseModel):
     total_years_required: Optional[int] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    mandatory_skills: Optional[List[JobMandatorySkillCreate]] = None
 
 
 class JobResponse(JobBase):

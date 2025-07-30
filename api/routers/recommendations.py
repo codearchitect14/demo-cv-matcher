@@ -77,7 +77,7 @@ async def get_job_recommendations(
         
         # Get job recommendations
         recommendations = await semantic_service.find_similar_jobs(
-            db, candidate, limit=limit, apply_filters=apply_filters, 
+            candidate_id, db, k=limit, apply_filters=apply_filters, 
             strict_mode=strict_mode, use_ml_ranking=use_ml_ranking
         )
         
@@ -121,7 +121,7 @@ async def get_candidate_recommendations(
         
         # Get candidate recommendations
         recommendations = await semantic_service.find_similar_candidates(
-            db, job, limit=limit, apply_filters=apply_filters,
+            job_id, db, k=limit, apply_filters=apply_filters,
             strict_mode=strict_mode, use_ml_ranking=use_ml_ranking
         )
         
@@ -185,4 +185,33 @@ async def semantic_candidate_search(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to perform semantic candidate search: {str(e)}"
+        ) 
+
+@router.post("/index-data")
+async def index_data(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Index jobs and candidates for semantic search"""
+    try:
+        from recommender.semantic import SemanticSearchService
+        
+        # Initialize semantic search service
+        semantic_service = SemanticSearchService()
+        
+        # Index jobs
+        await semantic_service.index_jobs(db)
+        
+        # Index candidates
+        await semantic_service.index_candidates(db)
+        
+        return {
+            "message": "Data indexed successfully",
+            "jobs_indexed": True,
+            "candidates_indexed": True
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to index data: {str(e)}"
         ) 

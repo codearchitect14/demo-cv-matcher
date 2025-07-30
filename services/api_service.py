@@ -187,7 +187,7 @@ class APIService:
             # Log interaction
             from services.interaction_service import interaction_service
             await interaction_service.log_interaction(
-                db, current_user.id, application_data.job_id, "Applied"
+                db, current_user.id, application_data.job_id, "applied"
             )
             
             self.logger.info(f"Created application: {application.id}")

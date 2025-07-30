@@ -56,7 +56,7 @@ class CandidateExperienceResponse(CandidateExperienceBase):
     id: int
     candidate_id: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -65,12 +65,19 @@ class CandidateExperienceResponse(CandidateExperienceBase):
 class CandidateBase(BaseModel):
     """Base schema for candidate"""
     name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., description="Email address")
     location: str = Field(..., min_length=1, max_length=100)
     domain: str = Field(..., min_length=1, max_length=100)
     expected_salary_min: Optional[float] = Field(None, ge=0)
     expected_salary_max: Optional[float] = Field(None, ge=0)
     summary: Optional[str] = Field(None, max_length=2000)
     consent_given: bool = Field(False, description="GDPR consent flag")
+
+    @validator('email')
+    def validate_email(cls, v):
+        if not v or '@' not in v:
+            raise ValueError('Invalid email address')
+        return v.lower()
 
     @validator('expected_salary_max')
     def validate_salary_range(cls, v, values):
@@ -94,6 +101,7 @@ class CandidateCreate(CandidateBase):
 class CandidateUpdate(CandidateBase):
     """Schema for updating candidate"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    email: Optional[str] = Field(None, description="Email address")
     location: Optional[str] = Field(None, min_length=1, max_length=100)
     domain: Optional[str] = Field(None, min_length=1, max_length=100)
     expected_salary_min: Optional[float] = Field(None, ge=0)
@@ -106,7 +114,7 @@ class CandidateResponse(CandidateBase):
     """Schema for candidate response"""
     id: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     experiences: List[CandidateExperienceResponse] = []
     
     class Config:
