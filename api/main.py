@@ -21,8 +21,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting up Job Recommendation System...")
-    await init_db()
-    logger.info("Database initialized successfully")
+    try:
+        # Skip table creation during startup to avoid prepared statement issues
+        # Tables should already exist from previous runs
+        logger.info("Skipping table creation - assuming tables exist")
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        # Don't fail startup, just log the error
     
     yield
     

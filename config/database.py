@@ -1,4 +1,5 @@
 import os
+import asyncpg
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -14,24 +15,34 @@ load_dotenv(dotenv_path=".env")
 # Database Configuration
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    f"postgresql+asyncpg://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'job_matcher')}"
+    f"postgresql://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'job_matcher')}"
 )
+
+# Ensure we use asyncpg driver with direct connection to avoid pgbouncer issues
+if DATABASE_URL and not DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+    
+# For Supabase, we'll handle SSL in connect_args instead of URL parameters
 
 # Create async engine with connection pool configuration and error handling (Issue #15)
 engine = create_async_engine(
     DATABASE_URL,
     echo=os.getenv("DEBUG", "False").lower() == "true",
     future=True,
-    # Connection pool settings
-    # poolclass=QueuePool,
-    pool_size=10,  # Number of connections to maintain
-    max_overflow=20,  # Additional connections beyond pool_size
-    pool_timeout=30,  # Timeout when getting connection from pool
-    pool_recycle=3600,  # Recycle connections after 1 hour
-    pool_pre_ping=True,  # Validate connections before use
+    # Use minimal connection pooling to avoid prepared statement issues
+    pool_size=1,  # Minimal pool size
+    max_overflow=0,  # No overflow connections
+    pool_timeout=30,
+    pool_recycle=300,  # Recycle connections every 5 minutes
+    pool_pre_ping=True,
     # SSL settings for Supabase
     connect_args={
-        "ssl": True if "supabase.co" in DATABASE_URL else False
+        "ssl": "require" if "supabase.co" in DATABASE_URL else False,
+        "statement_cache_size": 0,  # Disable prepared statements
+        "prepared_statement_cache_size": 0,  # Additional cache size setting
+        "server_settings": {
+            "jit": "off"  # Disable JIT to avoid prepared statement issues
+        }
     }
 )
 

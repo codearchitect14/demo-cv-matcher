@@ -27,7 +27,13 @@ class FAISSIndexManager:
         self.index_path = Path("embeddings/faiss_index")
         self.metadata_path = Path("embeddings/index_metadata.pkl")
         
-        self._create_index()
+        # Try to load existing index, otherwise create new one
+        try:
+            self.load_index()
+            logger.info("Loaded existing FAISS index")
+        except Exception as e:
+            logger.info(f"No existing index found, creating new one: {e}")
+            self._create_index()
     
     def _create_index(self):
         """Create FAISS index based on similarity type"""
