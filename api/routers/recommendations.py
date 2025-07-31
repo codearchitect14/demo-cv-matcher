@@ -45,6 +45,88 @@ class SearchRequest(BaseModel):
     strict_mode: bool = False
     use_ml_ranking: bool = True
 
+# Test endpoint without authentication
+@router.get("/test/candidates/{candidate_id}/job-recommendations")
+async def test_job_recommendations(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    limit: int = Query(10, ge=1, le=50),
+    apply_filters: bool = Query(False, description="Apply business rule filters"),
+    strict_mode: bool = Query(False, description="Use strict filtering mode"),
+    use_ml_ranking: bool = Query(False, description="Use ML-based ranking")
+):
+    """Test job recommendations for a candidate (no authentication required)"""
+    try:
+        # Get candidate profile for semantic search
+        from db.crud.candidate import candidate as candidate_crud
+        candidate = await candidate_crud.get_with_experiences(db, id=candidate_id)
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found"
+            )
+        
+        # Initialize semantic search service
+        semantic_service = SemanticSearchService()
+        
+        # Get job recommendations
+        recommendations = await semantic_service.find_similar_jobs(
+            candidate_id, db, k=limit, apply_filters=apply_filters, 
+            strict_mode=strict_mode, use_ml_ranking=use_ml_ranking
+        )
+        
+        # Return raw recommendations without personalization for testing
+        return recommendations
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get job recommendations: {str(e)}"
+        )
+
+# Test endpoint without authentication
+@router.get("/test/jobs/{job_id}/candidate-recommendations")
+async def test_candidate_recommendations(
+    job_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    limit: int = Query(10, ge=1, le=50),
+    apply_filters: bool = Query(False, description="Apply business rule filters"),
+    strict_mode: bool = Query(False, description="Use strict filtering mode"),
+    use_ml_ranking: bool = Query(False, description="Use ML-based ranking")
+):
+    """Test candidate recommendations for a job (no authentication required)"""
+    try:
+        # Get job profile for semantic search
+        from db.crud.job import job as job_crud
+        job = await job_crud.get_with_skills(db, id=job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found"
+            )
+        
+        # Initialize semantic search service
+        semantic_service = SemanticSearchService()
+        
+        # Get candidate recommendations
+        recommendations = await semantic_service.find_similar_candidates(
+            job_id, db, k=limit, apply_filters=apply_filters, 
+            strict_mode=strict_mode, use_ml_ranking=use_ml_ranking
+        )
+        
+        # Return raw recommendations without personalization for testing
+        return recommendations
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get candidate recommendations: {str(e)}"
+        )
+
 @router.get("/candidates/{candidate_id}/job-recommendations")
 async def get_job_recommendations(
     candidate_id: int,
