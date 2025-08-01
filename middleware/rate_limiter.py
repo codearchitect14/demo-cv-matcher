@@ -13,9 +13,9 @@ class RateLimiter:
     def __init__(self):
         self.requests = defaultdict(list)
         self.limits = {
-            "auth": {"requests": 5, "window": 60},  # 5 requests per minute
-            "search": {"requests": 10, "window": 60},  # 10 requests per minute
-            "default": {"requests": 100, "window": 60},  # 100 requests per minute
+            "auth": {"requests": 50, "window": 60},  # 50 requests per minute (increased from 5)
+            "search": {"requests": 100, "window": 60},  # 100 requests per minute (increased from 10)
+            "default": {"requests": 500, "window": 60},  # 500 requests per minute (increased from 100)
         }
     
     def _get_client_id(self, request: Request) -> str:
@@ -52,10 +52,22 @@ class RateLimiter:
         self.requests[client_id].append(now)
         return False
     
+    def clear_limits(self, client_id: str = None):
+        """Clear rate limits for a specific client or all clients"""
+        if client_id:
+            self.requests.pop(client_id, None)
+        else:
+            self.requests.clear()
+    
     async def __call__(self, request: Request, call_next):
         """Rate limiting middleware"""
         client_id = self._get_client_id(request)
         endpoint_type = self._get_endpoint_type(request)
+        
+        # Skip rate limiting for development (you can remove this in production)
+        if request.headers.get("X-Development-Mode") == "true":
+            response = await call_next(request)
+            return response
         
         if self._is_rate_limited(client_id, endpoint_type):
             logger.warning(f"Rate limit exceeded for client {client_id} on {endpoint_type}")

@@ -406,6 +406,7 @@ class SemanticSearchService:
                         "domain": job.domain,
                         "salary_min": job.salary_min,
                         "salary_max": job.salary_max,
+                        "total_years_required": job.total_years_required,
                         "similarity_score": float(similarity),
                         "explanation": f"Semantic match for query: '{query}'"
                     }

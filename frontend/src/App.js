@@ -1,40 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import LoginNew from './components/LoginNew';
 import SignUpNew from './components/SignUpNew';
-import ExperienceForm from './components/ExperienceForm';
-import JobRecommendations from './components/JobRecommendations';
-import JobPosting from './components/JobPosting';
-import CandidateRecommendations from './components/CandidateRecommendations';
-import AdminDashboard from './components/AdminDashboard';
-import GDPRManagement from './components/GDPRManagement';
+import CandidatesDashboard from './components/CandidatesDashboard';
+import JobsDashboard from './components/JobsDashboard';
+import ApplicationsManagement from './components/ApplicationsManagement';
+import RecommendationsEngine from './components/RecommendationsEngine';
+import InteractionsAnalytics from './components/InteractionsAnalytics';
 import { apiService } from './api';
+import './App.css';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuth, setShowAuth] = useState('welcome'); // 'welcome', 'signin' or 'signup'
   const [currentUser, setCurrentUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('candidate');
-  const [selectedCandidateId, setSelectedCandidateId] = useState('');
-  const [selectedJobId, setSelectedJobId] = useState('');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Get the active tab from localStorage or default to 'candidates'
+    return localStorage.getItem('activeTab') || 'candidates';
+  });
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
 
   // Initialize authentication on app load
   useEffect(() => {
-    apiService.initializeAuth();
-    const token = apiService.getAuthToken();
-    if (token) {
-      setIsAuthenticated(true);
-      // Try to get current user info
-      apiService.getCurrentUser()
-        .then(user => setCurrentUser(user))
-        .catch(() => {
-          // Token might be invalid, clear it
-          apiService.logout();
+    const initializeAuth = async () => {
+      console.log('Initializing authentication...');
+      apiService.initializeAuth();
+      const token = apiService.getAuthToken();
+      console.log('Token found:', !!token);
+      
+      if (token) {
+        // Try to validate the token
+        const user = await apiService.validateToken();
+        console.log('Token validation result:', !!user);
+        if (user) {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+          console.log('User authenticated successfully');
+        } else {
+          // Token is invalid, clear it
+          apiService.setToken(null);
           setIsAuthenticated(false);
-        });
-    }
+          console.log('Token invalid, cleared');
+        }
+      } else {
+        console.log('No token found');
+      }
+    };
+
+    initializeAuth();
   }, []);
 
   const handleSignInSuccess = (response) => {
+    // Set the token using the new function
+    apiService.setToken(response.access_token);
     setIsAuthenticated(true);
     setShowAuth(null);
     // Get user info
@@ -48,189 +69,154 @@ function App() {
     setIsAuthenticated(false);
     setCurrentUser(null);
     setShowAuth('welcome');
+    // Reset active tab to default
+    setActiveTab('candidates');
+  };
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
   };
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'candidate':
-        return (
-          <div>
-            <h2>Candidate Functions</h2>
-            <div className="grid">
-              <ExperienceForm 
-                candidateId={selectedCandidateId}
-                onExperienceAdded={() => alert('Experience added successfully!')}
-              />
-            </div>
-            <JobRecommendations candidateId={selectedCandidateId} />
-          </div>
-        );
+      case 'candidates':
+        return <CandidatesDashboard />;
       
-      case 'employer':
-        return (
-          <div>
-            <h2>Employer Functions</h2>
-            <div className="grid">
-              <JobPosting 
-                onJobPosted={(job) => {
-                  setSelectedJobId(job.id);
-                  alert(`Job posted with ID: ${job.id}`);
-                }}
-              />
-              <CandidateRecommendations jobId={selectedJobId} />
-            </div>
-          </div>
-        );
+      case 'jobs':
+        return <JobsDashboard />;
       
-      case 'admin':
-        return <AdminDashboard />;
+      case 'applications':
+        return <ApplicationsManagement />;
       
-      case 'gdpr':
-        return <GDPRManagement />;
+      case 'recommendations':
+        return <RecommendationsEngine />;
+      
+      case 'interactions':
+        return <InteractionsAnalytics />;
       
       default:
-        return <div>Select a tab to get started</div>;
+        return <CandidatesDashboard />;
     }
   };
 
-  // Show welcome page if not authenticated
-  if (!isAuthenticated && showAuth === 'welcome') {
-    return (
-      <div className="welcome-container">
-        <div className="welcome-background">
-          <div className="shape shape-1"></div>
-          <div className="shape shape-2"></div>
-          <div className="shape shape-3"></div>
-        </div>
-        
-        <div className="welcome-card">
-          <div className="logo-container">
-            <div className="logo">
-              <div className="welcome-logo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 14V2h12l5.59 5.59a2 2 0 0 1 0 2.82z"/>
-                  <line x1="7" y1="7" x2="7.01" y2="7"/>
-                </svg>
-              </div>
-              <h1 className="brand-name">JobMatcher</h1>
-            </div>
-          </div>
-          
-          <div className="welcome-content">
-            <h2 className="welcome-title">Welcome to JobMatcher</h2>
-            <p className="welcome-description">
-              Find your dream job or discover the perfect candidate. 
-              Start your journey with us today.
-            </p>
-            
-            <div className="welcome-buttons">
-              <button 
-                className="btn-primary" 
-                onClick={() => setShowAuth('signin')}
-              >
-                Sign In
-              </button>
-              <button 
-                className="btn-secondary" 
-                onClick={() => setShowAuth('signup')}
-              >
-                Create Account
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show authentication screens if not authenticated
   if (!isAuthenticated) {
     return (
-      <div>
-        <nav className="nav">
-          <div className="nav-brand">
-            <h1>JobMatcher</h1>
+      <div className="app">
+        {showAuth === 'welcome' && (
+          <div className="welcome-container">
+            <div className="welcome-content">
+              <div className="welcome-header">
+                <h1 className="welcome-title">JobMatcher</h1>
+                <p className="welcome-subtitle">AI-Powered Job Matching Platform</p>
+              </div>
+              <div className="welcome-features">
+                <div className="feature-item">
+                  <div className="feature-icon">🎯</div>
+                  <h3>Smart Matching</h3>
+                  <p>AI-powered job-candidate matching</p>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">📊</div>
+                  <h3>Analytics</h3>
+                  <p>Behavior patterns and insights</p>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">⚡</div>
+                  <h3>Fast & Efficient</h3>
+                  <p>Quick recommendations and searches</p>
+                </div>
+              </div>
+              <div className="welcome-actions">
+                <button 
+                  className="btn-primary"
+                  onClick={() => setShowAuth('signin')}
+                >
+                  Sign In
+                </button>
+                <button 
+                  className="btn-secondary"
+                  onClick={() => setShowAuth('signup')}
+                >
+                  Create Account
+                </button>
+              </div>
+            </div>
           </div>
-        </nav>
+        )}
         
-        <div className="container">
-          {showAuth === 'signin' && (
-            <LoginNew 
-              onSignInSuccess={handleSignInSuccess}
-              onSwitchToSignUp={() => setShowAuth('signup')}
-            />
-          )}
-          
-          {showAuth === 'signup' && (
-            <SignUpNew 
-              onSwitchToSignIn={() => setShowAuth('signin')}
-            />
-          )}
-        </div>
+        {showAuth === 'signin' && (
+          <LoginNew 
+            onSwitchToSignUp={() => setShowAuth('signup')}
+            onSignInSuccess={handleSignInSuccess}
+          />
+        )}
+        
+        {showAuth === 'signup' && (
+          <SignUpNew 
+            onSwitchToSignIn={() => setShowAuth('signin')}
+            onSignUpSuccess={() => setShowAuth('signin')}
+          />
+        )}
       </div>
     );
   }
 
-  // Show main app if authenticated
   return (
-    <div>
-      <nav className="nav">
+    <div className="app">
+      <nav className="navbar">
         <div className="nav-brand">
           <h1>JobMatcher</h1>
         </div>
         
         <div className="nav-links">
-          <a href="#" onClick={() => setActiveTab('candidate')}>Candidate</a>
-          <a href="#" onClick={() => setActiveTab('employer')}>Employer</a>
-          <a href="#" onClick={() => setActiveTab('admin')}>Admin Dashboard</a>
-          <a href="#" onClick={() => setActiveTab('gdpr')}>GDPR Management</a>
+          <a 
+            href="#" 
+            className={activeTab === 'candidates' ? 'active' : ''}
+            onClick={() => handleTabChange('candidates')}
+          >
+            Candidates
+          </a>
+          <a 
+            href="#" 
+            className={activeTab === 'jobs' ? 'active' : ''}
+            onClick={() => handleTabChange('jobs')}
+          >
+            Jobs
+          </a>
+          <a 
+            href="#" 
+            className={activeTab === 'applications' ? 'active' : ''}
+            onClick={() => handleTabChange('applications')}
+          >
+            Applications
+          </a>
+          <a 
+            href="#" 
+            className={activeTab === 'recommendations' ? 'active' : ''}
+            onClick={() => handleTabChange('recommendations')}
+          >
+            Recommendations
+          </a>
+          <a 
+            href="#" 
+            className={activeTab === 'interactions' ? 'active' : ''}
+            onClick={() => handleTabChange('interactions')}
+          >
+            Interactions
+          </a>
         </div>
         
         <div className="nav-user">
-          {currentUser && (
-            <span className="user-info">
-              Welcome, {currentUser.name}!
-            </span>
-          )}
-          <button onClick={handleLogout} className="logout-button">
+          <span className="user-welcome">Welcome, {currentUser?.name || 'User'}!</span>
+          <button className="btn-logout" onClick={handleLogout}>
             Logout
           </button>
         </div>
       </nav>
-
-      <div className="container">
-        {activeTab === 'candidate' && (
-          <div style={{ marginBottom: '20px' }}>
-            <div className="form-group">
-              <label>Selected Candidate ID:</label>
-              <input
-                type="number"
-                value={selectedCandidateId}
-                onChange={(e) => setSelectedCandidateId(e.target.value)}
-                placeholder="Enter candidate ID for testing"
-                style={{ width: '200px' }}
-              />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'employer' && (
-          <div style={{ marginBottom: '20px' }}>
-            <div className="form-group">
-              <label>Selected Job ID:</label>
-              <input
-                type="number"
-                value={selectedJobId}
-                onChange={(e) => setSelectedJobId(e.target.value)}
-                placeholder="Enter job ID for testing"
-                style={{ width: '200px' }}
-              />
-            </div>
-          </div>
-        )}
-
+      
+      <main className="main-content">
         {renderContent()}
-      </div>
+      </main>
     </div>
   );
 }

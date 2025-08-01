@@ -65,6 +65,28 @@ export const apiService = {
     }
   },
 
+  // Validate token by making a request to /me endpoint
+  validateToken: async () => {
+    try {
+      const response = await api.get('/auth/me');
+      return response.data;
+    } catch (error) {
+      console.log('Token validation failed:', error);
+      return null;
+    }
+  },
+
+  // Set token and update axios headers
+  setToken: (token) => {
+    if (token) {
+      localStorage.setItem('access_token', token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      localStorage.removeItem('access_token');
+      delete api.defaults.headers.common['Authorization'];
+    }
+  },
+
   // Candidate APIs
   createCandidate: async (candidateData) => {
     const response = await api.post('/candidates', candidateData);

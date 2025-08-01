@@ -10,6 +10,7 @@ from api.routers.auth import get_current_user
 from embeddings.embedder import EmbeddingService
 from embeddings.build_index import FAISSIndexManager
 from services.personalization_service import personalization_service
+from middleware.rate_limiter import rate_limiter
 
 router = APIRouter(prefix="/system", tags=["System Management"])
 
@@ -209,4 +210,16 @@ async def system_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve system statistics: {str(e)}"
+        ) 
+
+@router.post("/clear-rate-limits")
+async def clear_rate_limits():
+    """Clear all rate limits (development only)"""
+    try:
+        rate_limiter.clear_limits()
+        return {"message": "Rate limits cleared successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear rate limits: {str(e)}"
         ) 

@@ -1,159 +1,161 @@
-import React, { useState, useEffect } from 'react';
-import apiService from '../api';
+import React, { useState } from 'react';
+import { apiService } from '../api';
+import './JobRecommendations.css';
 
-const JobRecommendations = ({ candidateId }) => {
+const JobRecommendations = () => {
+  const [formData, setFormData] = useState({
+    candidate_id: '',
+    limit: 10,
+    apply_filters: true,
+    strict_mode: false,
+    use_ml_ranking: true
+  });
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [useMlRanking, setUseMlRanking] = useState(true);
 
-  const fetchRecommendations = async () => {
-    if (!candidateId) return;
-    
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
-    
+    setRecommendations([]);
+
     try {
-      const response = await apiService.getJobRecommendations(candidateId, useMlRanking);
+      const response = await apiService.getJobRecommendations(formData);
       setRecommendations(response.recommendations || []);
-    } catch (error) {
-      setError(`Error fetching recommendations: ${error.response?.data?.detail || error.message}`);
+    } catch (err) {
+      setError(err.message || 'Failed to get job recommendations');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchRecommendations();
-  }, [candidateId, useMlRanking]);
-
-  const handleApply = async (jobId) => {
-    try {
-      await apiService.applyForJob({
-        candidate_id: candidateId,
-        job_id: jobId
-      });
-      
-      // Log interaction
-      await apiService.logInteraction({
-        candidate_id: candidateId,
-        job_id: jobId,
-        interaction_type: 'Applied'
-      });
-      
-      alert('Application submitted successfully!');
-      fetchRecommendations(); // Refresh recommendations
-    } catch (error) {
-      alert(`Error applying: ${error.response?.data?.detail || error.message}`);
-    }
-  };
-
-  const handleReject = async (jobId) => {
-    try {
-      await apiService.logInteraction({
-        candidate_id: candidateId,
-        job_id: jobId,
-        interaction_type: 'Rejected'
-      });
-      
-      alert('Job rejected');
-      fetchRecommendations(); // Refresh recommendations
-    } catch (error) {
-      alert(`Error rejecting: ${error.response?.data?.detail || error.message}`);
-    }
-  };
-
-  const handleView = async (jobId) => {
-    try {
-      await apiService.logInteraction({
-        candidate_id: candidateId,
-        job_id: jobId,
-        interaction_type: 'View'
-      });
-    } catch (error) {
-      console.error('Error logging view:', error);
-    }
-  };
-
-  if (!candidateId) {
-    return <div className="card"><h3>Please select a candidate to view recommendations</h3></div>;
-  }
-
   return (
-    <div className="card">
-      <h3>Job Recommendations</h3>
-      
-      <div style={{ marginBottom: '15px' }}>
-        <label>
-          <input
-            type="checkbox"
-            checked={useMlRanking}
-            onChange={(e) => setUseMlRanking(e.target.checked)}
-          />
-          Use ML Ranking
-        </label>
-        <button 
-          className="btn btn-primary" 
-          onClick={fetchRecommendations}
-          disabled={loading}
-          style={{ marginLeft: '10px' }}
-        >
-          {loading ? 'Loading...' : 'Refresh'}
-        </button>
+    <div className="job-recommendations">
+      <div className="recommendations-header">
+        <h1>Job Recommendations for Candidate</h1>
+      </div>
+
+      <div className="recommendations-form-container">
+        <form onSubmit={handleSubmit} className="recommendations-form">
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="candidate_id">Candidate ID:</label>
+              <input
+                type="text"
+                id="candidate_id"
+                name="candidate_id"
+                value={formData.candidate_id}
+                onChange={handleInputChange}
+                placeholder="Enter candidate ID"
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="limit">Limit:</label>
+              <select
+                id="limit"
+                name="limit"
+                value={formData.limit}
+                onChange={handleInputChange}
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={20}>20</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="use_ml_ranking"
+                  checked={formData.use_ml_ranking}
+                  onChange={handleInputChange}
+                />
+                <span className="checkmark"></span>
+                Use ML Ranking
+              </label>
+            </div>
+            
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="apply_filters"
+                  checked={formData.apply_filters}
+                  onChange={handleInputChange}
+                />
+                <span className="checkmark"></span>
+                Apply Filters
+              </label>
+            </div>
+            
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="strict_mode"
+                  checked={formData.strict_mode}
+                  onChange={handleInputChange}
+                />
+                <span className="checkmark"></span>
+                Strict Mode
+              </label>
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button 
+              type="submit" 
+              className="btn-primary"
+              disabled={loading}
+            >
+              {loading ? 'Getting Recommendations...' : 'Get Job Recommendations'}
+            </button>
+          </div>
+        </form>
       </div>
 
       {error && (
-        <div className="alert alert-error">
-          {error}
+        <div className="error-message">
+          <span>{error}</span>
+          <button onClick={() => setError('')}>×</button>
         </div>
       )}
 
-      {loading ? (
-        <div className="loading">Loading recommendations...</div>
-      ) : recommendations.length === 0 ? (
-        <div className="alert alert-info">No job recommendations found.</div>
-      ) : (
-        <div className="grid">
-          {recommendations.map((job, index) => (
-            <div key={job.id || index} className="card" style={{ margin: '10px 0' }}>
-              <h4>{job.title}</h4>
-              <p><strong>Company:</strong> {job.company || 'Unknown'}</p>
-              <p><strong>Location:</strong> {job.location}</p>
-              <p><strong>Domain:</strong> {job.domain}</p>
-              <p><strong>Salary:</strong> ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}</p>
-              <p><strong>Required Experience:</strong> {job.total_years_required} years</p>
-              {job.similarity_score && (
-                <p><strong>Match Score:</strong> {(job.similarity_score * 100).toFixed(1)}%</p>
-              )}
-              {job.ml_score && (
-                <p><strong>ML Score:</strong> {(job.ml_score * 100).toFixed(1)}%</p>
-              )}
-              <p><strong>Description:</strong> {job.description}</p>
-              
-              <div style={{ marginTop: '15px' }}>
-                <button 
-                  className="btn btn-primary" 
-                  onClick={() => handleView(job.id)}
-                  style={{ marginRight: '10px' }}
-                >
-                  View Details
-                </button>
-                <button 
-                  className="btn btn-success" 
-                  onClick={() => handleApply(job.id)}
-                  style={{ marginRight: '10px' }}
-                >
-                  Apply
-                </button>
-                <button 
-                  className="btn btn-warning" 
-                  onClick={() => handleReject(job.id)}
-                >
-                  Reject
-                </button>
+      {recommendations.length > 0 && (
+        <div className="recommendations-results">
+          <h2>Recommended Jobs ({recommendations.length})</h2>
+          <div className="recommendations-grid">
+            {recommendations.map((job, index) => (
+              <div key={index} className="recommendation-card">
+                <h3>{job.title}</h3>
+                <p><strong>Company:</strong> {job.company}</p>
+                <p><strong>Location:</strong> {job.location}</p>
+                <p><strong>Salary Range:</strong> {job.salary_range}</p>
+                <p><strong>Domain:</strong> {job.domain}</p>
+                {job.description && (
+                  <p><strong>Description:</strong> {job.description}</p>
+                )}
+                <div className="recommendation-score">
+                  <span>Match Score: {job.score}%</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiService } from '../api';
 import './LoginNew.css';
 
 const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
@@ -41,8 +42,8 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
 
       if (response.ok) {
         const data = await response.json();
-        // Store token
-        localStorage.setItem('token', data.access_token);
+        // Use apiService to set token
+        apiService.setToken(data.access_token);
         // Call success callback if provided
         if (onSignInSuccess) {
           onSignInSuccess(data);
