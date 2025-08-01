@@ -301,5 +301,12 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         )
         return result.scalar_one_or_none()
 
+    async def get_experiences(self, db: AsyncSession, candidate_id: int) -> List[CandidateExperience]:
+        """Get experiences for a specific candidate"""
+        result = await db.execute(
+            select(CandidateExperience).where(CandidateExperience.candidate_id == candidate_id)
+        )
+        return result.scalars().all()
+
 
 candidate = CRUDCandidate(Candidate)

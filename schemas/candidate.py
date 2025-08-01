@@ -115,7 +115,17 @@ class CandidateResponse(CandidateBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
-    experiences: List[CandidateExperienceResponse] = []
+    experiences: Optional[List[CandidateExperienceResponse]] = []
+    
+    class Config:
+        from_attributes = True
+
+
+class CandidateListResponse(CandidateBase):
+    """Schema for candidate list response (without relationships)"""
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { apiService } from '../api';
-import './CandidateRecommendations.css';
+import './CandidateSearch.css';
 
-const CandidateRecommendations = () => {
+const CandidateSearch = () => {
   const [formData, setFormData] = useState({
-    job_id: '',
+    query: '',
     limit: 10,
     apply_filters: true,
     strict_mode: false,
     use_ml_ranking: true
   });
-  const [recommendations, setRecommendations] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -26,40 +26,40 @@ const CandidateRecommendations = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setRecommendations([]);
+    setSearchResults([]);
 
     try {
-      const response = await apiService.getCandidateRecommendations(formData);
-      setRecommendations(response.recommendations || []);
+      const response = await apiService.searchCandidates(formData);
+      setSearchResults(response.candidates || []);
     } catch (err) {
-      setError(err.message || 'Failed to get candidate recommendations');
+      setError(err.message || 'Failed to search candidates');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="candidate-recommendations">
-      <div className="recommendations-header">
-        <h1>Candidate Recommendations for Job</h1>
+    <div className="candidate-search">
+      <div className="search-header">
+        <h1>Semantic Candidate Search</h1>
       </div>
 
-      <div className="recommendations-form-container">
-        <form onSubmit={handleSubmit} className="recommendations-form">
+      <div className="search-form-container">
+        <form onSubmit={handleSubmit} className="search-form">
+          <div className="form-group">
+            <label htmlFor="query">Search Query:</label>
+            <input
+              type="text"
+              id="query"
+              name="query"
+              value={formData.query}
+              onChange={handleInputChange}
+              placeholder="Enter candidate search query (e.g., 'senior Python developer')"
+              required
+            />
+          </div>
+
           <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="job_id">Job ID:</label>
-              <input
-                type="text"
-                id="job_id"
-                name="job_id"
-                value={formData.job_id}
-                onChange={handleInputChange}
-                placeholder="Enter job ID"
-                required
-              />
-            </div>
-            
             <div className="form-group">
               <label htmlFor="limit">Limit:</label>
               <select
@@ -73,21 +73,6 @@ const CandidateRecommendations = () => {
                 <option value={15}>15</option>
                 <option value={20}>20</option>
               </select>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="use_ml_ranking"
-                  checked={formData.use_ml_ranking}
-                  onChange={handleInputChange}
-                />
-                <span className="checkmark"></span>
-                Use ML Ranking
-              </label>
             </div>
             
             <div className="checkbox-group">
@@ -115,6 +100,19 @@ const CandidateRecommendations = () => {
                 Strict Mode
               </label>
             </div>
+            
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="use_ml_ranking"
+                  checked={formData.use_ml_ranking}
+                  onChange={handleInputChange}
+                />
+                <span className="checkmark"></span>
+                Use ML Ranking
+              </label>
+            </div>
           </div>
 
           <div className="form-actions">
@@ -123,7 +121,7 @@ const CandidateRecommendations = () => {
               className="btn-primary"
               disabled={loading}
             >
-              {loading ? 'Getting Recommendations...' : 'Get Candidate Recommendations'}
+              {loading ? 'Searching...' : 'Search Candidates'}
             </button>
           </div>
         </form>
@@ -136,12 +134,12 @@ const CandidateRecommendations = () => {
         </div>
       )}
 
-      {recommendations.length > 0 && (
-        <div className="recommendations-results">
-          <h2>Recommended Candidates ({recommendations.length})</h2>
-          <div className="recommendations-grid">
-            {recommendations.map((candidate, index) => (
-              <div key={index} className="recommendation-card">
+      {searchResults.length > 0 && (
+        <div className="search-results">
+          <h2>Search Results ({searchResults.length})</h2>
+          <div className="search-results-grid">
+            {searchResults.map((candidate, index) => (
+              <div key={index} className="search-result-card">
                 <h3>{candidate.name}</h3>
                 <p><strong>Email:</strong> {candidate.email}</p>
                 <p><strong>Location:</strong> {candidate.location}</p>
@@ -150,8 +148,8 @@ const CandidateRecommendations = () => {
                 {candidate.experience && (
                   <p><strong>Experience:</strong> {candidate.experience}</p>
                 )}
-                <div className="recommendation-score">
-                  <span>Match Score: {candidate.score}%</span>
+                <div className="search-result-score">
+                  <span>Relevance Score: {candidate.score}%</span>
                 </div>
               </div>
             ))}
@@ -162,4 +160,4 @@ const CandidateRecommendations = () => {
   );
 };
 
-export default CandidateRecommendations; 
+export default CandidateSearch; 

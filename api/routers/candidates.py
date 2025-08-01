@@ -10,7 +10,7 @@ from models.candidate import Candidate, CandidateExperience
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
-from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateExperienceCreate, CandidateExperienceUpdate
+from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateListResponse, CandidateExperienceCreate, CandidateExperienceUpdate
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 
@@ -58,6 +58,24 @@ async def create_candidate(
                 detail="Failed to create candidate. Please try again later."
             )
 
+@router.get("/", response_model=List[CandidateListResponse])
+async def get_all_candidates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get all candidates with pagination"""
+    try:
+        # Use simple get_multi to avoid prepared statement conflicts
+        candidates = await candidate_crud.get_multi(db, skip=skip, limit=limit)
+        return candidates
+    except Exception as e:
+        print(f"Get all candidates error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve candidates. Please try again later."
+        )
+
 @router.get("/{candidate_id}", response_model=CandidateResponse)
 async def get_candidate(
     candidate_id: int,
@@ -65,13 +83,34 @@ async def get_candidate(
 ):
     """Get candidate profile by ID"""
     try:
-        candidate = await candidate_crud.get_with_experiences(db, id=candidate_id)
+        # First get the basic candidate
+        candidate = await candidate_crud.get(db, id=candidate_id)
         if not candidate:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Candidate not found"
             )
-        return candidate
+        
+        # Then get experiences separately to avoid prepared statement conflicts
+        experiences = await candidate_crud.get_experiences(db, candidate_id=candidate_id)
+        
+        # Manually construct the response with experiences
+        candidate_dict = {
+            "id": candidate.id,
+            "name": candidate.name,
+            "email": candidate.email,
+            "location": candidate.location,
+            "domain": candidate.domain,
+            "expected_salary_min": candidate.expected_salary_min,
+            "expected_salary_max": candidate.expected_salary_max,
+            "summary": candidate.summary,
+            "consent_given": candidate.consent_given,
+            "created_at": candidate.created_at,
+            "updated_at": candidate.updated_at,
+            "experiences": experiences
+        }
+        
+        return candidate_dict
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -100,9 +139,27 @@ async def update_candidate(
         
         # Update the candidate
         candidate = await candidate_crud.update(db, db_obj=current_user, obj_in=candidate_data)
-        # Get the candidate with loaded relationships
-        candidate_with_relations = await candidate_crud.get_with_experiences(db, candidate.id)
-        return candidate_with_relations
+        
+        # Get experiences separately to avoid prepared statement conflicts
+        experiences = await candidate_crud.get_experiences(db, candidate_id=candidate.id)
+        
+        # Manually construct the response with experiences
+        candidate_dict = {
+            "id": candidate.id,
+            "name": candidate.name,
+            "email": candidate.email,
+            "location": candidate.location,
+            "domain": candidate.domain,
+            "expected_salary_min": candidate.expected_salary_min,
+            "expected_salary_max": candidate.expected_salary_max,
+            "summary": candidate.summary,
+            "consent_given": candidate.consent_given,
+            "created_at": candidate.created_at,
+            "updated_at": candidate.updated_at,
+            "experiences": experiences
+        }
+        
+        return candidate_dict
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -161,10 +218,32 @@ async def add_candidate_experience(
         # Convert Pydantic model to dict
         experience_dict = experience_data.dict()
         
-        candidate = await candidate_crud.add_experience(
+        # Add experience using the CRUD method
+        await candidate_crud.add_experience(
             db, candidate_id=candidate_id, experience_data=experience_dict
         )
-        return candidate
+        
+        # Get the updated candidate and experiences separately
+        candidate = await candidate_crud.get(db, id=candidate_id)
+        experiences = await candidate_crud.get_experiences(db, candidate_id=candidate_id)
+        
+        # Manually construct the response
+        candidate_dict = {
+            "id": candidate.id,
+            "name": candidate.name,
+            "email": candidate.email,
+            "location": candidate.location,
+            "domain": candidate.domain,
+            "expected_salary_min": candidate.expected_salary_min,
+            "expected_salary_max": candidate.expected_salary_max,
+            "summary": candidate.summary,
+            "consent_given": candidate.consent_given,
+            "created_at": candidate.created_at,
+            "updated_at": candidate.updated_at,
+            "experiences": experiences
+        }
+        
+        return candidate_dict
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
