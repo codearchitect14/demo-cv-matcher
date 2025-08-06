@@ -71,7 +71,7 @@
   padding: 40px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   text-align: center;
-  max-width: 400px;
+  max-width: 500px;
   width: 90%;
   position: relative;
   z-index: 2;
@@ -98,53 +98,44 @@
   z-index: 2;
 }
 
-.head {
-  width: 40px;
-  height: 40px;
-  background: #ffd93d;
-  border-radius: 50%;
-  margin: 0 auto 10px;
-}
-
 .body {
-  width: 60px;
-  height: 80px;
+  width: 40px;
+  height: 60px;
   background: #4a90e2;
   border-radius: 20px;
-  margin: 0 auto;
   position: relative;
 }
 
 .arm {
+  width: 12px;
+  height: 30px;
+  background: #4a90e2;
+  border-radius: 6px;
   position: absolute;
-  right: -15px;
-  top: 20px;
-  width: 30px;
-  height: 8px;
-  background: #ffd93d;
-  border-radius: 4px;
-  transform: rotate(-30deg);
+  top: 10px;
+  right: -8px;
+  transform: rotate(15deg);
 }
 
 .cup {
-  position: absolute;
-  right: -25px;
-  top: 15px;
   width: 20px;
   height: 25px;
-  background: white;
+  background: #f39c12;
   border-radius: 0 0 10px 10px;
-  border: 2px solid #ddd;
+  position: absolute;
+  top: 15px;
+  right: -15px;
+  transform: rotate(15deg);
 }
 
 .laptop {
-  position: absolute;
-  left: 20px;
-  bottom: 20px;
-  width: 60px;
-  height: 40px;
-  background: #333;
+  width: 80px;
+  height: 50px;
+  background: #34495e;
   border-radius: 8px;
+  position: absolute;
+  bottom: 20px;
+  left: -30px;
   z-index: 1;
 }
 
@@ -155,14 +146,14 @@
   left: 5px;
   right: 5px;
   bottom: 5px;
-  background: #4a90e2;
+  background: #2c3e50;
   border-radius: 4px;
 }
 
 .plant {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
+  bottom: 0;
+  right: -20px;
   z-index: 1;
 }
 
@@ -175,33 +166,22 @@
 
 .leaves {
   position: absolute;
-  bottom: 20px;
+  top: -15px;
   left: 5px;
 }
 
 .leaf {
-  width: 20px;
-  height: 30px;
-  background: #4ecdc4;
+  width: 15px;
+  height: 20px;
+  background: #27ae60;
   border-radius: 0 50% 0 50%;
   position: absolute;
   transform-origin: bottom center;
 }
 
-.leaf-1 {
-  transform: rotate(-30deg);
-  left: 0;
-}
-
-.leaf-2 {
-  transform: rotate(0deg);
-  left: 15px;
-}
-
-.leaf-3 {
-  transform: rotate(30deg);
-  left: 30px;
-}
+.leaf-1 { transform: rotate(-30deg); }
+.leaf-2 { transform: rotate(0deg); left: 8px; }
+.leaf-3 { transform: rotate(30deg); left: 12px; }
 
 .welcome-content {
   position: relative;
@@ -209,75 +189,175 @@
 }
 
 .welcome-title {
-  font-size: 28px;
+  font-size: 2.5rem;
   font-weight: 700;
   color: #2c3e50;
-  margin-bottom: 16px;
-  line-height: 1.2;
+  margin-bottom: 15px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .welcome-description {
-  font-size: 16px;
+  font-size: 1.1rem;
   color: #7f8c8d;
-  margin-bottom: 32px;
-  line-height: 1.5;
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+/* Role Selection Styles */
+.role-selection {
+  margin-top: 20px;
+}
+
+.role-selection h2 {
+  font-size: 1.5rem;
+  color: #2c3e50;
+  margin-bottom: 25px;
+  font-weight: 600;
+}
+
+.role-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.role-btn {
+  display: flex;
+  align-items: center;
+  padding: 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.role-btn:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+}
+
+.role-icon {
+  font-size: 2rem;
+  margin-right: 15px;
+  width: 50px;
+  text-align: center;
+}
+
+.role-text h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 5px 0;
+}
+
+.role-text p {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+  margin: 0;
+}
+
+.candidate-btn:hover {
+  border-color: #3498db;
+  box-shadow: 0 8px 25px rgba(52, 152, 219, 0.15);
+}
+
+.recruiter-btn:hover {
+  border-color: #e74c3c;
+  box-shadow: 0 8px 25px rgba(231, 76, 60, 0.15);
+}
+
+/* Auth Options Styles */
+.auth-options {
+  margin-top: 20px;
+}
+
+.auth-options h2 {
+  font-size: 1.5rem;
+  color: #2c3e50;
+  margin-bottom: 25px;
+  font-weight: 600;
 }
 
 .welcome-buttons {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  margin-top: 20px;
 }
 
 .btn-primary {
-  background: #4a90e2;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  padding: 16px 32px;
+  padding: 15px 30px;
   border-radius: 12px;
-  font-size: 16px;
+  font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
 .btn-primary:hover {
-  background: #357abd;
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(74, 144, 226, 0.4);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
 }
 
 .btn-secondary {
-  background: transparent;
-  color: #4a90e2;
-  border: 2px solid #4a90e2;
-  padding: 16px 32px;
+  background: white;
+  color: #667eea;
+  border: 2px solid #667eea;
+  padding: 15px 30px;
   border-radius: 12px;
-  font-size: 16px;
+  font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
 .btn-secondary:hover {
-  background: #4a90e2;
+  background: #667eea;
   color: white;
   transform: translateY(-2px);
 }
 
+.btn-back {
+  background: #f8f9fa;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+.btn-back:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
 .magnifying-glass {
   position: absolute;
-  bottom: -20px;
-  left: -30px;
-  z-index: 1;
-  opacity: 0.3;
+  top: 20px;
+  right: 20px;
+  z-index: 3;
 }
 
 .glass-circle {
-  width: 60px;
-  height: 60px;
-  border: 4px solid #bdc3c7;
+  width: 30px;
+  height: 30px;
+  border: 3px solid #667eea;
   border-radius: 50%;
   position: relative;
 }
@@ -285,42 +365,63 @@
 .glass-circle::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
   width: 8px;
   height: 8px;
-  background: #bdc3c7;
+  background: #667eea;
   border-radius: 50%;
+  top: 50%;
+  left: 50%;
   transform: translate(-50%, -50%);
 }
 
 .glass-handle {
+  width: 8px;
+  height: 20px;
+  background: #667eea;
   position: absolute;
-  bottom: -10px;
-  right: -15px;
-  width: 30px;
-  height: 4px;
-  background: #bdc3c7;
-  border-radius: 2px;
+  top: 25px;
+  right: -5px;
   transform: rotate(45deg);
+  border-radius: 4px;
 }
 
-/* Responsive Design */
 @media (max-width: 480px) {
   .welcome-card {
     padding: 30px 20px;
-    margin: 20px;
+    max-width: 100%;
   }
   
   .welcome-title {
-    font-size: 24px;
+    font-size: 2rem;
   }
   
   .welcome-description {
-    font-size: 14px;
+    font-size: 1rem;
   }
   
   .illustration-container {
     height: 150px;
+  }
+  
+  .role-buttons {
+    gap: 12px;
+  }
+  
+  .role-btn {
+    padding: 15px;
+  }
+  
+  .role-icon {
+    font-size: 1.5rem;
+    margin-right: 12px;
+    width: 40px;
+  }
+  
+  .role-text h3 {
+    font-size: 1.1rem;
+  }
+  
+  .role-text p {
+    font-size: 0.8rem;
   }
 } 

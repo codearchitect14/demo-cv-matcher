@@ -6,7 +6,7 @@ from services.gdpr_service import gdpr_service
 from schemas.audit import DataDeletionRequest, ConsentUpdateRequest
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-router = APIRouter(prefix="/gdpr", tags=["GDPR Compliance"])
+router = APIRouter(tags=["GDPR Compliance"])
 security = HTTPBearer()
 
 # Simple admin check - in production, use proper JWT authentication

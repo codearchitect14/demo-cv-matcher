@@ -1,457 +1,469 @@
 /* Modern Jobs Dashboard Styles */
-.jobs-dashboard {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0;
+.modern-jobs-dashboard {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* Header Section */
 .dashboard-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 40px 30px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
   border-radius: 20px;
+  padding: 30px;
   margin-bottom: 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-  position: relative;
-  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: slideInDown 0.6s ease-out;
 }
 
-.dashboard-header::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.1)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-  opacity: 0.3;
+.header-content {
+  flex: 1;
 }
 
-.dashboard-header h1 {
+.header-title {
   font-size: 2.5rem;
   font-weight: 800;
+  color: white;
+  margin: 0 0 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.title-icon {
+  font-size: 2rem;
+  animation: bounce 2s infinite;
+}
+
+.header-subtitle {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.1rem;
   margin: 0;
-  position: relative;
-  z-index: 1;
 }
 
 .header-actions {
   display: flex;
   gap: 15px;
-  position: relative;
-  z-index: 1;
 }
 
-.btn {
+.btn-post-job {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+  color: white;
   border: none;
-  padding: 12px 24px;
-  border-radius: 12px;
-  font-size: 0.95rem;
+  padding: 15px 30px;
+  border-radius: 15px;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+}
+
+.btn-post-job:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 15px 40px rgba(255, 107, 107, 0.4);
+}
+
+.btn-icon {
+  font-size: 1.2rem;
+}
+
+/* Main Content */
+.dashboard-content {
+  animation: fadeIn 0.8s ease-out;
+}
+
+/* Filters Section */
+.filters-section {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: 15px;
+  padding: 25px;
+  margin-bottom: 25px;
+  display: flex;
+  gap: 20px;
+  align-items: end;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  flex: 1;
 }
 
-.btn-primary {
-  background: rgba(255, 255, 255, 0.2);
+.filter-group label {
   color: white;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(10px);
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
-.btn-primary:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-}
-
-.btn-secondary {
-  background: #6c757d;
+.filter-input,
+.filter-select {
+  padding: 12px 15px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
   color: white;
+  font-size: 1rem;
+  transition: all 0.3s ease;
 }
 
-.btn-secondary:hover {
-  background: #5a6268;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(108, 117, 125, 0.3);
+.filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.btn-danger {
-  background: #dc3545;
-  color: white;
+.filter-input:focus,
+.filter-select:focus {
+  outline: none;
+  border-color: #ff6b6b;
+  background: rgba(255, 255, 255, 0.15);
 }
 
-.btn-danger:hover {
-  background: #c82333;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(220, 53, 69, 0.3);
-}
-
-.error-message {
+/* Error Banner */
+.error-banner {
   background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
   color: white;
-  padding: 16px 20px;
-  border-radius: 12px;
-  margin-bottom: 25px;
-  border-left: 4px solid #c33;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
-}
-
-.success-message {
-  background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
-  color: white;
-  padding: 16px 20px;
-  border-radius: 12px;
-  margin-bottom: 25px;
-  border-left: 4px solid #28a745;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 4px 15px rgba(81, 207, 102, 0.3);
-}
-
-.dashboard-content {
-  display: grid;
-  gap: 30px;
-}
-
-.jobs-section {
-  background: white;
-  border-radius: 20px;
-  padding: 30px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-}
-
-.jobs-section h2 {
-  color: #2c3e50;
-  margin-bottom: 25px;
-  font-size: 1.8rem;
-  font-weight: 700;
+  padding: 15px 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
   display: flex;
   align-items: center;
   gap: 10px;
+  animation: slideInRight 0.5s ease-out;
+  box-shadow: 0 5px 15px rgba(255, 107, 107, 0.3);
 }
 
-.jobs-section h2::before {
-  content: '💼';
-  font-size: 1.5rem;
+.error-icon {
+  font-size: 1.2rem;
 }
 
-.loading {
+.error-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 5px;
+  transition: background 0.3s ease;
+}
+
+.error-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Jobs Section */
+.jobs-section {
+  animation: fadeInUp 0.8s ease-out;
+}
+
+.section-title {
+  color: white;
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 0 0 25px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Empty State */
+.empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #6c757d;
-  font-size: 1.1rem;
-  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  display: block;
+  animation: float 3s ease-in-out infinite;
+}
+
+.empty-state h3 {
+  color: white;
+  font-size: 1.5rem;
+  margin: 0 0 10px 0;
+}
+
+.empty-state p {
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0 0 25px 0;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 15px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+}
+
+/* Jobs Grid */
 .jobs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 25px;
+  margin-top: 20px;
 }
 
 .job-card {
-  background: white;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
   padding: 25px;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(102, 126, 234, 0.1);
   cursor: pointer;
   transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.job-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  animation: fadeInUp 0.6s ease-out;
 }
 
 .job-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.15);
-  border-color: rgba(102, 126, 234, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.15);
 }
 
-.job-card h3 {
-  color: #2c3e50;
-  margin: 0 0 15px 0;
-  font-size: 1.3rem;
+.card-header {
+  margin-bottom: 20px;
+}
+
+.job-title {
+  color: white;
+  font-size: 1.4rem;
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin: 0 0 8px 0;
 }
 
-.job-card h3::before {
-  content: '🏢';
-  font-size: 1.1rem;
-}
-
-.job-card p {
-  color: #6c757d;
-  margin: 8px 0;
-  font-size: 0.95rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.job-card strong {
-  color: #2c3e50;
-  font-weight: 600;
-  min-width: 80px;
-}
-
-.view-details-section {
-  background: white;
-  border-radius: 20px;
-  padding: 30px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-}
-
-.view-details-section h2 {
-  color: #2c3e50;
-  margin-bottom: 25px;
-  font-size: 1.8rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.view-details-section h2::before {
-  content: '🔍';
-  font-size: 1.5rem;
-}
-
-.view-details-form {
-  display: flex;
-  gap: 15px;
-  align-items: flex-end;
-  margin-bottom: 30px;
-}
-
-.input-group {
-  display: flex;
-  gap: 15px;
-  align-items: flex-end;
-  flex: 1;
-}
-
-.input-group input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 2px solid #e1e8ed;
-  border-radius: 12px;
+.job-company {
+  color: rgba(255, 255, 255, 0.8);
   font-size: 1rem;
-  transition: all 0.3s ease;
-  background: #f8f9fa;
+  font-weight: 500;
 }
 
-.input-group input:focus {
-  outline: none;
-  border-color: #667eea;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+.card-content {
+  margin-bottom: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 15px;
+  padding: 20px;
+  margin-top: 15px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .job-details {
-  background: white;
-  border-radius: 20px;
-  padding: 30px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.job-details h2 {
-  color: #2c3e50;
-  margin-bottom: 30px;
-  font-size: 1.8rem;
-  font-weight: 700;
-  border-bottom: 2px solid #e1e8ed;
-  padding-bottom: 15px;
+.detail-item {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.job-details h2::before {
-  content: '📋';
-  font-size: 1.5rem;
-}
-
-.detail-section {
-  margin-bottom: 30px;
-}
-
-.detail-section h3 {
-  color: #2c3e50;
-  margin-bottom: 20px;
-  font-size: 1.3rem;
+  color: #2c3e50;  /* Dark blue-gray text */
+  font-size: 0.95rem;
   font-weight: 600;
-  border-bottom: 1px solid #e1e8ed;
-  padding-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.detail-section h3::before {
-  content: '📊';
-  font-size: 1.1rem;
+.detail-item:last-child {
+  border-bottom: none;
 }
 
-.detail-section p {
-  color: #6c757d;
-  margin: 12px 0;
-  font-size: 1rem;
-  line-height: 1.6;
+.detail-icon {
+  font-size: 1.2rem;
+  opacity: 1;
+  min-width: 20px;
+}
+
+.card-actions {
   display: flex;
-  align-items: center;
   gap: 10px;
 }
 
-.detail-section strong {
-  color: #2c3e50;
+.btn-edit,
+.btn-delete {
+  flex: 1;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9rem;
   font-weight: 600;
-  min-width: 120px;
-}
-
-.mandatory-skill-item {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  padding: 20px;
-  border-radius: 12px;
-  margin-bottom: 15px;
-  border-left: 4px solid #667eea;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-.mandatory-skill-item p {
-  margin: 8px 0;
-  color: #6c757d;
-  font-size: 0.95rem;
-}
-
-.job-application-item {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  padding: 20px;
-  border-radius: 12px;
-  margin-bottom: 15px;
-  border-left: 4px solid #28a745;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-.job-application-item p {
-  margin: 8px 0;
-  color: #6c757d;
-  font-size: 0.95rem;
-}
-
-.actions {
-  margin-top: 30px;
+  cursor: pointer;
+  transition: all 0.3s ease;
   display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
-/* Modal Styles */
-.modal {
+.btn-edit {
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  color: white;
+}
+
+.btn-delete {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white;
+}
+
+.btn-edit:hover,
+.btn-delete:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Modern Modal */
+.modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(10px);
+  animation: fadeIn 0.3s ease-out;
 }
 
-.modal-content {
+.modern-modal {
   background: white;
-  padding: 40px;
-  border-radius: 20px;
-  max-width: 600px;
+  border-radius: 25px;
+  padding: 0;
+  max-width: 800px;
   width: 90%;
-  max-height: 80vh;
+  max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(102, 126, 234, 0.1);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
+  animation: slideInUp 0.4s ease-out;
 }
 
-.modal h3 {
-  color: #2c3e50;
-  margin-bottom: 30px;
+.modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 25px 30px;
+  border-radius: 25px 25px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
   font-size: 1.8rem;
   font-weight: 700;
-  text-align: center;
+  margin: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 15px;
 }
 
-.modal h3::before {
-  content: '➕';
+.modal-close {
+  background: none;
+  border: none;
+  color: white;
   font-size: 1.5rem;
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 50%;
+  transition: background 0.3s ease;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Modern Form */
+.modern-form {
+  padding: 30px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 25px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  color: #2c3e50;
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-label {
   font-weight: 600;
+  color: #333;
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
-.form-group input,
-.form-group textarea {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e1e8ed;
+.required {
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
+.form-input,
+.form-textarea {
+  padding: 15px;
+  border: 2px solid #e9ecef;
   border-radius: 12px;
   font-size: 1rem;
   transition: all 0.3s ease;
   background: #f8f9fa;
-  box-sizing: border-box;
 }
 
-.form-group input:focus,
-.form-group textarea:focus {
+.form-input:focus,
+.form-textarea:focus {
   outline: none;
   border-color: #667eea;
   background: white;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.form-group textarea {
+.form-textarea {
   resize: vertical;
-  min-height: 100px;
+  min-height: 120px;
 }
 
 .form-actions {
@@ -461,47 +473,694 @@
   margin-top: 30px;
 }
 
-.form-actions button {
-  padding: 12px 24px;
+.btn-submit,
+.btn-cancel {
+  padding: 15px 30px;
+  border: none;
   border-radius: 12px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-submit {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.btn-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+}
+
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-cancel {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-cancel:hover {
+  background: #5a6268;
+  transform: translateY(-2px);
+}
+
+/* Success Toast */
+.success-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  padding: 15px 20px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 30px rgba(40, 167, 69, 0.3);
+  z-index: 1001;
+  animation: slideInRight 0.5s ease-out;
+}
+
+.success-icon {
+  font-size: 1.2rem;
+}
+
+.success-text {
+  font-weight: 600;
+}
+
+/* Form Sections */
+.form-section {
+  margin-bottom: 30px;
+  padding: 25px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 15px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.section-title {
+  color: #2c3e50;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0 0 20px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #3498db;
+}
+
+.section-description {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+/* Form Groups */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 25px;  /* Increased from 20px */
+}
+
+.form-label {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 12px;  /* Increased from 8px for better separation */
+  display: block;
+  line-height: 1.2;
+}
+
+.required {
+  color: #e74c3c;
+  font-weight: bold;
+  margin-left: 2px;  /* Add space between label and asterisk */
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 15px 18px;  /* Increased padding for better spacing */
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  background: white;
+  color: #2c3e50;
+  margin-top: 0;  /* Remove margin-top to prevent overlap */
+  line-height: 1.4;  /* Better line height for text */
+  position: relative;  /* Ensure input is positioned below label */
+  z-index: 0;  /* Ensure input appears below label */
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+/* Form Grid - Better spacing */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 25px;  /* Increased from 20px */
+  margin-bottom: 25px;  /* Increased from 20px */
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Skills Input Group */
+.skills-input-group {
+  margin-bottom: 20px;
+}
+
+.skill-input-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto;
+  gap: 15px;
+  align-items: end;
+}
+
+.btn-add-skill {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  height: 45px;
+}
+
+.btn-add-skill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+}
+
+/* Skills List */
+.skills-list {
+  background: #f8f9fa;
+  border-radius: 10px;
+  padding: 20px;
+  margin-top: 15px;
+  border: 1px solid #e9ecef;
+}
+
+.skills-list h4 {
+  color: #2c3e50;
+  margin: 0 0 15px 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.skill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: white;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.skill-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.skill-name {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.skill-experience {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  background: #ecf0f1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.btn-remove-skill {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.btn-remove-skill:hover {
+  background: #c0392b;
+  transform: scale(1.05);
+}
+
+/* Modal Improvements */
+.modern-modal {
+  background: white;
+  border-radius: 20px;
+  padding: 0;
+  max-width: 800px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  color: white;
+  padding: 25px 30px;
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  color: white;
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modern-form {
+  padding: 30px;
+  background: white;
+}
+
+/* Animations */
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-    gap: 20px;
-    text-align: center;
+  .modern-jobs-dashboard {
+    padding: 15px;
   }
   
-  .dashboard-header h1 {
+  .dashboard-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 20px;
+  }
+  
+  .header-title {
     font-size: 2rem;
+  }
+  
+  .filters-section {
+    flex-direction: column;
+    gap: 15px;
   }
   
   .jobs-grid {
     grid-template-columns: 1fr;
   }
   
-  .view-details-form {
-    flex-direction: column;
-    align-items: stretch;
+  .form-grid {
+    grid-template-columns: 1fr;
   }
   
-  .input-group {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .actions {
+  .form-actions {
     flex-direction: column;
   }
   
-  .modal-content {
-    padding: 30px 20px;
+  .modern-modal {
+    width: 95%;
     margin: 20px;
   }
+
+  .skill-input-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .modern-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+  
+  .modern-form {
+    padding: 20px;
+  }
+} 
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+  color: #bdc3c7;  /* Lighter color for placeholders */
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.form-input:focus::placeholder,
+.form-textarea:focus::placeholder {
+  opacity: 0.5;  /* Even lighter when focused */
+}
+
+/* Better spacing for form sections */
+.form-section {
+  margin-bottom: 35px;
+  padding: 30px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 15px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Improved modal padding */
+.modern-form {
+  padding: 35px;  /* Increased padding */
+  background: white;
+}
+
+/* Better responsive spacing */
+@media (max-width: 768px) {
+  .form-group {
+    margin-bottom: 20px;
+  }
+  
+  .form-grid {
+    gap: 20px;
+  }
+  
+  .modern-form {
+    padding: 25px;
+  }
+  
+  .form-section {
+    padding: 25px;
+    margin-bottom: 25px;
+  }
+} 
+
+/* Form Groups - Ensure labels are outside input fields */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 25px;
+  position: relative;  /* Ensure proper positioning context */
+}
+
+.form-label {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+  display: block;
+  line-height: 1.2;
+  position: static;  /* Ensure label is in normal flow */
+  z-index: 1;  /* Ensure label appears above input */
+  background: transparent;  /* Ensure no background */
+  padding: 0;  /* Remove any padding */
+  border: none;  /* Remove any borders */
+}
+
+.required {
+  color: #e74c3c;
+  font-weight: bold;
+  margin-left: 2px;
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 15px 18px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  background: white;
+  color: #2c3e50;
+  margin-top: 8px;  /* Ensure space between label and input */
+  line-height: 1.4;
+  position: static;  /* Ensure input is in normal flow */
+  z-index: 0;  /* Ensure input appears below label */
+  box-sizing: border-box;  /* Ensure padding doesn't affect width */
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+/* Ensure proper spacing between label and input */
+.form-group .form-label + .form-input,
+.form-group .form-label + .form-textarea {
+  margin-top: 8px;  /* Add specific spacing between label and input */
+} 
+
+/* Force labels to be outside input fields */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 25px;
+  position: relative;
+}
+
+.form-label {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+  display: block;
+  line-height: 1.2;
+  position: static;  /* Ensure label is in normal flow */
+  z-index: 1;
+  background: transparent;  /* Ensure no background */
+  padding: 0;  /* Remove any padding */
+  border: none;  /* Remove any borders */
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 15px 18px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  background: white;
+  color: #2c3e50;
+  margin-top: 8px;  /* Ensure space between label and input */
+  line-height: 1.4;
+  position: static;  /* Ensure input is in normal flow */
+  z-index: 0;  /* Ensure input appears below label */
+  box-sizing: border-box;  /* Ensure padding doesn't affect width */
+}
+
+/* Remove any absolute positioning that might cause overlap */
+.form-group * {
+  position: static;
+}
+
+.form-group .form-label {
+  position: static !important;
+}
+
+.form-group .form-input,
+.form-group .form-textarea {
+  position: static !important;
+} 
+
+/* Debug and fix label positioning */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 25px;
+  border: 1px solid transparent;  /* Debug border */
+}
+
+.form-label {
+  color: #2c3e50 !important;
+  font-weight: 600 !important;
+  font-size: 0.95rem !important;
+  margin-bottom: 12px !important;
+  display: block !important;
+  line-height: 1.2 !important;
+  position: static !important;
+  z-index: 1 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+}
+
+.form-input,
+.form-textarea {
+  width: 100% !important;
+  padding: 15px 18px !important;
+  border: 2px solid #e0e0e0 !important;
+  border-radius: 8px !important;
+  font-size: 0.95rem !important;
+  transition: all 0.3s ease;
+  background: white !important;
+  color: #2c3e50 !important;
+  margin-top: 8px !important;
+  line-height: 1.4 !important;
+  position: static !important;
+  z-index: 0 !important;
+  box-sizing: border-box !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+}
+
+/* Ensure no floating or absolute positioning */
+.form-group * {
+  position: static !important;
+  float: none !important;
+} 
+
+/* Specific fixes for JobsDashboard form */
+.modern-form .form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 25px !important;
+  position: relative !important;
+}
+
+.modern-form .form-label {
+  color: #2c3e50 !important;
+  font-weight: 600 !important;
+  font-size: 0.95rem !important;
+  margin-bottom: 12px !important;
+  display: block !important;
+  line-height: 1.2 !important;
+  position: static !important;
+  z-index: 1 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  float: none !important;
+}
+
+.modern-form .form-input,
+.modern-form .form-textarea {
+  width: 100% !important;
+  padding: 15px 18px !important;
+  border: 2px solid #e0e0e0 !important;
+  border-radius: 8px !important;
+  font-size: 0.95rem !important;
+  transition: all 0.3s ease;
+  background: white !important;
+  color: #2c3e50 !important;
+  margin-top: 8px !important;
+  line-height: 1.4 !important;
+  position: static !important;
+  z-index: 0 !important;
+  box-sizing: border-box !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  float: none !important;
+}
+
+/* Override any conflicting styles */
+.modern-form * {
+  position: static !important;
+  float: none !important;
 } 

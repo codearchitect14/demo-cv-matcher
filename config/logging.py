@@ -112,12 +112,18 @@ def get_logger(name: str) -> logging.Logger:
     """Get a logger with the specified name"""
     return logging.getLogger(name)
 
-def log_api_request(request: dict, response: dict, duration: float):
+def log_api_request(request, response, duration: float):
     """Log API request/response"""
     logger = get_logger("api")
+    
+    # Extract information from FastAPI objects
+    method = getattr(request, 'method', 'UNKNOWN')
+    path = getattr(request, 'url', 'UNKNOWN')
+    status_code = getattr(response, 'status_code', 'UNKNOWN')
+    
     logger.info(
-        f"API Request: {request.get('method', 'UNKNOWN')} {request.get('path', 'UNKNOWN')} "
-        f"- Status: {response.get('status_code', 'UNKNOWN')} "
+        f"API Request: {method} {path} "
+        f"- Status: {status_code} "
         f"- Duration: {duration:.3f}s"
     )
 

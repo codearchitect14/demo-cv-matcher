@@ -54,7 +54,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             {...register('name', { required: 'Name is required' })}
             placeholder="Enter your full name"
           />
-          {errors.name && <span style={{color: 'red'}}>{errors.name.message}</span>}
+          {errors.name && <span style={{color: 'red'}}>{typeof errors.name.message === 'string' ? errors.name.message : JSON.stringify(errors.name.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -70,7 +70,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             })}
             placeholder="Enter your email address"
           />
-          {errors.email && <span style={{color: 'red'}}>{errors.email.message}</span>}
+          {errors.email && <span style={{color: 'red'}}>{typeof errors.email.message === 'string' ? errors.email.message : JSON.stringify(errors.email.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -80,7 +80,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             {...register('location', { required: 'Location is required' })}
             placeholder="Enter your location"
           />
-          {errors.location && <span style={{color: 'red'}}>{errors.location.message}</span>}
+          {errors.location && <span style={{color: 'red'}}>{typeof errors.location.message === 'string' ? errors.location.message : JSON.stringify(errors.location.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -96,7 +96,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             <option value="Design">Design</option>
             <option value="Product Management">Product Management</option>
           </select>
-          {errors.domain && <span style={{color: 'red'}}>{errors.domain.message}</span>}
+          {errors.domain && <span style={{color: 'red'}}>{typeof errors.domain.message === 'string' ? errors.domain.message : JSON.stringify(errors.domain.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -109,7 +109,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             })}
             placeholder="Enter minimum expected salary"
           />
-          {errors.expected_salary_min && <span style={{color: 'red'}}>{errors.expected_salary_min.message}</span>}
+          {errors.expected_salary_min && <span style={{color: 'red'}}>{typeof errors.expected_salary_min.message === 'string' ? errors.expected_salary_min.message : JSON.stringify(errors.expected_salary_min.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -122,7 +122,7 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
             })}
             placeholder="Enter maximum expected salary"
           />
-          {errors.expected_salary_max && <span style={{color: 'red'}}>{errors.expected_salary_max.message}</span>}
+          {errors.expected_salary_max && <span style={{color: 'red'}}>{typeof errors.expected_salary_max.message === 'string' ? errors.expected_salary_max.message : JSON.stringify(errors.expected_salary_max.message)}</span>}
         </div>
 
         <div className="form-group">

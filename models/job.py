@@ -15,11 +15,14 @@ class Job(BaseModel):
     domain = Column(String(100), nullable=False, index=True)
     total_years_required = Column(Integer, nullable=False, default=0)
     job_description = Column(Text, nullable=False)
+    # recruiter_id = Column(Integer, ForeignKey("recruiters.id", ondelete="CASCADE"), nullable=True, index=True)
     
     # Relationships
     mandatory_skills = relationship("JobMandatorySkill", back_populates="job", cascade="all, delete-orphan")
+    job_skills = relationship("JobSkill", back_populates="job", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="job")
     interactions = relationship("InteractionLog", back_populates="job")
+    # recruiter = relationship("Recruiter", back_populates="jobs")
     
     # Composite indexes for common query patterns
     __table_args__ = (
@@ -27,6 +30,7 @@ class Job(BaseModel):
         Index('idx_job_salary_range', 'salary_min', 'salary_max'),
         Index('idx_job_domain_years', 'domain', 'total_years_required'),
         Index('idx_job_company_location', 'company', 'location'),
+        # Index('idx_job_recruiter', 'recruiter_id'),  # Commented out since recruiter_id is commented
     )
 
 

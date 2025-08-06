@@ -1,9 +1,14 @@
 from logging.config import fileConfig
+import os
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+
+# Load environment variables
+load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -20,6 +25,23 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 from config.database import Base  # or wherever your Base is defined
 target_metadata = Base.metadata
+
+# Get database URL from environment or use the one from alembic.ini
+def get_database_url():
+    """Get database URL from environment or config"""
+    # Try to get from environment first
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        # Convert asyncpg URL to psycopg2 URL for Alembic
+        if database_url.startswith("postgresql+asyncpg://"):
+            database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
+        elif database_url.startswith("postgresql://"):
+            # Already in correct format for psycopg2
+            pass
+        return database_url
+    
+    # Fall back to alembic.ini configuration
+    return config.get_main_option("sqlalchemy.url")
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -39,7 +61,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -58,8 +80,18 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # Get the database URL
+    database_url = get_database_url()
+    
+    # Create engine configuration manually to avoid interpolation issues
+    engine_config = {
+        'sqlalchemy.url': database_url,
+        'sqlalchemy.echo': 'false',
+        'sqlalchemy.pool_pre_ping': 'true',
+    }
+    
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        engine_config,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

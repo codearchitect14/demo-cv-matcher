@@ -10,9 +10,9 @@ from models.candidate import Candidate, CandidateExperience
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
-from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateListResponse, CandidateExperienceCreate, CandidateExperienceUpdate
+from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateExperienceCreate, CandidateExperienceUpdate
 
-router = APIRouter(prefix="/candidates", tags=["Candidates"])
+router = APIRouter(tags=["Candidates"])
 
 @router.post("/", response_model=CandidateResponse)
 async def create_candidate(
@@ -58,7 +58,7 @@ async def create_candidate(
                 detail="Failed to create candidate. Please try again later."
             )
 
-@router.get("/", response_model=List[CandidateListResponse])
+@router.get("/", response_model=List[CandidateResponse])
 async def get_all_candidates(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),

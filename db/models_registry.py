@@ -6,21 +6,26 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models import (
-    Candidate,
-    CandidateExperience,
-    Job, 
-    JobMandatorySkill,
-    Application,
-    InteractionLog
-)
+from models.candidate import Candidate
+from models.job import Job, JobMandatorySkill
+from models.application import Application
+from models.interaction import InteractionLog
+from models.recruiter import Recruiter
+from models.audit import AuditLog
+from models.skill import Skill
+from models.job_skill import JobSkill
+from models.candidate_skill import CandidateSkill
 
-# Export for easy access
+# Register all models
 ALL_MODELS = [
     Candidate,
-    CandidateExperience,
     Job,
-    JobMandatorySkill, 
+    JobMandatorySkill,
     Application,
-    InteractionLog
+    InteractionLog,
+    Recruiter,
+    AuditLog,
+    Skill,
+    JobSkill,
+    CandidateSkill,
 ]

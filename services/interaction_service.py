@@ -9,7 +9,7 @@ from models.interaction import InteractionLog
 from models.application import Application
 from models.candidate import Candidate
 from models.job import Job
-from db.crud.interaction import interaction_log as interaction_crud
+from db.crud.interaction import interaction as interaction_crud
 from db.crud.application import application as application_crud
 
 logger = logging.getLogger(__name__)

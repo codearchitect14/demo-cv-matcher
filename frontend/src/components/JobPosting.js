@@ -79,7 +79,7 @@ const JobPosting = ({ onJobPosted }) => {
             {...register('title', { required: 'Job title is required' })}
             placeholder="Enter job title"
           />
-          {errors.title && <span style={{color: 'red'}}>{errors.title.message}</span>}
+          {errors.title && <span style={{color: 'red'}}>{typeof errors.title.message === 'string' ? errors.title.message : JSON.stringify(errors.title.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -89,7 +89,7 @@ const JobPosting = ({ onJobPosted }) => {
             {...register('company', { required: 'Company name is required' })}
             placeholder="Enter company name"
           />
-          {errors.company && <span style={{color: 'red'}}>{errors.company.message}</span>}
+          {errors.company && <span style={{color: 'red'}}>{typeof errors.company.message === 'string' ? errors.company.message : JSON.stringify(errors.company.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -99,7 +99,7 @@ const JobPosting = ({ onJobPosted }) => {
             {...register('location', { required: 'Location is required' })}
             placeholder="Enter job location"
           />
-          {errors.location && <span style={{color: 'red'}}>{errors.location.message}</span>}
+          {errors.location && <span style={{color: 'red'}}>{typeof errors.location.message === 'string' ? errors.location.message : JSON.stringify(errors.location.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -115,7 +115,7 @@ const JobPosting = ({ onJobPosted }) => {
             <option value="Design">Design</option>
             <option value="Product Management">Product Management</option>
           </select>
-          {errors.domain && <span style={{color: 'red'}}>{errors.domain.message}</span>}
+          {errors.domain && <span style={{color: 'red'}}>{typeof errors.domain.message === 'string' ? errors.domain.message : JSON.stringify(errors.domain.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -128,7 +128,7 @@ const JobPosting = ({ onJobPosted }) => {
             })}
             placeholder="Enter minimum salary"
           />
-          {errors.salary_min && <span style={{color: 'red'}}>{errors.salary_min.message}</span>}
+          {errors.salary_min && <span style={{color: 'red'}}>{typeof errors.salary_min.message === 'string' ? errors.salary_min.message : JSON.stringify(errors.salary_min.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -141,7 +141,7 @@ const JobPosting = ({ onJobPosted }) => {
             })}
             placeholder="Enter maximum salary"
           />
-          {errors.salary_max && <span style={{color: 'red'}}>{errors.salary_max.message}</span>}
+          {errors.salary_max && <span style={{color: 'red'}}>{typeof errors.salary_max.message === 'string' ? errors.salary_max.message : JSON.stringify(errors.salary_max.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -154,7 +154,7 @@ const JobPosting = ({ onJobPosted }) => {
             })}
             placeholder="Enter total years of experience required"
           />
-          {errors.total_years_required && <span style={{color: 'red'}}>{errors.total_years_required.message}</span>}
+          {errors.total_years_required && <span style={{color: 'red'}}>{typeof errors.total_years_required.message === 'string' ? errors.total_years_required.message : JSON.stringify(errors.total_years_required.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -164,7 +164,7 @@ const JobPosting = ({ onJobPosted }) => {
             placeholder="Enter detailed job description"
             rows="4"
           />
-          {errors.description && <span style={{color: 'red'}}>{errors.description.message}</span>}
+          {errors.description && <span style={{color: 'red'}}>{typeof errors.description.message === 'string' ? errors.description.message : JSON.stringify(errors.description.message)}</span>}
         </div>
 
         <div className="form-group">
