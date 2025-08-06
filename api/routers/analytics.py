@@ -11,7 +11,7 @@ from db.crud.job import job as job_crud
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.application import application as application_crud
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(tags=["Analytics"])
 
 class JobAnalytics(BaseModel):
     job_id: int

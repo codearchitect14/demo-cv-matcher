@@ -140,9 +140,9 @@ class CandidateService:
         from db.crud.application import application as app_crud
         applications = await app_crud.get_by_candidate(db, candidate_id)
         
-        # Get interaction stats
-        from db.crud.interaction import interaction_log
-        interactions = await interaction_log.get_by_candidate(db, candidate_id)
+        # Get candidate interactions
+        from db.crud.interaction import interaction
+        interactions = await interaction.get_by_candidate(db, candidate_id)
 
         return {
             "total_experiences": len(candidate.experiences),

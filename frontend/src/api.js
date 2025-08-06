@@ -200,6 +200,56 @@ export const apiService = {
     return response.data;
   },
 
+  // New Advanced Recommendation APIs
+  getCandidateJobRecommendations: async (data) => {
+    const response = await api.post('/recommendations/candidate/jobs', data);
+    return response.data;
+  },
+
+  getRecruiterCandidateRecommendations: async (data) => {
+    const response = await api.post('/recommendations/recruiter/candidates', data);
+    return response.data;
+  },
+
+  uploadCvAndGetRecommendations: async (formData) => {
+    const response = await api.post('/recommendations/cv/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  submitFeedback: async (data) => {
+    const response = await api.post('/recommendations/feedback', data);
+    return response.data;
+  },
+
+  getFeedbackInsights: async (params = {}) => {
+    const response = await api.get('/recommendations/feedback/insights', { params });
+    return response.data;
+  },
+
+  getModelPerformance: async () => {
+    const response = await api.get('/recommendations/model/performance');
+    return response.data;
+  },
+
+  predictFeedbackProbability: async (data) => {
+    const response = await api.post('/recommendations/predict/feedback', data);
+    return response.data;
+  },
+
+  quickCandidateMatch: async (data) => {
+    const response = await api.post('/recommendations/candidate/quick-match', data);
+    return response.data;
+  },
+
+  quickRecruiterMatch: async (data) => {
+    const response = await api.post('/recommendations/recruiter/quick-match', data);
+    return response.data;
+  },
+
   searchJobs: async (searchData) => {
     const response = await api.post('/search/jobs', searchData);
     return response.data;
@@ -299,6 +349,218 @@ export const apiService = {
   getConsentStatus: async (candidateId) => {
     const response = await api.get(`/gdpr/consent_status/${candidateId}`);
     return response.data;
+  },
+
+  // Enhanced Recommendation APIs
+  async getEnhancedCandidateJobRecommendations(request) {
+    try {
+      const response = await fetch(`${this.baseURL}/recommendations/candidate/jobs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: JSON.stringify(request)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting enhanced candidate recommendations:', error);
+      throw error;
+    }
+  },
+
+  async getEnhancedRecruiterCandidateRecommendations(request) {
+    try {
+      const response = await fetch(`${this.baseURL}/recommendations/recruiter/candidates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: JSON.stringify(request)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting enhanced recruiter recommendations:', error);
+      throw error;
+    }
+  },
+
+  async uploadCvAndGetEnhancedRecommendations(candidateId, cvFile) {
+    try {
+      const formData = new FormData();
+      formData.append('cv_file', cvFile);
+      formData.append('candidate_id', candidateId);
+
+      const response = await fetch(`${this.baseURL}/recommendations/cv/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error uploading CV and getting recommendations:', error);
+      throw error;
+    }
+  },
+
+  async createJobWithSkillRequirements(jobData, skillRequirements) {
+    try {
+      const response = await fetch(`${this.baseURL}/recommendations/job/create-with-skills`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: JSON.stringify({
+          job_data: jobData,
+          skill_requirements: skillRequirements
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error creating job with skill requirements:', error);
+      throw error;
+    }
+  },
+
+  // Enhanced Skill Matching APIs
+  async getSkillMatches(query, threshold = 0.3) {
+    try {
+      const response = await fetch(`${this.baseURL}/skills/matches?query=${encodeURIComponent(query)}&threshold=${threshold}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting skill matches:', error);
+      throw error;
+    }
+  },
+
+  async validateSkillRequirements(jobSkills, candidateSkills) {
+    try {
+      const response = await fetch(`${this.baseURL}/skills/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: JSON.stringify({
+          job_skills: jobSkills,
+          candidate_skills: candidateSkills
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error validating skill requirements:', error);
+      throw error;
+    }
+  },
+
+  // Enhanced Feedback APIs
+  async submitEnhancedFeedback(feedbackData) {
+    try {
+      const response = await fetch(`${this.baseURL}/recommendations/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        },
+        body: JSON.stringify(feedbackData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error submitting enhanced feedback:', error);
+      throw error;
+    }
+  },
+
+  async getEnhancedFeedbackInsights(userId = null, userType = null, days = 30) {
+    try {
+      const params = new URLSearchParams();
+      if (userId) params.append('user_id', userId);
+      if (userType) params.append('user_type', userType);
+      params.append('days', days);
+
+      const response = await fetch(`${this.baseURL}/recommendations/feedback/insights?${params}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting enhanced feedback insights:', error);
+      throw error;
+    }
+  },
+
+  async getEnhancedModelPerformance() {
+    try {
+      const response = await fetch(`${this.baseURL}/recommendations/model/performance`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken()}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting enhanced model performance:', error);
+      throw error;
+    }
   }
 };
 

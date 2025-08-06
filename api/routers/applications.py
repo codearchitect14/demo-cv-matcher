@@ -11,7 +11,7 @@ from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
 from schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 
-router = APIRouter(prefix="/applications", tags=["Applications"])
+router = APIRouter(tags=["Applications"])
 
 @router.post("/", response_model=ApplicationResponse)
 async def apply_for_job(

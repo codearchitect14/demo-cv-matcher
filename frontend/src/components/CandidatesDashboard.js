@@ -263,7 +263,7 @@ const CandidatesDashboard = () => {
 
       {error && (
         <div className="error-message">
-          {error}
+          <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
           <button onClick={() => setError('')}>×</button>
         </div>
       )}

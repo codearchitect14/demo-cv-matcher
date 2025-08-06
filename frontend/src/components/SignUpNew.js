@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './SignUpNew.css';
 
 const SignUpNew = ({ onSwitchToSignIn }) => {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '',
@@ -260,7 +262,8 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
 
         {error && (
           <div className="error-message">
-            {error}
+            <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
+            <button onClick={() => setError('')}>×</button>
           </div>
         )}
 
@@ -319,7 +322,7 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
             <button 
               type="button" 
               className="footer-link" 
-              onClick={onSwitchToSignIn}
+              onClick={() => navigate('/login-new')}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
               Sign in

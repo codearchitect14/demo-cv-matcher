@@ -191,7 +191,7 @@ const GDPRManagement = () => {
                   placeholder="Enter reason for data deletion"
                   rows="3"
                 />
-                {errors.reason && <span style={{color: 'red'}}>{errors.reason.message}</span>}
+                {errors.reason && <span style={{color: 'red'}}>{typeof errors.reason.message === 'string' ? errors.reason.message : JSON.stringify(errors.reason.message)}</span>}
               </div>
 
               <button 

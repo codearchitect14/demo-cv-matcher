@@ -5,6 +5,15 @@ from .candidate import (
     CandidateExperienceCreate,
     CandidateExperienceResponse
 )
+from .recruiter import (
+    RecruiterCreate,
+    RecruiterUpdate,
+    RecruiterResponse,
+    RecruiterLogin,
+    RecruiterProfile,
+    CompanySize,
+    Domain
+)
 from .job import (
     JobCreate,
     JobUpdate,
@@ -34,6 +43,13 @@ __all__ = [
     "CandidateResponse",
     "CandidateExperienceCreate",
     "CandidateExperienceResponse",
+    "RecruiterCreate",
+    "RecruiterUpdate",
+    "RecruiterResponse",
+    "RecruiterLogin",
+    "RecruiterProfile",
+    "CompanySize",
+    "Domain",
     "JobCreate",
     "JobUpdate",
     "JobResponse", 

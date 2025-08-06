@@ -22,11 +22,29 @@ const JobsDashboard = () => {
     salary_max: '',
     domain: '',
     total_years_required: '',
-    job_description: ''
+    job_description: '',
+    skills: []  // Array for skill-specific experience
   });
   const [skillsData, setSkillsData] = useState({
     skill: '',
-    description: ''
+    min_experience: ''
+  });
+
+  // Debug: Log when jobs state changes
+  useEffect(() => {
+    console.log('🔄 Jobs state changed:', jobs);
+    console.log('📊 Jobs length:', jobs.length);
+    if (jobs.length > 0) {
+      console.log('🔍 First job in state:', jobs[0]);
+    }
+  }, [jobs]);
+
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log('🎨 JobsDashboard component rendered');
+    console.log('📋 Current jobs state:', jobs);
+    console.log('⏳ Loading state:', loading);
+    console.log('❌ Error state:', error);
   });
 
   useEffect(() => {
@@ -36,98 +54,78 @@ const JobsDashboard = () => {
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
+      console.log('Fetching jobs...');
+      
       const queryParams = new URLSearchParams({
         skip: filters.skip,
         limit: filters.limit,
         ...(filters.location && { location: filters.location })
       });
       
-      const response = await fetch(`http://localhost:8000/api/v1/jobs/?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const url = `http://localhost:8000/api/v1/jobs/?${queryParams}`;
+      console.log('Fetching from URL:', url);
+      
+      const response = await fetch(url);
+      
+      console.log('Response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Jobs data received:', data);
+        console.log('Number of jobs:', data.length);
         setJobs(data);
       } else {
         const errorData = await response.json();
+        console.error('Error response:', errorData);
         const errorMessage = typeof errorData.detail === 'string' 
           ? errorData.detail 
           : JSON.stringify(errorData.detail);
         setError(`Failed to fetch jobs: ${errorMessage}`);
       }
     } catch (err) {
-      setError('Failed to fetch jobs');
+      console.error('Fetch jobs error:', err);
+      setError('Failed to fetch jobs: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchJobDetails = async (jobId) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/jobs/${jobId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedJob(data);
-        fetchJobApplications(jobId);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch job details: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to fetch job details');
-    }
-  };
-
-  const fetchJobApplications = async (jobId) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/job/${jobId}/applications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setApplications(data);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch job applications: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to fetch job applications');
-    }
-  };
-
   const handleCreateJob = async (e) => {
     e.preventDefault();
+    console.log('Form submitted with data:', formData);
+    
+    if (!formData.title || !formData.location || !formData.domain || !formData.job_description) {
+      setError('Please fill in all required fields');
+      return;
+    }
+    
     setLoading(true);
+    setError('');
+    
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('http://localhost:8000/api/v1/jobs/', {
+      const jobData = {
+        ...formData,
+        salary_min: formData.salary_min ? parseInt(formData.salary_min) : null,
+        salary_max: formData.salary_max ? parseInt(formData.salary_max) : null,
+        total_years_required: formData.total_years_required ? parseInt(formData.total_years_required) : 0,
+        mandatory_skills: formData.skills  // Include skills data
+      };
+      
+      console.log('Sending job data:', jobData);
+      
+      const response = await fetch('http://localhost:8000/api/v1/jobs/public', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(jobData)
       });
+      
       if (response.ok) {
-        alert('Job created successfully!');
-        setShowForm(false);
+        const result = await response.json();
+        console.log('Job created successfully:', result);
+        
+        // Reset form
         setFormData({
           title: '',
           company: '',
@@ -136,48 +134,28 @@ const JobsDashboard = () => {
           salary_max: '',
           domain: '',
           total_years_required: '',
-          job_description: ''
+          job_description: '',
+          skills: []
         });
-        fetchJobs();
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to create job: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Network error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateJob = async (jobId) => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/jobs/${jobId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-      if (response.ok) {
-        alert('Job updated successfully!');
         setSelectedJob(null);
+        setShowForm(false);
+        
+        // Refresh jobs list
         fetchJobs();
+        
+        // Show success message
+        alert('Job posted successfully! 🎉');
       } else {
         const errorData = await response.json();
+        console.error('Error response:', errorData);
         const errorMessage = typeof errorData.detail === 'string' 
           ? errorData.detail 
           : JSON.stringify(errorData.detail);
-        setError(`Failed to update job: ${errorMessage}`);
+        setError(`Failed to post job: ${errorMessage}`);
       }
     } catch (err) {
-      setError('Network error');
+      console.error('Post job error:', err);
+      setError('Failed to post job: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -196,7 +174,19 @@ const JobsDashboard = () => {
         }
       });
       if (response.ok) {
-        alert('Job deleted successfully!');
+        // Show success animation
+        const successMessage = document.createElement('div');
+        successMessage.className = 'success-toast';
+        successMessage.innerHTML = `
+          <div class="success-icon">🗑️</div>
+          <div class="success-text">Job deleted successfully!</div>
+        `;
+        document.body.appendChild(successMessage);
+        
+        setTimeout(() => {
+          document.body.removeChild(successMessage);
+        }, 3000);
+        
         setSelectedJob(null);
         fetchJobs();
       } else {
@@ -213,258 +203,396 @@ const JobsDashboard = () => {
     }
   };
 
-  const handleAddMandatorySkill = async (jobId) => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/jobs/${jobId}/mandatory-skills`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(skillsData)
+  const addSkill = () => {
+    if (skillsData.skill && skillsData.min_experience) {
+      setFormData({
+        ...formData,
+        skills: [...formData.skills, {
+          skill: skillsData.skill,
+          min_experience: parseInt(skillsData.min_experience)
+        }]
       });
-      if (response.ok) {
-        alert('Mandatory skill added successfully!');
-        setShowSkillsForm(false);
-        setSkillsData({ skill: '', description: '' });
-        fetchJobDetails(jobId);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to add mandatory skill: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Network error');
-    } finally {
-      setLoading(false);
+      setSkillsData({ skill: '', min_experience: '' });
     }
   };
 
+  const removeSkill = (index) => {
+    const newSkills = formData.skills.filter((_, i) => i !== index);
+    setFormData({ ...formData, skills: newSkills });
+  };
+
   return (
-    <div className="jobs-dashboard">
+    <div className="modern-jobs-dashboard">
+      {/* Header Section */}
       <div className="dashboard-header">
-        <h1>Jobs Dashboard</h1>
-        <button 
-          className="btn-primary"
-          onClick={() => setShowForm(true)}
-        >
-          Post New Job
-        </button>
-      </div>
-
-      {error && (
-        <div className="error-message">
-          {error}
+        <div className="header-content">
+          <h1 className="header-title">
+            <span className="title-icon">💼</span>
+            Jobs Dashboard
+          </h1>
+          <p className="header-subtitle">Manage and track your job postings</p>
         </div>
-      )}
-
-      <div className="filters-section">
-        <div className="filter-group">
-          <label>Location:</label>
-          <input
-            type="text"
-            placeholder="Filter by location"
-            value={filters.location}
-            onChange={(e) => setFilters({...filters, location: e.target.value})}
-          />
-        </div>
-        <div className="filter-group">
-          <label>Limit:</label>
-          <select
-            value={filters.limit}
-            onChange={(e) => setFilters({...filters, limit: parseInt(e.target.value)})}
+        <div className="header-actions">
+          <button 
+            className="btn-post-job"
+            onClick={() => setShowForm(true)}
           >
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-          </select>
+            <span className="btn-icon">➕</span>
+            Post New Job
+          </button>
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="dashboard-content">
-        <div className="jobs-list">
-          <h2>Jobs ({jobs.length})</h2>
-          {loading ? (
-            <div className="loading">Loading jobs...</div>
+        {/* Filters Section */}
+        <div className="filters-section">
+          <div className="filter-group">
+            <label>Location</label>
+            <input
+              type="text"
+              placeholder="Filter by location"
+              value={filters.location}
+              onChange={(e) => setFilters({...filters, location: e.target.value})}
+              className="filter-input"
+            />
+          </div>
+          <div className="filter-group">
+            <label>Limit</label>
+            <select
+              value={filters.limit}
+              onChange={(e) => setFilters({...filters, limit: parseInt(e.target.value)})}
+              className="filter-select"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="error-banner">
+            <span className="error-icon">⚠️</span>
+            {error}
+            <button 
+              className="error-close"
+              onClick={() => setError('')}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Jobs Grid */}
+        <div className="jobs-section">
+          <h2 className="section-title">
+            Jobs ({jobs.length})
+            {loading && <span className="loading-spinner">⏳</span>}
+          </h2>
+          
+          {jobs.length === 0 && !loading ? (
+            <div className="empty-state">
+              <div className="empty-icon">📋</div>
+              <h3>No jobs found</h3>
+              <p>Start by posting your first job!</p>
+              <button 
+                className="btn-primary"
+                onClick={() => setShowForm(true)}
+              >
+                Post Your First Job
+              </button>
+            </div>
           ) : (
             <div className="jobs-grid">
-              {jobs.map(job => (
-                <div 
-                  key={job.id} 
-                  className={`job-card ${selectedJob?.id === job.id ? 'selected' : ''}`}
-                  onClick={() => fetchJobDetails(job.id)}
-                >
-                  <h3>{job.title}</h3>
-                  <p><strong>Company:</strong> {job.company}</p>
-                  <p><strong>Location:</strong> {job.location}</p>
-                  <p><strong>Domain:</strong> {job.domain}</p>
-                  <p><strong>Salary:</strong> ${job.salary_min} - ${job.salary_max}</p>
-                  <p><strong>Experience:</strong> {job.total_years_required} years</p>
-                  <div className="job-actions">
-                    <button 
-                      className="btn-edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFormData(job);
-                        setSelectedJob(job);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className="btn-delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteJob(job.id);
-                      }}
-                    >
-                      Delete
-                    </button>
+              {jobs.map((job, index) => {
+                console.log(`Rendering job ${index}:`, job);
+                return (
+                  <div 
+                    key={job.id} 
+                    className="job-card"
+                    onClick={() => setSelectedJob(job)}
+                  >
+                    <div className="card-header">
+                      <h3 className="job-title">{job.title || 'No Title'}</h3>
+                      <div className="job-company">{job.company || 'No Company'}</div>
+                    </div>
+                    
+                    <div className="card-content">
+                      <div className="job-details">
+                        <div className="detail-item">
+                          <span className="detail-icon">📍</span>
+                          <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.location || 'No Location'}</span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="detail-icon">🏢</span>
+                          <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.domain || 'No Domain'}</span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="detail-icon">💰</span>
+                          <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>${job.salary_min?.toLocaleString() || '0'} - ${job.salary_max?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="detail-icon">⏱️</span>
+                          <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.total_years_required || '0'} years experience</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="card-actions">
+                      <button 
+                        className="btn-edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData(job);
+                          setSelectedJob(job);
+                          setShowForm(true);
+                        }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button 
+                        className="btn-delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteJob(job.id);
+                        }}
+                      >
+                        🗑️ Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
-
-        {selectedJob && (
-          <div className="job-details">
-            <h2>Job Details</h2>
-            <div className="detail-section">
-              <h3>Basic Information</h3>
-              <p><strong>Title:</strong> {selectedJob.title}</p>
-              <p><strong>Company:</strong> {selectedJob.company}</p>
-              <p><strong>Location:</strong> {selectedJob.location}</p>
-              <p><strong>Domain:</strong> {selectedJob.domain}</p>
-              <p><strong>Salary Range:</strong> ${selectedJob.salary_min} - ${selectedJob.salary_max}</p>
-              <p><strong>Experience Required:</strong> {selectedJob.total_years_required} years</p>
-              <p><strong>Description:</strong></p>
-              <div className="job-description">
-                {selectedJob.job_description}
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <h3>Mandatory Skills</h3>
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowSkillsForm(true)}
-              >
-                Add Mandatory Skill
-              </button>
-              {selectedJob.mandatory_skills?.map(skill => (
-                <div key={skill.id} className="skill-item">
-                  <p><strong>{skill.skill}</strong></p>
-                  <p>{skill.description}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="detail-section">
-              <h3>Applications ({applications.length})</h3>
-              {applications.map(app => (
-                <div key={app.id} className="application-item">
-                  <p><strong>Candidate:</strong> {app.candidate?.name}</p>
-                  <p><strong>Status:</strong> {app.status}</p>
-                  <p><strong>Applied:</strong> {new Date(app.created_at).toLocaleDateString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Create/Edit Job Form */}
+      {/* Modern Job Form Modal */}
       {showForm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2>{selectedJob ? 'Edit Job' : 'Post New Job'}</h2>
-            <form onSubmit={selectedJob ? (e) => { e.preventDefault(); handleUpdateJob(selectedJob.id); } : handleCreateJob}>
-              <div className="form-group">
-                <label>Job Title</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                  required
-                />
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modern-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">
+                {selectedJob ? 'Edit Job' : 'Post New Job'}
+              </h2>
+              <button 
+                className="modal-close"
+                onClick={() => setShowForm(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateJob} className="modern-form">
+              {/* Basic Job Information */}
+              <div className="form-section">
+                <h3 className="section-title">Basic Information</h3>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">
+                      Job Title <span className="required">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) => setFormData({...formData, title: e.target.value})}
+                      required
+                      placeholder="e.g., Senior Python Developer"
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Company</label>
+                    <input
+                      type="text"
+                      value={formData.company}
+                      onChange={(e) => setFormData({...formData, company: e.target.value})}
+                      placeholder="e.g., Tech Corp"
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">
+                      Location <span className="required">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.location}
+                      onChange={(e) => setFormData({...formData, location: e.target.value})}
+                      required
+                      placeholder="e.g., New York, NY"
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">
+                      Domain <span className="required">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.domain}
+                      onChange={(e) => setFormData({...formData, domain: e.target.value})}
+                      required
+                      placeholder="e.g., Software Development"
+                      className="form-input"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="form-group">
-                <label>Company</label>
-                <input
-                  type="text"
-                  value={formData.company}
-                  onChange={(e) => setFormData({...formData, company: e.target.value})}
-                  required
-                />
+
+              {/* Salary and Experience */}
+              <div className="form-section">
+                <h3 className="section-title">Salary & Experience</h3>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Min Salary</label>
+                    <input
+                      type="number"
+                      value={formData.salary_min}
+                      onChange={(e) => setFormData({...formData, salary_min: e.target.value})}
+                      placeholder="0"
+                      min="0"
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Max Salary</label>
+                    <input
+                      type="number"
+                      value={formData.salary_max}
+                      onChange={(e) => setFormData({...formData, salary_max: e.target.value})}
+                      placeholder="0"
+                      min="0"
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Total Experience Required</label>
+                    <input
+                      type="number"
+                      value={formData.total_years_required}
+                      onChange={(e) => setFormData({...formData, total_years_required: e.target.value})}
+                      placeholder="0"
+                      min="0"
+                      max="50"
+                      className="form-input"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="form-group">
-                <label>Location</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({...formData, location: e.target.value})}
-                  required
-                />
+
+              {/* Skill-Specific Experience */}
+              <div className="form-section">
+                <h3 className="section-title">Skill-Specific Experience</h3>
+                <p className="section-description">
+                  Add specific skills and their required experience (e.g., Python: 2 years, SQL: 3 years)
+                </p>
+                
+                <div className="skills-input-group">
+                  <div className="skill-input-row">
+                    <div className="form-group">
+                      <label className="form-label">Skill</label>
+                      <input
+                        type="text"
+                        value={skillsData.skill}
+                        onChange={(e) => setSkillsData({...skillsData, skill: e.target.value})}
+                        placeholder="e.g., Python, SQL, React"
+                        className="form-input"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">Min Experience (years)</label>
+                      <input
+                        type="number"
+                        value={skillsData.min_experience}
+                        onChange={(e) => setSkillsData({...skillsData, min_experience: e.target.value})}
+                        placeholder="2"
+                        min="0"
+                        max="20"
+                        className="form-input"
+                      />
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={addSkill}
+                      className="btn-add-skill"
+                    >
+                      Add Skill
+                    </button>
+                  </div>
+                </div>
+
+                {/* Display Added Skills */}
+                {formData.skills.length > 0 && (
+                  <div className="skills-list">
+                    <h4>Added Skills:</h4>
+                    {formData.skills.map((skill, index) => (
+                      <div key={index} className="skill-item">
+                        <span className="skill-name">{skill.skill}</span>
+                        <span className="skill-experience">{skill.min_experience} years</span>
+                        <button
+                          type="button"
+                          onClick={() => removeSkill(index)}
+                          className="btn-remove-skill"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Min Salary</label>
-                  <input
-                    type="number"
-                    value={formData.salary_min}
-                    onChange={(e) => setFormData({...formData, salary_min: e.target.value})}
+              
+              {/* Job Description */}
+              <div className="form-section">
+                <h3 className="section-title">Job Description</h3>
+                <div className="form-group full-width">
+                  <label className="form-label">
+                    Job Description <span className="required">*</span>
+                  </label>
+                  <textarea
+                    value={formData.job_description}
+                    onChange={(e) => setFormData({...formData, job_description: e.target.value})}
                     required
+                    rows="6"
+                    placeholder="Enter detailed job description, requirements, and responsibilities..."
+                    className="form-textarea"
                   />
                 </div>
-                <div className="form-group">
-                  <label>Max Salary</label>
-                  <input
-                    type="number"
-                    value={formData.salary_max}
-                    onChange={(e) => setFormData({...formData, salary_max: e.target.value})}
-                    required
-                  />
-                </div>
               </div>
-              <div className="form-group">
-                <label>Domain</label>
-                <input
-                  type="text"
-                  value={formData.domain}
-                  onChange={(e) => setFormData({...formData, domain: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Years of Experience Required</label>
-                <input
-                  type="number"
-                  value={formData.total_years_required}
-                  onChange={(e) => setFormData({...formData, total_years_required: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Job Description</label>
-                <textarea
-                  value={formData.job_description}
-                  onChange={(e) => setFormData({...formData, job_description: e.target.value})}
-                  required
-                  rows="6"
-                />
-              </div>
+              
               <div className="form-actions">
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? 'Saving...' : (selectedJob ? 'Update' : 'Post Job')}
+                <button 
+                  type="submit" 
+                  className="btn-submit"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <span className="loading-spinner">⏳</span>
+                      Posting...
+                    </>
+                  ) : (
+                    <>
+                      <span className="btn-icon">🚀</span>
+                      {selectedJob ? 'Update Job' : 'Post Job'}
+                    </>
+                  )}
                 </button>
                 <button 
                   type="button" 
-                  className="btn-secondary"
+                  className="btn-cancel"
                   onClick={() => {
                     setShowForm(false);
                     setSelectedJob(null);
@@ -478,50 +606,6 @@ const JobsDashboard = () => {
                       total_years_required: '',
                       job_description: ''
                     });
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add Mandatory Skill Form */}
-      {showSkillsForm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2>Add Mandatory Skill</h2>
-            <form onSubmit={(e) => { e.preventDefault(); handleAddMandatorySkill(selectedJob.id); }}>
-              <div className="form-group">
-                <label>Skill Name</label>
-                <input
-                  type="text"
-                  value={skillsData.skill}
-                  onChange={(e) => setSkillsData({...skillsData, skill: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <textarea
-                  value={skillsData.description}
-                  onChange={(e) => setSkillsData({...skillsData, description: e.target.value})}
-                  required
-                  rows="4"
-                />
-              </div>
-              <div className="form-actions">
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? 'Saving...' : 'Add Skill'}
-                </button>
-                <button 
-                  type="button" 
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowSkillsForm(false);
-                    setSkillsData({ skill: '', description: '' });
                   }}
                 >
                   Cancel

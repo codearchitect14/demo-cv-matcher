@@ -1,0 +1,6 @@
+{
+  "aws": ["aws certified", "amazon web services"],
+  "google": ["google cloud", "gcp certified"],
+  "microsoft": ["microsoft certified", "azure"],
+  "project_management": ["pmp", "prince2", "scrum master"]
+} 

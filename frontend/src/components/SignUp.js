@@ -61,7 +61,7 @@ const SignUp = ({ onSignUpSuccess, onSwitchToSignIn }) => {
         
         <h2>Create your account and start your journey</h2>
         
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="error-message">{typeof error === 'string' ? error : JSON.stringify(error)}</div>}
         
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="form-group">
