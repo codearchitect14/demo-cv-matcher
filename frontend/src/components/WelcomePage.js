@@ -5,17 +5,34 @@ import './WelcomePage.css';
 const WelcomePage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(null);
 
   React.useEffect(() => {
     setIsVisible(true);
   }, []);
 
+  const handleRoleSelect = (role) => {
+    setSelectedRole(role);
+  };
+
   const handleLogin = () => {
-    navigate('/login-new');
+    if (selectedRole === 'candidate') {
+      navigate('/login-new');
+    } else if (selectedRole === 'recruiter') {
+      navigate('/recruiter/login');
+    }
   };
 
   const handleRegister = () => {
-    navigate('/signup-new');
+    if (selectedRole === 'candidate') {
+      navigate('/signup-new');
+    } else if (selectedRole === 'recruiter') {
+      navigate('/recruiter/register');
+    }
+  };
+
+  const handleBack = () => {
+    setSelectedRole(null);
   };
 
   return (
@@ -51,19 +68,53 @@ const WelcomePage = () => {
 
         {/* Content */}
         <div className="welcome-content">
-          <h1 className="welcome-title">Discover Your Dream Job here</h1>
+          <h1 className="welcome-title">Welcome to CV Matcher</h1>
           <p className="welcome-description">
-            Explore all the existing job roles based on your interest and study major
+            Connect talented candidates with amazing opportunities
           </p>
           
-          <div className="welcome-buttons">
-            <button className="btn-primary" onClick={handleLogin}>
-              Login
-            </button>
-            <button className="btn-secondary" onClick={handleRegister}>
-              Register
-            </button>
-          </div>
+          {!selectedRole ? (
+            <div className="role-selection">
+              <h2>Choose your role:</h2>
+              <div className="role-buttons">
+                <button 
+                  className="role-btn candidate-btn" 
+                  onClick={() => handleRoleSelect('candidate')}
+                >
+                  <div className="role-icon">👤</div>
+                  <div className="role-text">
+                    <h3>I'm a Candidate</h3>
+                    <p>Find your dream job</p>
+                  </div>
+                </button>
+                <button 
+                  className="role-btn recruiter-btn" 
+                  onClick={() => handleRoleSelect('recruiter')}
+                >
+                  <div className="role-icon">🏢</div>
+                  <div className="role-text">
+                    <h3>I'm a Recruiter</h3>
+                    <p>Post jobs and find talent</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="auth-options">
+              <h2>Welcome, {selectedRole === 'candidate' ? 'Candidate' : 'Recruiter'}!</h2>
+              <div className="welcome-buttons">
+                <button className="btn-primary" onClick={handleLogin}>
+                  Login
+                </button>
+                <button className="btn-secondary" onClick={handleRegister}>
+                  Register
+                </button>
+                <button className="btn-back" onClick={handleBack}>
+                  ← Back
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Decorative magnifying glass */}

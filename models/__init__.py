@@ -1,18 +1,22 @@
-from .base import BaseModel
-from .candidate import Candidate, CandidateExperience
+from .candidate import Candidate
 from .job import Job, JobMandatorySkill
-from .application import Application, ApplicationStatusEnum
-from .interaction import InteractionLog, InteractionTypeEnum
+from .application import Application
+from .interaction import InteractionLog
+from .recruiter import Recruiter
+from .audit import AuditLog
+from .skill import Skill
+from .job_skill import JobSkill
+from .candidate_skill import CandidateSkill
 
-# Import all models to ensure they are registered with SQLAlchemy
 __all__ = [
-    "BaseModel",
     "Candidate",
-    "CandidateExperience", 
     "Job",
-    "JobMandatorySkill",
+    "JobMandatorySkill", 
     "Application",
-    "ApplicationStatusEnum",
     "InteractionLog",
-    "InteractionTypeEnum"
+    "Recruiter",
+    "AuditLog",
+    "Skill",
+    "JobSkill",
+    "CandidateSkill",
 ]

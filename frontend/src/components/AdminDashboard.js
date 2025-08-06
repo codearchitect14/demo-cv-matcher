@@ -77,8 +77,9 @@ const AdminDashboard = () => {
       <h2>Admin Dashboard</h2>
       
       {error && (
-        <div className="alert alert-error">
-          {error}
+        <div className="error-message">
+          <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
+          <button onClick={() => setError('')}>×</button>
         </div>
       )}
 

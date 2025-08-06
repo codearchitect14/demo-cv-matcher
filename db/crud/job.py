@@ -36,6 +36,16 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         )
         return result.scalars().all()
 
+    async def get_by_recruiter(self, db: AsyncSession, recruiter_id: int) -> List[Job]:
+        """Get jobs by recruiter ID"""
+        result = await db.execute(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.recruiter_id == recruiter_id)
+            .order_by(self.model.created_at.desc())
+        )
+        return result.scalars().all()
+
     async def get_by_salary_range(
         self, db: AsyncSession, min_salary: int, max_salary: int
     ) -> List[Job]:
@@ -117,6 +127,15 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         await db.commit()
         await db.refresh(job)
         return job
+
+    async def get_active_jobs(self, db: AsyncSession, limit: int = 50) -> List[Job]:
+        """Get jobs with mandatory skills"""
+        result = await db.execute(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .limit(limit)
+        )
+        return result.scalars().all()
 
     async def get_jobs_without_applicants(self, db: AsyncSession, days_threshold: int = 7, limit: int = 20) -> List[Job]:
         """Get jobs with no applicants in the last N days"""

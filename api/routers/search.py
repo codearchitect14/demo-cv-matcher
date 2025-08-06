@@ -9,7 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(tags=["search"])
 
 @router.post("/jobs/recommend", response_model=List[JobRecommendation])
 async def recommend_jobs_for_candidate(

@@ -1,312 +1,275 @@
 #File: db/crud/candidate.py
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from sqlalchemy import and_, Index
-from db.crud.base import CRUDBase
+from sqlalchemy import select, and_, or_, func, desc, asc
+from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.sql import text
+import logging
+
 from models.candidate import Candidate, CandidateExperience
-from schemas.candidate import CandidateCreate, CandidateUpdate
+from db.crud.base import CRUDBase
+from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateSearchFilter
+
+logger = logging.getLogger(__name__)
 
 class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
+    """Optimized CRUD operations for candidates with eager loading and bulk operations"""
+    
     async def get_with_experiences(self, db: AsyncSession, id: int) -> Optional[Candidate]:
-        """Get candidate with all experiences, applications, and interactions using eager loading"""
-        result = await db.execute(
-            select(self.model)
-            .options(
-                selectinload(self.model.experiences),
-                selectinload(self.model.applications),
-                selectinload(self.model.interactions)
-            )
-            .where(self.model.id == id)
-        )
+        """Get candidate with experiences using eager loading"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).where(Candidate.id == id)
+        
+        result = await db.execute(query)
         return result.scalar_one_or_none()
-
+    
+    async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Candidate]:
+        """Get candidate by email with optimized query"""
+        query = select(Candidate).where(Candidate.email == email)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    
     async def get_multi_with_experiences(
-        self, db: AsyncSession, skip: int = 0, limit: int = 100
+        self, 
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Candidate]:
-        """Get multiple candidates with experiences, applications, and interactions using eager loading"""
-        result = await db.execute(
-            select(self.model)
-            .options(
-                selectinload(self.model.experiences),
-                selectinload(self.model.applications),
-                selectinload(self.model.interactions)
-            )
-            .offset(skip)
-            .limit(limit)
+        """Get multiple candidates with experiences using eager loading"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
         )
-        return result.scalars().all()
-
-    async def get_by_domain(self, db: AsyncSession, domain: str) -> List[Candidate]:
-        """Get candidates by domain"""
-        result = await db.execute(
-            select(self.model).where(self.model.domain == domain)
-        )
-        return result.scalars().all()
-
-    async def get_by_location(self, db: AsyncSession, location: str) -> List[Candidate]:
-        """Get candidates by location"""
-        result = await db.execute(
-            select(self.model).where(self.model.location == location)
-        )
-        return result.scalars().all()
-
-    async def get_by_salary_range(
-        self, db: AsyncSession, min_salary: int, max_salary: int
-    ) -> List[Candidate]:
-        """Get candidates within salary range"""
-        result = await db.execute(
-            select(self.model).where(
-                self.model.expected_salary_min >= min_salary,
-                self.model.expected_salary_max <= max_salary
-            )
-        )
-        return result.scalars().all()
-
-    async def create_with_experiences(
-        self, db: AsyncSession, obj_in: CandidateCreate
-    ) -> Candidate:
-        """Create candidate with experiences"""
-        # Create candidate first
-        candidate_data = obj_in.dict(exclude={'experiences'})
-        candidate = Candidate(**candidate_data)
-        db.add(candidate)
-        await db.flush()  # Get the ID without committing
-
-        # Create experiences
-        for exp_data in obj_in.experiences:
-            experience = CandidateExperience(
-                candidate_id=candidate.id,
-                **exp_data.dict()
-            )
-            db.add(experience)
-
-        await db.commit()
-        # Re-query with eager loading to ensure all relationships are loaded
-        return await self.get_with_experiences(db, candidate.id)
-
+        
+        # Apply filters if provided
+        if filters:
+            conditions = []
+            if filters.get("location"):
+                conditions.append(Candidate.location.ilike(f"%{filters['location']}%"))
+            if filters.get("domain"):
+                conditions.append(Candidate.domain.ilike(f"%{filters['domain']}%"))
+            if filters.get("role"):
+                conditions.append(Candidate.role == filters["role"])
+            if filters.get("salary_min"):
+                conditions.append(Candidate.expected_salary_min >= filters["salary_min"])
+            if filters.get("salary_max"):
+                conditions.append(Candidate.expected_salary_max <= filters["salary_max"])
+            
+            if conditions:
+                query = query.where(and_(*conditions))
+        
+        query = query.offset(skip).limit(limit).order_by(desc(Candidate.created_at))
+        result = await db.execute(query)
+        return result.scalars().unique().all()
+    
     async def search_candidates(
-        self, db: AsyncSession, filters: 'CandidateSearchFilter', skip: int = 0, limit: int = 100
+        self, 
+        db: AsyncSession, 
+        search_filter: CandidateSearchFilter,
+        skip: int = 0,
+        limit: int = 100
     ) -> List[Candidate]:
-        """Search candidates with filters using CRUD abstraction (Issue #1)"""
-        from models.candidate import CandidateExperience
+        """Advanced candidate search with optimized queries"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        )
         
-        query = select(self.model).options(
-            selectinload(self.model.experiences),
-            selectinload(self.model.applications),
-            selectinload(self.model.interactions)
-        )  # Eager loading
         conditions = []
-
-        # Apply filters
-        if filters.location:
-            conditions.append(self.model.location.ilike(f"%{filters.location}%"))
         
-        if filters.domain:
-            conditions.append(self.model.domain == filters.domain)
+        # Location filter
+        if search_filter.location:
+            conditions.append(Candidate.location.ilike(f"%{search_filter.location}%"))
         
-        if filters.expected_salary_min:
-            conditions.append(self.model.expected_salary_min >= filters.expected_salary_min)
+        # Domain filter
+        if search_filter.domain:
+            conditions.append(Candidate.domain.ilike(f"%{search_filter.domain}%"))
         
-        if filters.expected_salary_max:
-            conditions.append(self.model.expected_salary_max <= filters.expected_salary_max)
-
-        # Skills filter - candidates who have any of the specified skills
-        if filters.skills:
-            skills_subquery = select(CandidateExperience.candidate_id).where(
-                and_(
-                    CandidateExperience.skill.in_(filters.skills),
-                    CandidateExperience.years >= (filters.min_experience or 0)
+        # Salary range filter
+        if search_filter.salary_min is not None:
+            conditions.append(Candidate.expected_salary_max >= search_filter.salary_min)
+        if search_filter.salary_max is not None:
+            conditions.append(Candidate.expected_salary_min <= search_filter.salary_max)
+        
+        # Skills filter (requires subquery)
+        if search_filter.required_skills:
+            skills_conditions = []
+            for skill in search_filter.required_skills:
+                skills_conditions.append(
+                    Candidate.experiences.any(
+                        and_(
+                            CandidateExperience.skill.ilike(f"%{skill}%"),
+                            CandidateExperience.years >= 1
+                        )
+                    )
                 )
-            ).distinct()
-            conditions.append(self.model.id.in_(skills_subquery))
-
+            if skills_conditions:
+                conditions.append(or_(*skills_conditions))
+        
         if conditions:
             query = query.where(and_(*conditions))
-
-        query = query.offset(skip).limit(limit)
+        
+        query = query.offset(skip).limit(limit).order_by(desc(Candidate.created_at))
         result = await db.execute(query)
-        return result.scalars().all()
-
-    async def add_experience(
-        self, db: AsyncSession, candidate_id: int, experience_data: dict
-    ) -> Candidate:
-        """Add experience to candidate using experience data dictionary"""
-        # Check if skill already exists
-        existing_exp = await db.execute(
-            select(CandidateExperience).where(
-                and_(
-                    CandidateExperience.candidate_id == candidate_id,
-                    CandidateExperience.skill == experience_data.get('skill')
-                )
-            )
-        )
-        if existing_exp.scalar_one_or_none():
-            from core.exceptions import ValidationException
-            raise ValidationException(f"Experience for skill '{experience_data.get('skill')}' already exists")
-
-        # Create new experience
-        new_experience = CandidateExperience(
-            candidate_id=candidate_id,
-            skill=experience_data.get('skill'),
-            years=experience_data.get('years'),
-            description=experience_data.get('description')
-        )
-        db.add(new_experience)
-        await db.commit()
+        return result.scalars().unique().all()
+    
+    async def get_active_candidates(self, db: AsyncSession, limit: int = 50) -> List[Candidate]:
+        """Get candidates with experiences"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).limit(limit)
         
-        # Return updated candidate
-        return await self.get_with_experiences(db, candidate_id)
-
-    async def update_experience(
-        self, db: AsyncSession, candidate_id: int, experience_id: int, experience_data: dict
-    ) -> CandidateExperience:
-        """Update existing experience using experience data dictionary"""
-        experience = await db.execute(
-            select(CandidateExperience).where(
-                and_(
-                    CandidateExperience.candidate_id == candidate_id,
-                    CandidateExperience.id == experience_id
-                )
-            )
-        )
-        experience = experience.scalar_one_or_none()
-        
-        if not experience:
-            from core.exceptions import NotFoundException
-            raise NotFoundException(f"Experience with ID {experience_id} not found for candidate {candidate_id}")
-
-        # Update experience fields
-        if 'skill' in experience_data:
-            experience.skill = experience_data['skill']
-        if 'years' in experience_data:
-            experience.years = experience_data['years']
-        if 'description' in experience_data:
-            experience.description = experience_data['description']
-        
-        await db.commit()
-        await db.refresh(experience)
-        return experience
-
-    async def remove_experience(
-        self, db: AsyncSession, candidate_id: int, experience_id: int
-    ) -> None:
-        """Remove experience from candidate via CRUD"""
-        experience = await db.execute(
-            select(CandidateExperience).where(
-                and_(
-                    CandidateExperience.candidate_id == candidate_id,
-                    CandidateExperience.id == experience_id
-                )
-            )
-        )
-        experience = experience.scalar_one_or_none()
-        
-        if not experience:
-            from core.exceptions import NotFoundException
-            raise NotFoundException(f"Experience with ID {experience_id} not found for candidate {candidate_id}")
-
-        await db.delete(experience)
-        await db.commit()
-
-    async def check_skill_requirements(
-        self, db: AsyncSession, candidate_id: int, job_id: int
-    ) -> dict:
-        """Check skill requirements (moved from utils - Issue #6)"""
-        from db.crud.job import job as job_crud
-        
-        # Get job requirements
-        job = await job_crud.get(db, job_id)
-        if not job:
-            return {"meets_all_requirements": False, "error": "Job not found"}
-        
-        # Get candidate experiences
-        candidate = await self.get_with_experiences(db, candidate_id)
-        if not candidate:
-            return {"meets_all_requirements": False, "error": "Candidate not found"}
-        
-        # Check skill requirements
-        candidate_skills = {exp.skill: exp.years for exp in candidate.experiences}
-        required_skills = job.required_skills  # Assuming this exists
-        
-        missing_skills = []
-        insufficient_experience = []
-        
-        for skill_req in required_skills:
-            skill_name = skill_req.get('skill')
-            min_years = skill_req.get('years', 0)
-            
-            if skill_name not in candidate_skills:
-                missing_skills.append(skill_name)
-            elif candidate_skills[skill_name] < min_years:
-                insufficient_experience.append({
-                    'skill': skill_name,
-                    'required': min_years,
-                    'candidate_has': candidate_skills[skill_name]
-                })
-        
-        meets_all = len(missing_skills) == 0 and len(insufficient_experience) == 0
-        
-        return {
-            "meets_all_requirements": meets_all,
-            "missing_skills": missing_skills,
-            "insufficient_experience": insufficient_experience,
-            "candidate_skills": candidate_skills
-        }
-
-    async def get_candidates_zero_visibility(self, db: AsyncSession, days_threshold: int = 30, limit: int = 20) -> List[Candidate]:
-        """Get candidates with zero visibility/activity in the last N days"""
-        from datetime import datetime, timedelta
-        from db.crud.application import application as application_crud
-        from services.interaction_service import interaction_service
-        
-        cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
-        
-        # Get all candidates
-        result = await db.execute(
-            select(self.model).limit(limit)
-        )
-        candidates = result.scalars().all()
-        
-        # Filter candidates with no recent activity
-        candidates_zero_visibility = []
-        for candidate in candidates:
-            # Check for recent applications
-            applications = await application_crud.get_by_candidate(db, candidate.id)
-            recent_applications = [app for app in applications if app.created_at >= cutoff_date]
-            
-            # Check for recent interactions
-            interactions = await interaction_service.get_user_interactions(db, candidate.id, days_back=days_threshold)
-            
-            if not recent_applications and not interactions:
-                candidates_zero_visibility.append(candidate)
-        
-        return candidates_zero_visibility
-
-    async def count_recent(self, db: AsyncSession, days_back: int = 7) -> int:
-        """Get count of recent candidates"""
-        from datetime import datetime, timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
-        
-        result = await db.execute(
-            select(self.model).where(self.model.created_at >= cutoff_date)
-        )
-        return len(result.scalars().all())
-
-    async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Candidate]:
-        """Get candidate by email"""
-        result = await db.execute(
-            select(self.model).where(self.model.email == email)
-        )
-        return result.scalar_one_or_none()
+        result = await db.execute(query)
+        return result.scalars().unique().all()
 
     async def get_experiences(self, db: AsyncSession, candidate_id: int) -> List[CandidateExperience]:
-        """Get experiences for a specific candidate"""
-        result = await db.execute(
-            select(CandidateExperience).where(CandidateExperience.candidate_id == candidate_id)
-        )
+        """Get candidate experiences with optimized query"""
+        query = select(CandidateExperience).where(
+            CandidateExperience.candidate_id == candidate_id
+        ).order_by(desc(CandidateExperience.years))
+        
+        result = await db.execute(query)
         return result.scalars().all()
+    
+    async def bulk_create_experiences(
+        self, 
+        db: AsyncSession, 
+        candidate_id: int, 
+        experiences: List[Dict[str, Any]]
+    ) -> List[CandidateExperience]:
+        """Bulk create candidate experiences for better performance"""
+        experience_objects = [
+            CandidateExperience(
+                candidate_id=candidate_id,
+                skill=exp["skill"],
+                years=exp["years"],
+                description=exp.get("description")
+            )
+            for exp in experiences
+        ]
+        
+        db.add_all(experience_objects)
+        await db.commit()
+        
+        # Refresh all objects to get their IDs
+        for obj in experience_objects:
+            await db.refresh(obj)
+        
+        return experience_objects
+    
+    async def get_candidates_by_skills(
+        self, 
+        db: AsyncSession, 
+        skills: List[str], 
+        min_years: int = 1,
+        limit: int = 100
+    ) -> List[Candidate]:
+        """Get candidates by required skills with optimized query"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).where(
+            Candidate.experiences.any(
+                and_(
+                    CandidateExperience.skill.in_(skills),
+                    CandidateExperience.years >= min_years
+                )
+            )
+        ).limit(limit)
+        
+        result = await db.execute(query)
+        return result.scalars().unique().all()
+    
+    async def get_candidates_by_location_domain(
+        self, 
+        db: AsyncSession, 
+        location: str, 
+        domain: str,
+        limit: int = 100
+    ) -> List[Candidate]:
+        """Get candidates by location and domain with optimized query"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).where(
+            and_(
+                Candidate.location.ilike(f"%{location}%"),
+                Candidate.domain.ilike(f"%{domain}%")
+            )
+        ).limit(limit)
+        
+        result = await db.execute(query)
+        return result.scalars().unique().all()
+    
+    async def get_candidate_stats(self, db: AsyncSession) -> Dict[str, Any]:
+        """Get candidate statistics with optimized queries"""
+        # Total candidates
+        total_query = select(func.count(Candidate.id))
+        total_result = await db.execute(total_query)
+        total_candidates = total_result.scalar()
+        
+        # Candidates by domain
+        domain_query = select(
+            Candidate.domain,
+            func.count(Candidate.id).label('count')
+        ).group_by(Candidate.domain).order_by(desc('count'))
+        domain_result = await db.execute(domain_query)
+        domain_stats = domain_result.all()
+        
+        # Candidates by location
+        location_query = select(
+            Candidate.location,
+            func.count(Candidate.id).label('count')
+        ).group_by(Candidate.location).order_by(desc('count')).limit(10)
+        location_result = await db.execute(location_query)
+        location_stats = location_result.all()
+        
+        # Average salary expectations
+        salary_query = select(
+            func.avg(Candidate.expected_salary_min).label('avg_min'),
+            func.avg(Candidate.expected_salary_max).label('avg_max')
+        )
+        salary_result = await db.execute(salary_query)
+        salary_stats = salary_result.first()
+        
+        return {
+            "total_candidates": total_candidates,
+            "domain_distribution": [{"domain": d.domain, "count": d.count} for d in domain_stats],
+            "location_distribution": [{"location": l.location, "count": l.count} for l in location_stats],
+            "salary_stats": {
+                "avg_min_salary": float(salary_stats.avg_min) if salary_stats.avg_min else 0,
+                "avg_max_salary": float(salary_stats.avg_max) if salary_stats.avg_max else 0
+            }
+        }
+    
+    async def full_text_search(
+        self, 
+        db: AsyncSession, 
+        search_term: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Candidate]:
+        """Full-text search for candidates using PostgreSQL text search"""
+        # Create text search vector
+        search_vector = func.to_tsvector('english', 
+            Candidate.name + ' ' + 
+            func.coalesce(Candidate.summary, '') + ' ' +
+            func.coalesce(Candidate.location, '') + ' ' +
+            func.coalesce(Candidate.domain, '')
+        )
+        
+        # Create search query
+        search_query = func.plainto_tsquery('english', search_term)
+        
+        # Calculate relevance score
+        relevance = func.ts_rank(search_vector, search_query)
+        
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).where(
+            search_vector.op('@@')(search_query)
+        ).order_by(desc(relevance)).offset(skip).limit(limit)
+        
+        result = await db.execute(query)
+        return result.scalars().unique().all()
 
-
+# Create instance
 candidate = CRUDCandidate(Candidate)

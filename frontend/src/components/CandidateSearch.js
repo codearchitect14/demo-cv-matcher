@@ -129,7 +129,7 @@ const CandidateSearch = () => {
 
       {error && (
         <div className="error-message">
-          <span>{error}</span>
+          <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
           <button onClick={() => setError('')}>×</button>
         </div>
       )}

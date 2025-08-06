@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiService } from '../api';
 import './LoginNew.css';
 
 const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -48,7 +50,8 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
         if (onSignInSuccess) {
           onSignInSuccess(data);
         } else {
-          alert('Login successful!');
+          // Navigate to candidates dashboard after successful login
+          navigate('/candidates-dashboard');
         }
       } else {
         const errorData = await response.json();
@@ -81,7 +84,8 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
 
         {error && (
           <div className="error-message">
-            {error}
+            <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
+            <button onClick={() => setError('')}>×</button>
           </div>
         )}
 
@@ -167,7 +171,7 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
             <button 
               type="button" 
               className="footer-link" 
-              onClick={onSwitchToSignUp}
+              onClick={() => navigate('/signup-new')}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
               Sign up

@@ -49,21 +49,23 @@ const ExperienceForm = ({ candidateId, onExperienceAdded }) => {
             {...register('skill', { required: 'Skill is required' })}
             placeholder="Enter skill name"
           />
-          {errors.skill && <span style={{color: 'red'}}>{errors.skill.message}</span>}
+          {errors.skill && <span style={{color: 'red'}}>{typeof errors.skill.message === 'string' ? errors.skill.message : JSON.stringify(errors.skill.message)}</span>}
         </div>
 
         <div className="form-group">
-          <label>Years of Experience *</label>
+          <label htmlFor="years">Years of Experience:</label>
           <input
             type="number"
-            {...register('years', { 
-              required: 'Years of experience is required',
-              min: { value: 0, message: 'Years must be 0 or more' },
-              max: { value: 50, message: 'Years cannot exceed 50' }
-            })}
+            id="years"
+            name="years"
+            value={formData.years}
+            onChange={handleInputChange}
             placeholder="Enter years of experience"
+            min="0"
+            max="50"
+            required
           />
-          {errors.years && <span style={{color: 'red'}}>{errors.years.message}</span>}
+          {errors.years && <span style={{color: 'red'}}>{typeof errors.years.message === 'string' ? errors.years.message : JSON.stringify(errors.years.message)}</span>}
         </div>
 
         <div className="form-group">

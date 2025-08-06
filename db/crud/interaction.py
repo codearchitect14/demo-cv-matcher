@@ -41,4 +41,4 @@ class CRUDInteractionLog(CRUDBase[InteractionLog, InteractionLogCreate, None]):
         return result.scalars().all()
 
 
-interaction_log = CRUDInteractionLog(InteractionLog)
+interaction = CRUDInteractionLog(InteractionLog)

@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": 10,
+    "user_type": "candidate",
+    "job_id": 8,
+    "candidate_id": null,
+    "feedback_type": "positive",
+    "feedback_score": 0.9,
+    "feedback_text": null,
+    "match_score": 0.8,
+    "interaction_type": "feedback",
+    "timestamp": "2025-08-05T17:04:01.902988"
+  }
+]

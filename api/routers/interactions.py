@@ -2,17 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
+import logging
 
 from config.database import get_db_session
 from models.candidate import Candidate
 from api.routers.auth import get_current_user
 from services.interaction_service import interaction_service
-from db.crud.interaction import interaction_log
+from db.crud.interaction import interaction
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.job import job as job_crud
 from schemas.interaction import InteractionLogCreate, InteractionLogResponse
+from models.interaction import InteractionTypeEnum
 
-router = APIRouter(prefix="/interactions", tags=["Interactions"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["Interactions"])
 
 class InteractionCreate(BaseModel):
     job_id: int
@@ -42,7 +46,7 @@ async def log_interaction(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     # Log interaction
-    await interaction_log.log_interaction(db, interaction)
+    await interaction.log_interaction(db, interaction)
     return {"message": "Interaction logged successfully"}
 
 @router.get("/candidates/{candidate_id}/interactions")

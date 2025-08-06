@@ -8,7 +8,7 @@ from fastapi import HTTPException, Request
 from models.candidate import Candidate
 from models.audit import AuditLog, AuditActionType
 from db.crud.candidate import candidate as candidate_crud
-from db.crud.audit import audit_log as audit_crud
+from db.crud.audit import audit as audit_crud
 from schemas.audit import DataDeletionRequest, ConsentUpdateRequest
 from schemas.candidate import CandidateUpdate
 

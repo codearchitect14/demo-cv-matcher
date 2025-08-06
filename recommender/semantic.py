@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from embeddings.embedder import embedding_service
-from embeddings.build_index import faiss_manager
+from embeddings.build_index import index_manager
 from models.job import Job, JobMandatorySkill
 from models.candidate import Candidate, CandidateExperience
 from db.crud.job import job as job_crud
@@ -22,7 +22,7 @@ class SemanticSearchService:
     def __init__(self):
         """Initialize semantic search service"""
         self.embedding_service = embedding_service
-        self.faiss_manager = faiss_manager
+        self.faiss_manager = index_manager
         self.filtering_service = filtering_service
         self.ranking_engine = recommendation_engine
     
