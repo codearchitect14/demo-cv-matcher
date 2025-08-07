@@ -8,10 +8,11 @@ import logging
 
 from config.database import init_db
 from config.logging import setup_logging, log_api_request, log_security_event
-from middleware.rate_limiter import rate_limiter
+from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
 from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter
 from services.api_service import api_service
+from services.cache_service import cache_service
 
 # Setup logging
 loggers = setup_logging()
@@ -23,6 +24,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting application...")
     try:
+        # Initialize cache service
+        await cache_service.connect()
+        logger.info("Cache service initialized successfully")
+        
         # Temporarily skip database initialization to avoid prepared statement issues
         logger.info("Skipping database initialization for now...")
         # from config.database import check_database_connection
@@ -39,6 +44,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down application...")
+    await cache_service.disconnect()
 
 # Create FastAPI app with security features
 app = FastAPI(
@@ -48,12 +54,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware with security considerations
+# Add CORS middleware with comprehensive origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:8000", "https://yourdomain.com"],  # Configure for production
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:3001", 
+        "http://localhost:8000", 
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:8000",
+        "https://yourdomain.com"
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
 )
@@ -65,8 +79,8 @@ async def security_middleware_handler(request: Request, call_next):
 
 # Add rate limiting middleware
 @app.middleware("http")
-async def rate_limiting_middleware(request: Request, call_next):
-    return await rate_limiter(request, call_next)
+async def rate_limiting_middleware_handler(request: Request, call_next):
+    return await rate_limiting_middleware(request, call_next)
 
 # Add request logging middleware
 @app.middleware("http")
@@ -100,7 +114,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error"}
     )
 
-# Include routers with security considerations
+# Include routers with proper prefixes
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(candidates.router, prefix="/api/v1/candidates", tags=["Candidates"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
@@ -123,33 +137,42 @@ async def health_check():
         "version": "2.0.0"
     }
 
-# Security status endpoint (admin only)
-@app.get("/security/status")
-async def security_status(request: Request):
-    """Get security status and rate limit information"""
+@app.get("/cache/stats")
+async def cache_stats():
+    """Get cache statistics"""
     try:
-        # Get rate limit status
-        rate_limit_status = await rate_limiter.get_rate_limit_status(request)
-        
+        stats = await cache_service.get_cache_stats()
         return {
-            "rate_limit_status": rate_limit_status,
-            "security_headers_enabled": True,
-            "input_validation_enabled": True,
-            "sql_injection_protection": True,
-            "xss_protection": True,
-            "csrf_protection": True
+            "cache_stats": stats,
+            "status": "success"
         }
     except Exception as e:
-        logger.error(f"Error getting security status: {e}")
-        return {"error": "Failed to get security status"}
+        logger.error(f"Failed to get cache stats: {e}")
+        return {
+            "cache_stats": {},
+            "status": "error",
+            "error": str(e)
+        }
+
+# Security status endpoint
+@app.get("/security/status")
+async def security_status(request: Request):
+    """Security status endpoint"""
+    return {
+        "security_enabled": True,
+        "rate_limiting": True,
+        "cors_enabled": True,
+        "request_id": request.headers.get("X-Request-ID", "unknown")
+    }
 
 # Root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint with security information"""
+    """Root endpoint with API information"""
     return {
-        "message": "CV Matcher API v2.0.0",
-        "security": "Advanced security features enabled",
-        "documentation": "/docs",
+        "message": "CV Matcher API",
+        "version": "2.0.0",
+        "status": "running",
+        "docs": "/docs",
         "health": "/health"
     }

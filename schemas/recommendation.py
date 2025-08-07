@@ -180,6 +180,18 @@ class RecommendationSettings(BaseModel):
     apply_filters: bool = Field(True, description="Apply business rule filters")
     strict_mode: bool = Field(False, description="Use strict filtering mode") 
 
+class JobRecommendationResponse(BaseModel):
+    """Response for job recommendations"""
+    job_id: int = Field(..., description="Job ID")
+    job: Optional[Dict[str, Any]] = Field(None, description="Job details")
+    combined_score: float = Field(..., ge=0.0, le=1.0, description="Combined match score")
+    semantic_score: float = Field(0.0, ge=0.0, le=1.0, description="Semantic similarity score")
+    filter_score: float = Field(0.0, ge=0.0, le=1.0, description="Filter-based score")
+    method: str = Field("semantic", description="Recommendation method used")
+    weights_used: Dict[str, float] = Field(default_factory=dict, description="Weights used in calculation")
+    personalization_score: float = Field(0.0, ge=0.0, le=1.0, description="Personalization score")
+    personalization_factors: List[str] = Field(default_factory=list, description="Personalization factors")
+
 class QuickCandidateMatchRequest(BaseModel):
     """Request model for quick candidate matching"""
     skills: List[str] = Field(..., description="List of candidate skills")

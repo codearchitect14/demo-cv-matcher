@@ -98,17 +98,18 @@ class CandidateBase(BaseModel):
 
     @validator('expected_salary_min', 'expected_salary_max')
     def validate_salary(cls, v):
-        if v is not None and v < 0:
-            raise ValueError('Salary cannot be negative')
-        if v is not None and v > 1000000:
-            raise ValueError('Salary cannot exceed 1,000,000')
+        if v is not None:
+            if v < 0:
+                raise ValueError('Salary cannot be negative')
+            if v > 1000000:
+                raise ValueError('Salary cannot exceed 1,000,000')
         return v
 
     @validator('expected_salary_max')
     def validate_salary_range(cls, v, values):
-        min_salary = values.get('expected_salary_min')
-        if v is not None and min_salary is not None and v < min_salary:
-            raise ValueError('Maximum salary cannot be less than minimum salary')
+        if v is not None and 'expected_salary_min' in values and values['expected_salary_min'] is not None:
+            if v < values['expected_salary_min']:
+                raise ValueError('Maximum salary must be greater than or equal to minimum salary')
         return v
 
     @validator('role')
@@ -124,9 +125,10 @@ class CandidateCreate(CandidateBase):
 
     @validator('password')
     def validate_password(cls, v):
-        from config.security import validate_password_strength
-        if not validate_password_strength(v):
-            raise ValueError('Password does not meet security requirements')
+        from config.security import validate_password_with_feedback
+        is_valid, message = validate_password_with_feedback(v)
+        if not is_valid:
+            raise ValueError(message)
         return v
 
 class CandidateUpdate(BaseModel):
@@ -199,6 +201,70 @@ class CandidateResponse(CandidateBase):
     created_at: datetime
     updated_at: datetime
     experiences: List[CandidateExperienceResponse] = []
+    
+    class Config:
+        from_attributes = True
+
+class CandidateBaseSimple(BaseModel):
+    """Base schema for candidate with comprehensive validation (simple version)"""
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., max_length=254)
+    location: str = Field(..., min_length=1, max_length=100)
+    domain: str = Field(..., min_length=1, max_length=50)
+    expected_salary_min: Optional[int] = Field(None, ge=0, le=1000000)
+    expected_salary_max: Optional[int] = Field(None, ge=0, le=1000000)
+    summary: Optional[str] = Field(None, min_length=1, max_length=2000)  # Make summary optional
+    role: str = Field("user", max_length=20)
+
+    @validator('name')
+    def validate_name(cls, v):
+        return NameValidation(name=v).name
+
+    @validator('email')
+    def validate_email(cls, v):
+        return EmailValidation(email=v).email
+
+    @validator('location')
+    def validate_location(cls, v):
+        return LocationValidation(location=v).location
+
+    @validator('domain')
+    def validate_domain(cls, v):
+        return DomainValidation(domain=v).domain
+
+    @validator('summary')
+    def validate_summary(cls, v):
+        if v is not None:
+            return DescriptionValidation(description=v).description
+        return v
+
+    @validator('expected_salary_min', 'expected_salary_max')
+    def validate_salary(cls, v):
+        if v is not None:
+            if v < 0:
+                raise ValueError('Salary cannot be negative')
+            if v > 1000000:
+                raise ValueError('Salary cannot exceed 1,000,000')
+        return v
+
+    @validator('expected_salary_max')
+    def validate_salary_range(cls, v, values):
+        if v is not None and 'expected_salary_min' in values and values['expected_salary_min'] is not None:
+            if v < values['expected_salary_min']:
+                raise ValueError('Maximum salary must be greater than or equal to minimum salary')
+        return v
+
+    @validator('role')
+    def validate_role(cls, v):
+        if v not in ['user', 'admin']:
+            raise ValueError('Role must be either "user" or "admin"')
+        return v
+
+class CandidateResponseSimple(CandidateBaseSimple):
+    """Simple schema for candidate response without experiences (for public endpoints)"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True

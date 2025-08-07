@@ -7,6 +7,19 @@ from schemas.application import ApplicationCreate, ApplicationUpdate
 
 
 class CRUDApplication(CRUDBase[Application, ApplicationCreate, ApplicationUpdate]):
+    async def get_by_candidate_id(
+        self, db: AsyncSession, candidate_id: int, skip: int = 0, limit: int = 100
+    ) -> List[Application]:
+        """Get applications by candidate ID with pagination and job details"""
+        from sqlalchemy.orm import selectinload
+        
+        query = select(self.model).options(
+            selectinload(self.model.job)
+        ).where(self.model.candidate_id == candidate_id)
+        query = query.offset(skip).limit(limit).order_by(self.model.created_at.desc())
+        result = await db.execute(query)
+        return result.scalars().all()
+
     async def get_by_candidate(self, db: AsyncSession, candidate_id: int, skip: int = 0, limit: int = 100, status: Optional[str] = None) -> List[Application]:
         """Get applications by candidate with optional filtering"""
         query = select(self.model).where(self.model.candidate_id == candidate_id)

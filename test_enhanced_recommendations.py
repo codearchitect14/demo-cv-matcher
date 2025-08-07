@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.database import AsyncSessionLocal
 from services.enhanced_recommendation_service import EnhancedRecommendationService
 from services.enhanced_cv_parser import EnhancedCVParser
-from services.skill_matcher import SkillMatcher
+from services.skill_matcher import skill_matcher
 from db.crud import candidate, job, skill, job_skill, candidate_skill
 
 async def test_enhanced_recommendation_system():
@@ -15,7 +15,7 @@ async def test_enhanced_recommendation_system():
     # Initialize services
     recommendation_service = EnhancedRecommendationService()
     cv_parser = EnhancedCVParser()
-    skill_matcher = SkillMatcher()
+    # skill_matcher is already imported as a global instance
     
     async with AsyncSessionLocal() as session:
         try:

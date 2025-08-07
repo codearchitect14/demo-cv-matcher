@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from db.crud import candidate, job, skill, job_skill, candidate_skill
 from services.enhanced_cv_parser import EnhancedCVParser, EnhancedCVData
-from services.skill_matcher import SkillMatcher
+from services.skill_matcher import skill_matcher
 from models.candidate import Candidate
 from models.job import Job
 from models.skill import Skill
@@ -48,8 +48,8 @@ class EnhancedRecommendationService:
     def __init__(self):
         """Initialize the enhanced recommendation service"""
         self.cv_parser = EnhancedCVParser()
-        self.skill_matcher = SkillMatcher()
-        logger.info("✅ Enhanced recommendation service initialized")
+        self.skill_matcher = skill_matcher
+        logger.info("[SUCCESS] Enhanced recommendation service initialized")
     
     async def get_candidate_job_recommendations(
         self, 
@@ -85,7 +85,7 @@ class EnhancedRecommendationService:
             return recommendations[:limit]
             
         except Exception as e:
-            logger.error(f"❌ Error getting candidate recommendations: {e}")
+            logger.error(f"[ERROR] Error getting candidate recommendations: {e}")
             return []
     
     async def get_recruiter_candidate_recommendations(
@@ -122,7 +122,7 @@ class EnhancedRecommendationService:
             return recommendations[:limit]
             
         except Exception as e:
-            logger.error(f"❌ Error getting recruiter recommendations: {e}")
+            logger.error(f"[ERROR] Error getting recruiter recommendations: {e}")
             return []
     
     async def _calculate_job_candidate_match(
@@ -332,7 +332,7 @@ class EnhancedRecommendationService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Error parsing CV: {e}")
+            logger.error(f"[ERROR] Error parsing CV: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -381,7 +381,7 @@ class EnhancedRecommendationService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Error creating job with skills: {e}")
+            logger.error(f"[ERROR] Error creating job with skills: {e}")
             return {
                 'success': False,
                 'error': str(e)

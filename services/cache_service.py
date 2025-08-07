@@ -1,235 +1,336 @@
 import json
+import time
 import hashlib
 import logging
-from typing import Optional, Any, Dict, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime, timedelta
 import redis.asyncio as redis
-from config.security import SecurityConfig
+from dataclasses import dataclass, asdict
+import pickle
+import gzip
+import os
 
 logger = logging.getLogger(__name__)
 
-class CacheService:
-    """Redis-based caching service for query results and frequently accessed data"""
+@dataclass
+class CacheEntry:
+    """Cache entry with metadata"""
+    data: Any
+    timestamp: float
+    ttl: int
+    access_count: int = 0
+    last_accessed: float = 0.0
+    version: str = "1.0"
+
+class RedisCacheService:
+    """Advanced Redis caching service with compression, versioning, and analytics"""
     
-    def __init__(self):
-        self.redis_client = redis.from_url(SecurityConfig.REDIS_URL, decode_responses=True)
-        self.default_ttl = 3600  # 1 hour default TTL
-    
-    def _generate_cache_key(self, prefix: str, **kwargs) -> str:
-        """Generate a unique cache key based on parameters"""
-        # Create a sorted string of key-value pairs
-        sorted_params = sorted(kwargs.items())
-        param_string = "&".join([f"{k}={v}" for k, v in sorted_params])
+    def __init__(self, redis_url: str = None):
+        self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://localhost:6379')
+        self.redis_client = None
+        self.compression_threshold = 1024  # Compress data larger than 1KB
+        self.max_cache_size = 100 * 1024 * 1024  # 100MB
+        self.cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'sets': 0,
+            'deletes': 0,
+            'compressions': 0
+        }
         
-        # Create hash for consistent key length
-        hash_object = hashlib.md5(param_string.encode())
-        return f"{prefix}:{hash_object.hexdigest()}"
+        # Cache prefixes for different data types
+        self.prefixes = {
+            'embedding': 'emb:',
+            'recommendation': 'rec:',
+            'job': 'job:',
+            'candidate': 'cand:',
+            'skill': 'skill:',
+            'search': 'search:',
+            'analytics': 'analytics:',
+            'session': 'session:'
+        }
+        
+        # Default TTL values (in seconds)
+        self.default_ttl = {
+            'embedding': 3600 * 24,  # 24 hours
+            'recommendation': 1800,   # 30 minutes
+            'job': 3600,             # 1 hour
+            'candidate': 3600,       # 1 hour
+            'skill': 3600 * 24 * 7,  # 1 week
+            'search': 900,           # 15 minutes
+            'analytics': 3600,       # 1 hour
+            'session': 1800          # 30 minutes
+        }
     
-    async def get(self, key: str) -> Optional[Any]:
-        """Get value from cache"""
+    async def connect(self):
+        """Connect to Redis"""
         try:
-            value = await self.redis_client.get(key)
-            if value:
-                return json.loads(value)
-            return None
+            self.redis_client = redis.from_url(
+                self.redis_url,
+                decode_responses=False,  # Keep as bytes for compression
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True,
+                health_check_interval=30
+            )
+            await self.redis_client.ping()
+            logger.info("[SUCCESS] Redis cache service connected successfully")
         except Exception as e:
-            logger.error(f"Cache get error for key {key}: {e}")
+            logger.error(f"[ERROR] Failed to connect to Redis: {e}")
+            self.redis_client = None
+    
+    async def disconnect(self):
+        """Disconnect from Redis"""
+        if self.redis_client:
+            await self.redis_client.close()
+            logger.info("Redis cache service disconnected")
+    
+    def _generate_cache_key(self, prefix: str, identifier: str, version: str = "1.0") -> str:
+        """Generate cache key with prefix and version"""
+        return f"{self.prefixes.get(prefix, 'cache:')}{identifier}:v{version}"
+    
+    def _compress_data(self, data: Any) -> bytes:
+        """Compress data if it exceeds threshold"""
+        try:
+            serialized = pickle.dumps(data)
+            if len(serialized) > self.compression_threshold:
+                compressed = gzip.compress(serialized)
+                self.cache_stats['compressions'] += 1
+                return compressed
+            return serialized
+        except Exception as e:
+            logger.error(f"Compression failed: {e}")
+            return pickle.dumps(data)
+    
+    def _decompress_data(self, data: bytes) -> Any:
+        """Decompress data if it was compressed"""
+        try:
+            # Try to decompress first
+            try:
+                decompressed = gzip.decompress(data)
+                return pickle.loads(decompressed)
+            except (OSError, gzip.BadGzipFile):
+                # Not compressed, load directly
+                return pickle.loads(data)
+        except Exception as e:
+            logger.error(f"Decompression failed: {e}")
             return None
     
-    async def set(self, key: str, value: Any, ttl: int = None) -> bool:
-        """Set value in cache with optional TTL"""
+    async def get(self, prefix: str, identifier: str, version: str = "1.0") -> Optional[Any]:
+        """Get data from cache"""
+        if not self.redis_client:
+            return None
+        
         try:
-            ttl = ttl or self.default_ttl
-            serialized_value = json.dumps(value, default=str)
-            return await self.redis_client.setex(key, ttl, serialized_value)
+            cache_key = self._generate_cache_key(prefix, identifier, version)
+            cached_data = await self.redis_client.get(cache_key)
+            
+            if cached_data:
+                # Update access statistics
+                await self.redis_client.hincrby(f"{cache_key}:stats", "access_count", 1)
+                await self.redis_client.hset(f"{cache_key}:stats", "last_accessed", time.time())
+                
+                self.cache_stats['hits'] += 1
+                return self._decompress_data(cached_data)
+            else:
+                self.cache_stats['misses'] += 1
+                return None
+                
         except Exception as e:
-            logger.error(f"Cache set error for key {key}: {e}")
+            logger.error(f"Cache get failed: {e}")
+            return None
+    
+    async def set(self, prefix: str, identifier: str, data: Any, ttl: int = None, version: str = "1.0") -> bool:
+        """Set data in cache with TTL"""
+        if not self.redis_client:
+            return False
+        
+        try:
+            cache_key = self._generate_cache_key(prefix, identifier, version)
+            ttl = ttl or self.default_ttl.get(prefix, 3600)
+            
+            # Compress and store data
+            compressed_data = self._compress_data(data)
+            
+            # Store data
+            await self.redis_client.setex(cache_key, ttl, compressed_data)
+            
+            # Store metadata
+            metadata = {
+                'timestamp': time.time(),
+                'ttl': ttl,
+                'size': len(compressed_data),
+                'version': version
+            }
+            await self.redis_client.hmset(f"{cache_key}:meta", metadata)
+            
+            self.cache_stats['sets'] += 1
+            return True
+            
+        except Exception as e:
+            logger.error(f"Cache set failed: {e}")
             return False
     
-    async def delete(self, key: str) -> bool:
-        """Delete value from cache"""
+    async def delete(self, prefix: str, identifier: str, version: str = "1.0") -> bool:
+        """Delete data from cache"""
+        if not self.redis_client:
+            return False
+        
         try:
-            return bool(await self.redis_client.delete(key))
+            cache_key = self._generate_cache_key(prefix, identifier, version)
+            await self.redis_client.delete(cache_key, f"{cache_key}:meta", f"{cache_key}:stats")
+            self.cache_stats['deletes'] += 1
+            return True
         except Exception as e:
-            logger.error(f"Cache delete error for key {key}: {e}")
+            logger.error(f"Cache delete failed: {e}")
             return False
     
-    async def delete_pattern(self, pattern: str) -> int:
-        """Delete all keys matching pattern"""
+    async def clear_prefix(self, prefix: str) -> bool:
+        """Clear all cache entries with a specific prefix"""
+        if not self.redis_client:
+            return False
+        
         try:
+            pattern = f"{self.prefixes.get(prefix, 'cache:')}*"
             keys = await self.redis_client.keys(pattern)
             if keys:
-                return await self.redis_client.delete(*keys)
-            return 0
+                await self.redis_client.delete(*keys)
+                logger.info(f"Cleared {len(keys)} cache entries with prefix: {prefix}")
+            return True
         except Exception as e:
-            logger.error(f"Cache delete pattern error for {pattern}: {e}")
-            return 0
-    
-    async def exists(self, key: str) -> bool:
-        """Check if key exists in cache"""
-        try:
-            return bool(await self.redis_client.exists(key))
-        except Exception as e:
-            logger.error(f"Cache exists error for key {key}: {e}")
+            logger.error(f"Cache clear prefix failed: {e}")
             return False
     
-    async def get_or_set(self, key: str, getter_func, ttl: int = None) -> Any:
-        """Get from cache or set using getter function"""
-        cached_value = await self.get(key)
-        if cached_value is not None:
-            return cached_value
-        
-        # Get fresh value
-        fresh_value = await getter_func()
-        if fresh_value is not None:
-            await self.set(key, fresh_value, ttl)
-        
-        return fresh_value
-    
-    # Candidate-specific caching methods
-    async def get_candidate(self, candidate_id: int) -> Optional[Dict]:
-        """Get candidate from cache"""
-        key = self._generate_cache_key("candidate", id=candidate_id)
-        return await self.get(key)
-    
-    async def set_candidate(self, candidate_id: int, candidate_data: Dict, ttl: int = 1800) -> bool:
-        """Set candidate in cache (30 minutes TTL)"""
-        key = self._generate_cache_key("candidate", id=candidate_id)
-        return await self.set(key, candidate_data, ttl)
-    
-    async def invalidate_candidate(self, candidate_id: int) -> bool:
-        """Invalidate candidate cache"""
-        key = self._generate_cache_key("candidate", id=candidate_id)
-        return await self.delete(key)
-    
-    async def get_candidates_list(self, skip: int, limit: int, filters: Dict = None) -> Optional[List[Dict]]:
-        """Get candidates list from cache"""
-        key = self._generate_cache_key("candidates_list", skip=skip, limit=limit, filters=str(filters))
-        return await self.get(key)
-    
-    async def set_candidates_list(self, skip: int, limit: int, filters: Dict, candidates_data: List[Dict], ttl: int = 900) -> bool:
-        """Set candidates list in cache (15 minutes TTL)"""
-        key = self._generate_cache_key("candidates_list", skip=skip, limit=limit, filters=str(filters))
-        return await self.set(key, candidates_data, ttl)
-    
-    # Job-specific caching methods
-    async def get_job(self, job_id: int) -> Optional[Dict]:
-        """Get job from cache"""
-        key = self._generate_cache_key("job", id=job_id)
-        return await self.get(key)
-    
-    async def set_job(self, job_id: int, job_data: Dict, ttl: int = 1800) -> bool:
-        """Set job in cache (30 minutes TTL)"""
-        key = self._generate_cache_key("job", id=job_id)
-        return await self.set(key, job_data, ttl)
-    
-    async def invalidate_job(self, job_id: int) -> bool:
-        """Invalidate job cache"""
-        key = self._generate_cache_key("job", id=job_id)
-        return await self.delete(key)
-    
-    async def get_jobs_list(self, skip: int, limit: int, filters: Dict = None) -> Optional[List[Dict]]:
-        """Get jobs list from cache"""
-        key = self._generate_cache_key("jobs_list", skip=skip, limit=limit, filters=str(filters))
-        return await self.get(key)
-    
-    async def set_jobs_list(self, skip: int, limit: int, filters: Dict, jobs_data: List[Dict], ttl: int = 900) -> bool:
-        """Set jobs list in cache (15 minutes TTL)"""
-        key = self._generate_cache_key("jobs_list", skip=skip, limit=limit, filters=str(filters))
-        return await self.set(key, jobs_data, ttl)
-    
-    # Search-specific caching methods
-    async def get_search_results(self, search_type: str, query: str, filters: Dict = None) -> Optional[List[Dict]]:
-        """Get search results from cache"""
-        key = self._generate_cache_key("search", type=search_type, query=query, filters=str(filters))
-        return await self.get(key)
-    
-    async def set_search_results(self, search_type: str, query: str, filters: Dict, results: List[Dict], ttl: int = 600) -> bool:
-        """Set search results in cache (10 minutes TTL)"""
-        key = self._generate_cache_key("search", type=search_type, query=query, filters=str(filters))
-        return await self.set(key, results, ttl)
-    
-    # Statistics caching methods
-    async def get_stats(self, stats_type: str) -> Optional[Dict]:
-        """Get statistics from cache"""
-        key = self._generate_cache_key("stats", type=stats_type)
-        return await self.get(key)
-    
-    async def set_stats(self, stats_type: str, stats_data: Dict, ttl: int = 3600) -> bool:
-        """Set statistics in cache (1 hour TTL)"""
-        key = self._generate_cache_key("stats", type=stats_type)
-        return await self.set(key, stats_data, ttl)
-    
-    # Bulk invalidation methods
-    async def invalidate_all_candidates(self) -> int:
-        """Invalidate all candidate-related cache"""
-        return await self.delete_pattern("candidate:*")
-    
-    async def invalidate_all_jobs(self) -> int:
-        """Invalidate all job-related cache"""
-        return await self.delete_pattern("job:*")
-    
-    async def invalidate_all_search(self) -> int:
-        """Invalidate all search-related cache"""
-        return await self.delete_pattern("search:*")
-    
-    async def invalidate_all_stats(self) -> int:
-        """Invalidate all statistics cache"""
-        return await self.delete_pattern("stats:*")
-    
-    # Cache warming methods
-    async def warm_candidate_cache(self, candidate_ids: List[int], getter_func) -> int:
-        """Warm cache with multiple candidates"""
-        warmed_count = 0
-        for candidate_id in candidate_ids:
-            try:
-                candidate_data = await getter_func(candidate_id)
-                if candidate_data:
-                    await self.set_candidate(candidate_id, candidate_data)
-                    warmed_count += 1
-            except Exception as e:
-                logger.error(f"Failed to warm cache for candidate {candidate_id}: {e}")
-        return warmed_count
-    
-    async def warm_jobs_cache(self, job_ids: List[int], getter_func) -> int:
-        """Warm cache with multiple jobs"""
-        warmed_count = 0
-        for job_id in job_ids:
-            try:
-                job_data = await getter_func(job_id)
-                if job_data:
-                    await self.set_job(job_id, job_data)
-                    warmed_count += 1
-            except Exception as e:
-                logger.error(f"Failed to warm cache for job {job_id}: {e}")
-        return warmed_count
-    
-    # Cache health and monitoring
     async def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
+        if not self.redis_client:
+            return {}
+        
         try:
             info = await self.redis_client.info()
+            memory_info = await self.redis_client.info('memory')
+            
             return {
-                "connected_clients": info.get("connected_clients", 0),
-                "used_memory_human": info.get("used_memory_human", "0B"),
-                "keyspace_hits": info.get("keyspace_hits", 0),
-                "keyspace_misses": info.get("keyspace_misses", 0),
-                "total_commands_processed": info.get("total_commands_processed", 0),
-                "uptime_in_seconds": info.get("uptime_in_seconds", 0)
+                'cache_stats': self.cache_stats,
+                'redis_info': {
+                    'used_memory': memory_info.get('used_memory', 0),
+                    'used_memory_peak': memory_info.get('used_memory_peak', 0),
+                    'connected_clients': info.get('connected_clients', 0),
+                    'total_commands_processed': info.get('total_commands_processed', 0),
+                    'keyspace_hits': info.get('keyspace_hits', 0),
+                    'keyspace_misses': info.get('keyspace_misses', 0)
+                },
+                'hit_rate': self.cache_stats['hits'] / (self.cache_stats['hits'] + self.cache_stats['misses']) if (self.cache_stats['hits'] + self.cache_stats['misses']) > 0 else 0
             }
         except Exception as e:
             logger.error(f"Failed to get cache stats: {e}")
-            return {"error": str(e)}
+            return {}
     
-    async def clear_all_cache(self) -> bool:
-        """Clear all cache (use with caution)"""
+    async def cache_embedding(self, text: str, embedding: Any, model_name: str = "default") -> bool:
+        """Cache embedding with metadata"""
+        identifier = hashlib.md5(f"{text}:{model_name}".encode()).hexdigest()
+        data = {
+            'embedding': embedding,
+            'text': text,
+            'model_name': model_name,
+            'timestamp': time.time()
+        }
+        return await self.set('embedding', identifier, data)
+    
+    async def get_cached_embedding(self, text: str, model_name: str = "default") -> Optional[Any]:
+        """Get cached embedding"""
+        identifier = hashlib.md5(f"{text}:{model_name}".encode()).hexdigest()
+        data = await self.get('embedding', identifier)
+        return data.get('embedding') if data else None
+    
+    async def cache_recommendation(self, user_id: str, job_id: str, recommendations: List[Dict], algorithm: str = "default") -> bool:
+        """Cache recommendation results"""
+        identifier = f"{user_id}:{job_id}:{algorithm}"
+        data = {
+            'recommendations': recommendations,
+            'algorithm': algorithm,
+            'timestamp': time.time()
+        }
+        return await self.set('recommendation', identifier, data)
+    
+    async def get_cached_recommendation(self, user_id: str, job_id: str, algorithm: str = "default") -> Optional[List[Dict]]:
+        """Get cached recommendation results"""
+        identifier = f"{user_id}:{job_id}:{algorithm}"
+        data = await self.get('recommendation', identifier)
+        return data.get('recommendations') if data else None
+    
+    async def cache_job_data(self, job_id: str, job_data: Dict) -> bool:
+        """Cache job data"""
+        return await self.set('job', job_id, job_data)
+    
+    async def get_cached_job_data(self, job_id: str) -> Optional[Dict]:
+        """Get cached job data"""
+        return await self.get('job', job_id)
+    
+    async def cache_candidate_data(self, candidate_id: str, candidate_data: Dict) -> bool:
+        """Cache candidate data"""
+        return await self.set('candidate', candidate_id, candidate_data)
+    
+    async def get_cached_candidate_data(self, candidate_id: str) -> Optional[Dict]:
+        """Get cached candidate data"""
+        return await self.get('candidate', candidate_id)
+    
+    async def cache_search_results(self, query: str, results: List[Dict], search_type: str = "default") -> bool:
+        """Cache search results"""
+        identifier = hashlib.md5(f"{query}:{search_type}".encode()).hexdigest()
+        data = {
+            'results': results,
+            'query': query,
+            'search_type': search_type,
+            'timestamp': time.time()
+        }
+        return await self.set('search', identifier, data)
+    
+    async def get_cached_search_results(self, query: str, search_type: str = "default") -> Optional[List[Dict]]:
+        """Get cached search results"""
+        identifier = hashlib.md5(f"{query}:{search_type}".encode()).hexdigest()
+        data = await self.get('search', identifier)
+        return data.get('results') if data else None
+    
+    async def invalidate_job_cache(self, job_id: str):
+        """Invalidate all cache entries related to a job"""
+        await self.delete('job', job_id)
+        # Also invalidate related recommendations
+        pattern = f"{self.prefixes['recommendation']}*:{job_id}:*"
+        if self.redis_client:
+            keys = await self.redis_client.keys(pattern)
+            if keys:
+                await self.redis_client.delete(*keys)
+    
+    async def invalidate_candidate_cache(self, candidate_id: str):
+        """Invalidate all cache entries related to a candidate"""
+        await self.delete('candidate', candidate_id)
+        # Also invalidate related recommendations
+        pattern = f"{self.prefixes['recommendation']}*:{candidate_id}:*"
+        if self.redis_client:
+            keys = await self.redis_client.keys(pattern)
+            if keys:
+                await self.redis_client.delete(*keys)
+    
+    async def cleanup_expired_cache(self) -> int:
+        """Clean up expired cache entries (Redis handles this automatically)"""
+        return 0  # Redis handles expiration automatically
+    
+    async def get_cache_size(self) -> Dict[str, int]:
+        """Get cache size by prefix"""
+        if not self.redis_client:
+            return {}
+        
         try:
-            await self.redis_client.flushdb()
-            logger.info("All cache cleared successfully")
-            return True
+            sizes = {}
+            for prefix_name, prefix in self.prefixes.items():
+                pattern = f"{prefix}*"
+                keys = await self.redis_client.keys(pattern)
+                sizes[prefix_name] = len(keys)
+            return sizes
         except Exception as e:
-            logger.error(f"Failed to clear cache: {e}")
-            return False
+            logger.error(f"Failed to get cache size: {e}")
+            return {}
 
 # Global cache service instance
-cache_service = CacheService() 
+cache_service = RedisCacheService() 

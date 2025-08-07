@@ -11,7 +11,7 @@ from models.job import Job, JobMandatorySkill
 from db.crud.job import job as job_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user, get_current_recruiter
-from schemas.job import JobCreate, JobUpdate, JobResponse, JobMandatorySkillCreate
+from schemas.job import JobCreate, JobUpdate, JobResponse, JobResponseSimple, JobMandatorySkillCreate, JobSearchFilter
 from sqlalchemy import select
 
 router = APIRouter(tags=["Jobs"])
@@ -24,30 +24,20 @@ async def create_job(
 ):
     """Create a new job posting"""
     try:
-        # Extract mandatory skills from the request
-        mandatory_skills = job_data.mandatory_skills
+        # Create the job
+        job = await job_crud.create(db, obj_in=job_data)
         
-        # Create job without mandatory skills first
-        job_create_data = job_data.dict(exclude={'mandatory_skills'})
-        
-        # Add recruiter_id if the user is a recruiter
-        if hasattr(current_user, 'id'):
-            job_create_data['recruiter_id'] = current_user.id
-        
-        job = await job_crud.create(db, obj_in=JobCreate(**job_create_data))
-        
-        # Add mandatory skills separately
-        for skill_data in mandatory_skills:
-            await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
+        # Add mandatory skills if provided
+        if job_data.mandatory_skills:
+            for skill_data in job_data.mandatory_skills:
+                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
         
         # Get the job with loaded relationships
-        job_with_relations = await job_crud.get_with_mandatory_skills(db, job.id)
-        return job_with_relations
+        job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        return job_with_skills
     except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
-        # Log the actual error for debugging but return user-friendly message
         print(f"Create job error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -62,27 +52,22 @@ async def create_job_as_recruiter(
 ):
     """Create a new job posting as a recruiter"""
     try:
-        # Extract mandatory skills from the request
-        mandatory_skills = job_data.mandatory_skills
+        # Create the job with recruiter ID
+        job_dict = job_data.dict()
+        job_dict["recruiter_id"] = current_recruiter.id
+        job = await job_crud.create(db, obj_in=JobCreate(**job_dict))
         
-        # Create job without mandatory skills first
-        job_create_data = job_data.dict(exclude={'mandatory_skills'})
-        job_create_data['recruiter_id'] = current_recruiter.id
-        
-        job = await job_crud.create(db, obj_in=JobCreate(**job_create_data))
-        
-        # Add mandatory skills separately
-        for skill_data in mandatory_skills:
-            await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
+        # Add mandatory skills if provided
+        if job_data.mandatory_skills:
+            for skill_data in job_data.mandatory_skills:
+                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
         
         # Get the job with loaded relationships
-        job_with_relations = await job_crud.get_with_mandatory_skills(db, job.id)
-        return job_with_relations
+        job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        return job_with_skills
     except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
-        # Log the actual error for debugging but return user-friendly message
         print(f"Create job as recruiter error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -94,33 +79,65 @@ async def create_job_public(
     job_data: JobCreate,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Create a new job posting without authentication (for testing)"""
+    """Create a new job posting (public endpoint for testing)"""
     try:
-        # Extract mandatory skills from the request
-        mandatory_skills = job_data.mandatory_skills
+        # Use default recruiter ID for public endpoint
+        job_dict = job_data.dict()
+        job_dict["recruiter_id"] = 1  # Default recruiter ID
+        job = await job_crud.create(db, obj_in=JobCreate(**job_dict))
         
-        # Create job without mandatory skills first
-        job_create_data = job_data.dict(exclude={'mandatory_skills'})
-        job_create_data['recruiter_id'] = 1  # Default recruiter ID for testing
-        
-        job = await job_crud.create(db, obj_in=JobCreate(**job_create_data))
-        
-        # Add mandatory skills separately
-        for skill_data in mandatory_skills:
-            await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
+        # Add mandatory skills if provided
+        if job_data.mandatory_skills:
+            for skill_data in job_data.mandatory_skills:
+                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
         
         # Get the job with loaded relationships
-        job_with_relations = await job_crud.get_with_mandatory_skills(db, job.id)
-        return job_with_relations
+        job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        return job_with_skills
     except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
-        # Log the actual error for debugging but return user-friendly message
         print(f"Create job public error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create job. Please try again later."
+        )
+
+@router.get("/public", response_model=List[JobResponseSimple])
+async def list_jobs_public(
+    location: Optional[str] = Query(None, description="Filter by location"),
+    domain: Optional[str] = Query(None, description="Filter by domain"),
+    salary_min: Optional[int] = Query(None, ge=0, description="Minimum salary"),
+    salary_max: Optional[int] = Query(None, ge=0, description="Maximum salary"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """List jobs with filters (public endpoint)"""
+    try:
+        # Use a simpler query without loading relationships to avoid prepared statement issues
+        query = select(Job)
+        
+        # Apply filters
+        if location:
+            query = query.where(Job.location == location)
+        if domain:
+            query = query.where(Job.domain == domain)
+        if salary_min is not None:
+            query = query.where(Job.salary_min >= salary_min)
+        if salary_max is not None:
+            query = query.where(Job.salary_max <= salary_max)
+        
+        query = query.offset(skip).limit(limit)
+        result = await db.execute(query)
+        jobs = result.scalars().all()
+        
+        return jobs
+    except Exception as e:
+        print(f"Error in list_jobs_public: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve jobs: {str(e)}"
         )
 
 @router.get("/{job_id}", response_model=JobResponse)

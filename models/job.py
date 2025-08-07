@@ -30,6 +30,12 @@ class Job(BaseModel):
         Index('idx_job_salary_range', 'salary_min', 'salary_max'),
         Index('idx_job_domain_years', 'domain', 'total_years_required'),
         Index('idx_job_company_location', 'company', 'location'),
+        Index('idx_job_created_at', 'created_at'),  # Index for time-based queries
+        Index('idx_job_updated_at', 'updated_at'),  # Index for update tracking
+        Index('idx_job_title', 'title'),  # Index for title searches
+        Index('idx_job_company', 'company'),  # Index for company filtering
+        Index('idx_job_location', 'location'),  # Index for location filtering
+        Index('idx_job_domain', 'domain'),  # Index for domain filtering
         # Index('idx_job_recruiter', 'recruiter_id'),  # Commented out since recruiter_id is commented
     )
 

@@ -66,7 +66,7 @@ class EnhancedCVParser:
         try:
             # Load spaCy model for NER
             self.nlp = spacy.load("en_core_web_sm")
-            logger.info("✅ spaCy model loaded successfully")
+            logger.info("[SUCCESS] spaCy model loaded successfully")
         except OSError:
             logger.warning("⚠️ spaCy model not found. Installing...")
             import subprocess
@@ -111,7 +111,7 @@ class EnhancedCVParser:
                 all_skills[category] = skills
             
             all_skills.update(soft_skills)
-            logger.info(f"✅ Loaded {len(all_skills)} skill categories")
+            logger.info(f"[SUCCESS] Loaded {len(all_skills)} skill categories")
             return all_skills
             
         except FileNotFoundError:
@@ -166,7 +166,7 @@ class EnhancedCVParser:
             )
             
         except Exception as e:
-            logger.error(f"❌ Error parsing CV: {e}")
+            logger.error(f"[ERROR] Error parsing CV: {e}")
             raise
     
     def _extract_text(self, file_path: str) -> str:
@@ -188,7 +188,7 @@ class EnhancedCVParser:
                     text += page.extract_text() + "\n"
                 return text
         except Exception as e:
-            logger.error(f"❌ Error extracting text from PDF: {e}")
+            logger.error(f"[ERROR] Error extracting text from PDF: {e}")
             raise
     
     def _extract_text_from_docx(self, file_path: str) -> str:
@@ -200,7 +200,7 @@ class EnhancedCVParser:
                 text += paragraph.text + "\n"
             return text
         except Exception as e:
-            logger.error(f"❌ Error extracting text from DOCX: {e}")
+            logger.error(f"[ERROR] Error extracting text from DOCX: {e}")
             raise
     
     def _extract_basic_info(self, text: str) -> Dict[str, str]:

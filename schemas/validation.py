@@ -51,30 +51,11 @@ class PasswordValidation(BaseModel):
         if not validate_sql_injection(v):
             raise ValueError('Invalid password format')
         
-        # Check password strength
-        if len(v) < SecurityConfig.PASSWORD_MIN_LENGTH:
-            raise ValueError(f'Password must be at least {SecurityConfig.PASSWORD_MIN_LENGTH} characters long')
-        
-        if len(v) > SecurityConfig.PASSWORD_MAX_LENGTH:
-            raise ValueError(f'Password must be no more than {SecurityConfig.PASSWORD_MAX_LENGTH} characters long')
-        
-        # Check for required character types
-        has_upper = any(c.isupper() for c in v)
-        has_lower = any(c.islower() for c in v)
-        has_digit = any(c.isdigit() for c in v)
-        has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v)
-        
-        if SecurityConfig.PASSWORD_REQUIRE_UPPERCASE and not has_upper:
-            raise ValueError('Password must contain at least one uppercase letter')
-        
-        if SecurityConfig.PASSWORD_REQUIRE_LOWERCASE and not has_lower:
-            raise ValueError('Password must contain at least one lowercase letter')
-        
-        if SecurityConfig.PASSWORD_REQUIRE_DIGITS and not has_digit:
-            raise ValueError('Password must contain at least one digit')
-        
-        if SecurityConfig.PASSWORD_REQUIRE_SPECIAL and not has_special:
-            raise ValueError('Password must contain at least one special character')
+        # Use improved password validation
+        from config.security import validate_password_with_feedback
+        is_valid, message = validate_password_with_feedback(v)
+        if not is_valid:
+            raise ValueError(message)
         
         return v
 

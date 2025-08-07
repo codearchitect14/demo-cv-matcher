@@ -33,4 +33,7 @@ class Application(BaseModel):
         Index('idx_application_candidate_status', 'candidate_id', 'status'),
         Index('idx_application_status_date', 'status', 'created_at'),
         Index('idx_application_recruiter', 'recruiter_id'),
+        Index('idx_application_created_at', 'created_at'),  # Index for time-based queries
+        Index('idx_application_updated_at', 'updated_at'),  # Index for update tracking
+        Index('idx_application_status', 'status'),  # Single column index for status filtering
     )

@@ -1,5 +1,5 @@
 #Today's date: 25/07/2025
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from models.candidate import Candidate, CandidateExperience
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
-from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateExperienceCreate, CandidateExperienceUpdate
+from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateResponseSimple, CandidateExperienceCreate, CandidateExperienceUpdate
 
 router = APIRouter(tags=["Candidates"])
 
@@ -74,6 +74,108 @@ async def get_all_candidates(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve candidates. Please try again later."
+        )
+
+@router.get("/public", response_model=List[CandidateResponseSimple])
+async def get_all_candidates_public(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get all candidates with pagination (public endpoint)"""
+    try:
+        # Use simple get_multi to avoid prepared statement conflicts
+        candidates = await candidate_crud.get_multi(db, skip=skip, limit=limit)
+        return candidates
+    except Exception as e:
+        print(f"Get all candidates public error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve candidates. Please try again later."
+        )
+
+@router.get("/me", response_model=CandidateResponse)
+async def get_my_profile(
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get current user's profile"""
+    try:
+        # Get the candidate with loaded relationships
+        candidate_with_relations = await candidate_crud.get_with_experiences(db, current_user.id)
+        return candidate_with_relations
+    except Exception as e:
+        print(f"Get my profile error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve profile. Please try again later."
+        )
+
+@router.put("/me", response_model=CandidateResponse)
+async def update_my_profile(
+    candidate_data: CandidateUpdate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update current user's profile"""
+    try:
+        # Update the candidate
+        updated_candidate = await candidate_crud.update(db, db_obj=current_user, obj_in=candidate_data)
+        # Get the updated candidate with loaded relationships
+        candidate_with_relations = await candidate_crud.get_with_experiences(db, current_user.id)
+        return candidate_with_relations
+    except Exception as e:
+        print(f"Update my profile error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update profile. Please try again later."
+        )
+
+@router.post("/upload-cv")
+async def upload_cv(
+    cv_file: UploadFile = File(...),
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Upload CV for current user"""
+    try:
+        # Validate file type
+        if not cv_file.filename.lower().endswith(('.pdf', '.doc', '.docx')):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only PDF, DOC, and DOCX files are allowed."
+            )
+        
+        # Validate file size (max 10MB)
+        if cv_file.size and cv_file.size > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be less than 10MB."
+            )
+        
+        # Read file content
+        file_content = await cv_file.read()
+        
+        # In a real application, you would:
+        # 1. Save the file to a secure location (e.g., S3, local storage)
+        # 2. Parse the CV content using OCR or text extraction
+        # 3. Extract skills, experience, and other relevant information
+        # 4. Update the candidate's profile with extracted information
+        
+        # For now, we'll just return a success message
+        return {
+            "message": "CV uploaded successfully",
+            "filename": cv_file.filename,
+            "size": len(file_content)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Upload CV error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload CV. Please try again later."
         )
 
 @router.get("/{candidate_id}", response_model=CandidateResponse)
