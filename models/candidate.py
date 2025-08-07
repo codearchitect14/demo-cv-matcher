@@ -50,6 +50,9 @@ class Candidate(BaseModel):
         Index('idx_candidate_domain_location', 'domain', 'location'),
         Index('idx_candidate_salary', 'expected_salary_min', 'expected_salary_max'),
         Index('idx_candidate_role', 'role'),
+        Index('idx_candidate_email', 'email'),  # Single column index for email lookups
+        Index('idx_candidate_created_at', 'created_at'),  # Index for time-based queries
+        Index('idx_candidate_updated_at', 'updated_at'),  # Index for update tracking
     )
     id = Column(Integer, primary_key=True, index=True)
 

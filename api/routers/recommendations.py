@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import json
@@ -14,8 +14,11 @@ from schemas.recommendation import (
     FeedbackResponse,
     ModelPerformanceResponse,
     QuickCandidateMatchRequest,
-    QuickRecruiterMatchRequest
+    QuickRecruiterMatchRequest,
+    JobRecommendationResponse
 )
+from models.candidate import Candidate
+from api.routers.auth import get_current_user
 
 router = APIRouter(tags=["Recommendations"])
 
@@ -222,3 +225,44 @@ async def quick_recruiter_match(request: QuickRecruiterMatchRequest, db: AsyncSe
     """Quick recruiter match for testing"""
     # Implementation remains the same
     pass 
+
+@router.get("/jobs", response_model=List[JobRecommendationResponse])
+async def get_job_recommendations(
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    limit: int = Query(10, ge=1, le=50)
+):
+    """Get personalized job recommendations for current user"""
+    try:
+        from recommender.semantic import semantic_service
+        
+        # Get recommendations using the semantic service
+        recommendations = await semantic_service.find_similar_jobs(
+            candidate_id=current_user.id,
+            db=db,
+            k=limit
+        )
+        
+        # Convert to response format
+        response_recommendations = []
+        for rec in recommendations:
+            response_recommendations.append({
+                "job_id": rec.get("job_id"),
+                "job": rec.get("job"),
+                "combined_score": rec.get("combined_score", 0.0),
+                "semantic_score": rec.get("semantic_score", 0.0),
+                "filter_score": rec.get("filter_score", 0.0),
+                "method": rec.get("method", "semantic"),
+                "weights_used": rec.get("weights_used", {}),
+                "personalization_score": rec.get("personalization_score", 0.0),
+                "personalization_factors": rec.get("personalization_factors", [])
+            })
+        
+        return response_recommendations
+        
+    except Exception as e:
+        print(f"Get job recommendations error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get job recommendations. Please try again later."
+        ) 

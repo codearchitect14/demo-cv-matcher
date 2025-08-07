@@ -77,11 +77,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
 
       if (response.ok) {
         const data = await response.json();
+        // Show success message and automatically navigate to login
         alert('Account created successfully! Please sign in.');
-        // Use the prop function to switch to signin
-        if (onSwitchToSignIn) {
-          onSwitchToSignIn();
-        }
+        // Navigate to login page
+        navigate('/login-new');
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Registration failed');

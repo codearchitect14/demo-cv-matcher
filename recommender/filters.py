@@ -368,7 +368,7 @@ class FilteringService:
         job: Job, 
         db: AsyncSession
     ) -> Dict[str, Any]:
-        """Check if candidate has all mandatory skills with required experience"""
+        """Check if candidate has all mandatory skills with required experience using advanced matching"""
         
         if not job.mandatory_skills:
             return {
@@ -377,37 +377,68 @@ class FilteringService:
                 'reason': 'No mandatory skills required'
             }
         
+        from services.skill_matcher import skill_matcher
+        
+        # Convert experiences to format expected by skill matcher
+        candidate_skills = []
+        for exp in candidate.experiences:
+            candidate_skills.append({
+                'skill': exp.skill,
+                'years': exp.years,
+                'description': exp.description or ""
+            })
+        
+        # Convert mandatory skills to format expected by skill matcher
+        job_skills = []
+        for skill in job.mandatory_skills:
+            job_skills.append({
+                'skill': skill.skill,
+                'min_experience': skill.min_experience
+            })
+        
+        # Use advanced skill matcher
+        validation_results = skill_matcher.validate_skill_requirements(job_skills, candidate_skills)
+        
         missing_skills = []
         skill_matches = []
+        partial_matches = []
         
-        for mandatory_skill in job.mandatory_skills:
-            skill_found = False
-            
-            for exp in candidate.experiences:
-                if exp.skill.lower() == mandatory_skill.skill.lower():
-                    if exp.years >= mandatory_skill.min_experience:
-                        skill_matches.append(f"{exp.skill} ({exp.years} years, required: {mandatory_skill.min_experience})")
-                        skill_found = True
-                        break
-                    else:
-                        missing_skills.append(f"{mandatory_skill.skill} (has {exp.years} years, needs {mandatory_skill.min_experience})")
-                        skill_found = True
-                        break
-            
-            if not skill_found:
-                missing_skills.append(f"{mandatory_skill.skill} (not found)")
+        for skill_name, result in validation_results.items():
+            if result['is_met']:
+                skill_matches.append(f"{skill_name} ({result['best_match']['years']} years, required: {result['required_years']})")
+            elif result['best_match'] and result['best_match']['match_score'] >= 0.7:
+                partial_matches.append(f"{skill_name} (partial match: {result['best_match']['skill']}, score: {result['best_match']['match_score']:.2f})")
+            else:
+                missing_skills.append(f"{skill_name} (not found)")
         
-        if missing_skills:
+        # Calculate overall score
+        overall_score = skill_matcher.calculate_overall_match_score(validation_results)
+        
+        if missing_skills and not skill_matches:
             return {
                 'is_valid': False,
-                'score': 0.0,
-                'reason': f'Missing or insufficient skills: {", ".join(missing_skills)}'
+                'score': overall_score,
+                'reason': f'Missing skills: {", ".join(missing_skills)}'
+            }
+        elif skill_matches:
+            reason_parts = []
+            if skill_matches:
+                reason_parts.append(f"Matched: {', '.join(skill_matches)}")
+            if partial_matches:
+                reason_parts.append(f"Partial matches: {', '.join(partial_matches)}")
+            if missing_skills:
+                reason_parts.append(f"Missing: {', '.join(missing_skills)}")
+            
+            return {
+                'is_valid': len(missing_skills) == 0,
+                'score': overall_score,
+                'reason': '; '.join(reason_parts)
             }
         else:
             return {
-                'is_valid': True,
-                'score': 1.0,
-                'reason': f'All mandatory skills met: {", ".join(skill_matches)}'
+                'is_valid': False,
+                'score': overall_score,
+                'reason': f'No skill matches found: {", ".join(missing_skills)}'
             }
     
     async def _check_application_history(

@@ -8,6 +8,15 @@ const ApplicationsManagement = () => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
+  
+  // New state for dropdowns and search
+  const [candidates, setCandidates] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [searchCandidate, setSearchCandidate] = useState('');
+  const [searchJob, setSearchJob] = useState('');
+  const [filteredCandidates, setFilteredCandidates] = useState([]);
+  const [filteredJobs, setFilteredJobs] = useState([]);
+  
   const [filters, setFilters] = useState({
     job_id: '',
     candidate_id: '',
@@ -19,14 +28,72 @@ const ApplicationsManagement = () => {
     status: 'applied'
   });
 
+  // Fetch candidates and jobs for dropdowns
+  useEffect(() => {
+    fetchCandidates();
+    fetchJobs();
+  }, []);
+
+  const fetchCandidates = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/candidates/public?limit=100');
+      if (response.ok) {
+        const data = await response.json();
+        setCandidates(data);
+        setFilteredCandidates(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch candidates:', err);
+    }
+  };
+
+  const fetchJobs = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=100');
+      if (response.ok) {
+        const data = await response.json();
+        setJobs(data);
+        setFilteredJobs(data);
+      } else {
+        console.error('Failed to fetch jobs:', response.status, response.statusText);
+      }
+    } catch (err) {
+      console.error('Failed to fetch jobs:', err);
+    }
+  };
+
+  // Search functionality for candidates
+  useEffect(() => {
+    if (searchCandidate.trim() === '') {
+      setFilteredCandidates(candidates);
+    } else {
+      const filtered = candidates.filter(candidate =>
+        candidate.name?.toLowerCase().includes(searchCandidate.toLowerCase()) ||
+        candidate.email?.toLowerCase().includes(searchCandidate.toLowerCase()) ||
+        candidate.location?.toLowerCase().includes(searchCandidate.toLowerCase())
+      );
+      setFilteredCandidates(filtered);
+    }
+  }, [searchCandidate, candidates]);
+
+  // Search functionality for jobs
+  useEffect(() => {
+    if (searchJob.trim() === '') {
+      setFilteredJobs(jobs);
+    } else {
+      const filtered = jobs.filter(job =>
+        job.title?.toLowerCase().includes(searchJob.toLowerCase()) ||
+        job.company?.toLowerCase().includes(searchJob.toLowerCase()) ||
+        job.location?.toLowerCase().includes(searchJob.toLowerCase())
+      );
+      setFilteredJobs(filtered);
+    }
+  }, [searchJob, jobs]);
+
   const fetchApplicationDetails = async (applicationId) => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // Use public endpoint for testing
+      const response = await fetch(`http://localhost:8000/api/v1/applications/public/${applicationId}`);
       if (response.ok) {
         const data = await response.json();
         setSelectedApplication(data);
@@ -44,12 +111,8 @@ const ApplicationsManagement = () => {
 
   const fetchJobApplications = async (jobId) => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/job/${jobId}/applications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // Use public endpoint for testing
+      const response = await fetch(`http://localhost:8000/api/v1/applications/public/job/${jobId}/applications`);
       if (response.ok) {
         const data = await response.json();
         setApplications(data);
@@ -67,12 +130,8 @@ const ApplicationsManagement = () => {
 
   const fetchCandidateApplications = async (candidateId) => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/candidate/${candidateId}/applications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // Use public endpoint for testing
+      const response = await fetch(`http://localhost:8000/api/v1/applications/public/candidate/${candidateId}/applications`);
       if (response.ok) {
         const data = await response.json();
         setApplications(data);
@@ -92,14 +151,17 @@ const ApplicationsManagement = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('http://localhost:8000/api/v1/applications/', {
+      // Use public endpoint for testing
+      const response = await fetch('http://localhost:8000/api/v1/applications/public', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          candidate_id: parseInt(formData.candidate_id),
+          job_id: parseInt(formData.job_id)
+        })
       });
       if (response.ok) {
         const data = await response.json();
@@ -127,12 +189,11 @@ const ApplicationsManagement = () => {
   const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}`, {
+      // Use public endpoint for testing
+      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -164,7 +225,7 @@ const ApplicationsManagement = () => {
     } else if (filters.candidate_id) {
       fetchCandidateApplications(filters.candidate_id);
     } else {
-      setError('Please enter either a Job ID or Candidate ID to filter applications');
+      setError('Please select either a Job or Candidate to filter applications');
     }
   };
 
@@ -181,18 +242,31 @@ const ApplicationsManagement = () => {
 
   return (
     <div className="applications-dashboard">
+      {/* Professional Header */}
       <div className="dashboard-header">
-        <h1>Applications Management</h1>
-        <div className="header-actions">
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowForm(true)}
-          >
-            Create Application
-          </button>
+        <div className="header-content">
+          <div className="header-left">
+            <div className="header-icon">
+              <i className="fas fa-briefcase"></i>
+            </div>
+            <div className="header-text">
+              <h1 className="header-title">Applications Management</h1>
+              <p className="header-subtitle">Manage and track all job applications</p>
+            </div>
+          </div>
+          <div className="header-actions">
+            <button 
+              className="btn btn-primary"
+              onClick={() => setShowForm(true)}
+            >
+              <i className="fas fa-plus"></i>
+              Create Application
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Messages */}
       {error && (
         <div className="error-message">
           <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
@@ -207,198 +281,346 @@ const ApplicationsManagement = () => {
         </div>
       )}
 
+      {/* Main Content */}
       <div className="dashboard-content">
-        <div className="filters-section">
-          <h2>Filter Applications</h2>
-          <div className="filters">
-            <div className="filter-group">
-              <label>Job ID:</label>
-              <input
-                type="number"
-                value={filters.job_id}
-                onChange={(e) => setFilters({...filters, job_id: e.target.value})}
-                placeholder="Enter Job ID"
-              />
-            </div>
-            <div className="filter-group">
-              <label>Candidate ID:</label>
-              <input
-                type="number"
-                value={filters.candidate_id}
-                onChange={(e) => setFilters({...filters, candidate_id: e.target.value})}
-                placeholder="Enter Candidate ID"
-              />
-            </div>
-            <div className="filter-group">
-              <label>Status:</label>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({...filters, status: e.target.value})}
-              >
-                <option value="">All Statuses</option>
-                <option value="applied">Applied</option>
-                <option value="reviewing">Reviewing</option>
-                <option value="interviewed">Interviewed</option>
-                <option value="accepted">Accepted</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <button 
-              className="btn btn-secondary"
-              onClick={handleFilterApplications}
-            >
+        {/* Filter Section */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2 className="section-title">
+              <i className="fas fa-filter"></i>
               Filter Applications
-            </button>
+            </h2>
+            <p className="section-description">
+              Search and filter applications by job, candidate, or status
+            </p>
           </div>
-        </div>
-
-        <div className="applications-list">
-          <h2>Applications ({applications.length})</h2>
-          {loading ? (
-            <div className="loading">Loading applications...</div>
-          ) : (
-            <div className="applications-grid">
-              {applications.map(application => (
-                <div 
-                  key={application.id} 
-                  className={`application-card ${selectedApplication?.id === application.id ? 'selected' : ''}`}
-                  onClick={() => fetchApplicationDetails(application.id)}
-                >
-                  <div className="application-header">
-                    <h3>Application #{application.id}</h3>
-                    <span 
-                      className="status-badge"
-                      style={{ backgroundColor: getStatusColor(application.status) }}
-                    >
-                      {application.status}
-                    </span>
-                  </div>
-                  <p><strong>Candidate:</strong> {application.candidate?.name || 'N/A'}</p>
-                  <p><strong>Job:</strong> {application.job?.title || 'N/A'}</p>
-                  <p><strong>Applied:</strong> {new Date(application.created_at).toLocaleDateString()}</p>
-                  <div className="application-actions">
-                    <select
-                      value={application.status}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleUpdateApplicationStatus(application.id, e.target.value);
-                      }}
-                      className="status-select"
-                    >
-                      <option value="applied">Applied</option>
-                      <option value="reviewing">Reviewing</option>
-                      <option value="interviewed">Interviewed</option>
-                      <option value="accepted">Accepted</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
+          
+          <div className="filters-container">
+            <div className="filters-grid">
+              <div className="filter-group">
+                <label className="filter-label">Select Job</label>
+                <div className="search-dropdown">
+                  <input
+                    type="text"
+                    placeholder="Search jobs by title, company, or location..."
+                    value={searchJob}
+                    onChange={(e) => setSearchJob(e.target.value)}
+                    className="search-input"
+                  />
+                  <select
+                    value={filters.job_id}
+                    onChange={(e) => setFilters({...filters, job_id: e.target.value, candidate_id: ''})}
+                    className="dropdown-select"
+                  >
+                    <option value="">Select a job...</option>
+                    {filteredJobs.map((job) => (
+                      <option key={job.id} value={job.id}>
+                        {job.title} - {job.company} ({job.location})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
 
-        {selectedApplication && (
-          <div className="application-details">
-            <h2>Application Details</h2>
-            <div className="detail-section">
-              <h3>Basic Information</h3>
-              <p><strong>Application ID:</strong> {selectedApplication.id}</p>
-              <p><strong>Status:</strong> 
-                <span 
-                  className="status-badge"
-                  style={{ backgroundColor: getStatusColor(selectedApplication.status) }}
-                >
-                  {selectedApplication.status}
-                </span>
-              </p>
-              <p><strong>Applied Date:</strong> {new Date(selectedApplication.created_at).toLocaleDateString()}</p>
-              <p><strong>Last Updated:</strong> {new Date(selectedApplication.updated_at).toLocaleDateString()}</p>
-            </div>
+              <div className="filter-group">
+                <label className="filter-label">Select Candidate</label>
+                <div className="search-dropdown">
+                  <input
+                    type="text"
+                    placeholder="Search candidates by name, email, or location..."
+                    value={searchCandidate}
+                    onChange={(e) => setSearchCandidate(e.target.value)}
+                    className="search-input"
+                  />
+                  <select
+                    value={filters.candidate_id}
+                    onChange={(e) => setFilters({...filters, candidate_id: e.target.value, job_id: ''})}
+                    className="dropdown-select"
+                  >
+                    <option value="">Select a candidate...</option>
+                    {filteredCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.name} - {candidate.email} ({candidate.location})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-            <div className="detail-section">
-              <h3>Candidate Information</h3>
-              {selectedApplication.candidate ? (
-                <>
-                  <p><strong>Name:</strong> {selectedApplication.candidate.name}</p>
-                  <p><strong>Email:</strong> {selectedApplication.candidate.email}</p>
-                  <p><strong>Location:</strong> {selectedApplication.candidate.location}</p>
-                  <p><strong>Domain:</strong> {selectedApplication.candidate.domain}</p>
-                  <p><strong>Expected Salary:</strong> ${selectedApplication.candidate.expected_salary_min} - ${selectedApplication.candidate.expected_salary_max}</p>
-                </>
-              ) : (
-                <p>Candidate information not available</p>
-              )}
-            </div>
-
-            <div className="detail-section">
-              <h3>Job Information</h3>
-              {selectedApplication.job ? (
-                <>
-                  <p><strong>Title:</strong> {selectedApplication.job.title}</p>
-                  <p><strong>Company:</strong> {selectedApplication.job.company}</p>
-                  <p><strong>Location:</strong> {selectedApplication.job.location}</p>
-                  <p><strong>Domain:</strong> {selectedApplication.job.domain}</p>
-                  <p><strong>Salary Range:</strong> ${selectedApplication.job.salary_min} - ${selectedApplication.job.salary_max}</p>
-                  <p><strong>Experience Required:</strong> {selectedApplication.job.total_years_required} years</p>
-                </>
-              ) : (
-                <p>Job information not available</p>
-              )}
-            </div>
-
-            <div className="detail-section">
-              <h3>Update Status</h3>
-              <div className="status-update">
+              <div className="filter-group">
+                <label className="filter-label">Status</label>
                 <select
-                  value={selectedApplication.status}
-                  onChange={(e) => handleUpdateApplicationStatus(selectedApplication.id, e.target.value)}
+                  value={filters.status}
+                  onChange={(e) => setFilters({...filters, status: e.target.value})}
+                  className="status-select"
                 >
+                  <option value="">All Statuses</option>
                   <option value="applied">Applied</option>
                   <option value="reviewing">Reviewing</option>
                   <option value="interviewed">Interviewed</option>
                   <option value="accepted">Accepted</option>
                   <option value="rejected">Rejected</option>
                 </select>
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => handleUpdateApplicationStatus(selectedApplication.id, selectedApplication.status)}
-                >
-                  Update Status
-                </button>
+              </div>
+            </div>
+
+            <div className="filter-actions">
+              <button 
+                className="btn btn-secondary"
+                onClick={handleFilterApplications}
+              >
+                <i className="fas fa-search"></i>
+                Filter Applications
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Applications List */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2 className="section-title">
+              <i className="fas fa-list"></i>
+              Applications ({applications.length})
+            </h2>
+            <p className="section-description">
+              View and manage all job applications
+            </p>
+          </div>
+
+          {loading ? (
+            <div className="loading-container">
+              <div className="loading-spinner"></div>
+              <p>Loading applications...</p>
+            </div>
+          ) : (
+            <div className="applications-container">
+              {applications.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">
+                    <i className="fas fa-inbox"></i>
+                  </div>
+                  <h3>No Applications Found</h3>
+                  <p>Try selecting a job or candidate to view applications</p>
+                </div>
+              ) : (
+                <div className="applications-grid">
+                  {applications.map(application => (
+                    <div 
+                      key={application.id} 
+                      className={`application-card ${selectedApplication?.id === application.id ? 'selected' : ''}`}
+                      onClick={() => fetchApplicationDetails(application.id)}
+                    >
+                      <div className="application-header">
+                        <h3 className="application-title">Application #{application.id}</h3>
+                        <span 
+                          className="status-badge"
+                          style={{ backgroundColor: getStatusColor(application.status) }}
+                        >
+                          {application.status}
+                        </span>
+                      </div>
+                      
+                      <div className="application-content">
+                        <div className="application-info">
+                          <p><strong>Candidate:</strong> {application.candidate?.name || 'N/A'}</p>
+                          <p><strong>Job:</strong> {application.job?.title || 'N/A'}</p>
+                          <p><strong>Applied:</strong> {new Date(application.created_at).toLocaleDateString()}</p>
+                        </div>
+                        
+                        <div className="application-actions">
+                          <select
+                            value={application.status}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleUpdateApplicationStatus(application.id, e.target.value);
+                            }}
+                            className="status-select"
+                          >
+                            <option value="applied">Applied</option>
+                            <option value="reviewing">Reviewing</option>
+                            <option value="interviewed">Interviewed</option>
+                            <option value="accepted">Accepted</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Application Details */}
+        {selectedApplication && (
+          <div className="content-section">
+            <div className="section-header">
+              <h2 className="section-title">
+                <i className="fas fa-file-alt"></i>
+                Application Details
+              </h2>
+            </div>
+            
+            <div className="application-details-container">
+              <div className="details-grid">
+                <div className="detail-section">
+                  <h3 className="detail-title">Basic Information</h3>
+                  <div className="detail-content">
+                    <p><strong>Application ID:</strong> {selectedApplication.id}</p>
+                    <p><strong>Status:</strong> 
+                      <span 
+                        className="status-badge"
+                        style={{ backgroundColor: getStatusColor(selectedApplication.status) }}
+                      >
+                        {selectedApplication.status}
+                      </span>
+                    </p>
+                    <p><strong>Applied Date:</strong> {new Date(selectedApplication.created_at).toLocaleDateString()}</p>
+                    <p><strong>Last Updated:</strong> {new Date(selectedApplication.updated_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+
+                <div className="detail-section">
+                  <h3 className="detail-title">Candidate Information</h3>
+                  <div className="detail-content">
+                    {selectedApplication.candidate ? (
+                      <>
+                        <p><strong>Name:</strong> {selectedApplication.candidate.name}</p>
+                        <p><strong>Email:</strong> {selectedApplication.candidate.email}</p>
+                        <p><strong>Location:</strong> {selectedApplication.candidate.location}</p>
+                        <p><strong>Domain:</strong> {selectedApplication.candidate.domain}</p>
+                        <p><strong>Expected Salary:</strong> ${selectedApplication.candidate.expected_salary_min} - ${selectedApplication.candidate.expected_salary_max}</p>
+                      </>
+                    ) : (
+                      <p>Candidate information not available</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="detail-section">
+                  <h3 className="detail-title">Job Information</h3>
+                  <div className="detail-content">
+                    {selectedApplication.job ? (
+                      <>
+                        <p><strong>Title:</strong> {selectedApplication.job.title}</p>
+                        <p><strong>Company:</strong> {selectedApplication.job.company}</p>
+                        <p><strong>Location:</strong> {selectedApplication.job.location}</p>
+                        <p><strong>Domain:</strong> {selectedApplication.job.domain}</p>
+                        <p><strong>Salary Range:</strong> ${selectedApplication.job.salary_min} - ${selectedApplication.job.salary_max}</p>
+                        <p><strong>Experience Required:</strong> {selectedApplication.job.total_years_required} years</p>
+                      </>
+                    ) : (
+                      <p>Job information not available</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="detail-actions">
+                <h3 className="detail-title">Update Status</h3>
+                <div className="status-update">
+                  <select
+                    value={selectedApplication.status}
+                    onChange={(e) => handleUpdateApplicationStatus(selectedApplication.id, e.target.value)}
+                    className="status-select"
+                  >
+                    <option value="applied">Applied</option>
+                    <option value="reviewing">Reviewing</option>
+                    <option value="interviewed">Interviewed</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => handleUpdateApplicationStatus(selectedApplication.id, selectedApplication.status)}
+                  >
+                    <i className="fas fa-save"></i>
+                    Update Status
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Create Application Modal */}
         {showForm && (
           <div className="modal">
             <div className="modal-content">
-              <h3>Create New Application</h3>
-              <form onSubmit={handleCreateApplication}>
+              <div className="modal-header">
+                <h3 className="modal-title">
+                  <i className="fas fa-plus"></i>
+                  Create New Application
+                </h3>
+                <button 
+                  className="modal-close"
+                  onClick={() => setShowForm(false)}
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+              
+              <form onSubmit={handleCreateApplication} className="modal-form">
                 <div className="form-group">
-                  <label>Candidate ID:</label>
-                  <input
-                    type="number"
-                    value={formData.candidate_id}
-                    onChange={(e) => setFormData({...formData, candidate_id: e.target.value})}
-                    required
-                  />
+                  <label className="form-label">Select Candidate</label>
+                  <div className="search-dropdown">
+                    <input
+                      type="text"
+                      placeholder="Search candidates by name, email, or location..."
+                      value={searchCandidate}
+                      onChange={(e) => setSearchCandidate(e.target.value)}
+                      className="search-input"
+                    />
+                    <select
+                      value={formData.candidate_id}
+                      onChange={(e) => setFormData({...formData, candidate_id: e.target.value})}
+                      required
+                      className="dropdown-select"
+                    >
+                      <option value="">Select a candidate...</option>
+                      {filteredCandidates.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {candidate.name} - {candidate.email} ({candidate.location})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
+                
                 <div className="form-group">
-                  <label>Job ID:</label>
-                  <input
-                    type="number"
-                    value={formData.job_id}
-                    onChange={(e) => setFormData({...formData, job_id: e.target.value})}
-                    required
-                  />
+                  <label className="form-label">Select Job</label>
+                  <div className="search-dropdown">
+                    <input
+                      type="text"
+                      placeholder="Search jobs by title, company, or location..."
+                      value={searchJob}
+                      onChange={(e) => setSearchJob(e.target.value)}
+                      className="search-input"
+                    />
+                    <select
+                      value={formData.job_id}
+                      onChange={(e) => setFormData({...formData, job_id: e.target.value})}
+                      required
+                      className="dropdown-select"
+                    >
+                      <option value="">Select a job...</option>
+                      {filteredJobs.map((job) => (
+                        <option key={job.id} value={job.id}>
+                          {job.title} - {job.company} ({job.location})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
+                
                 <div className="form-group">
-                  <label>Status:</label>
+                  <label className="form-label">Status</label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
+                    className="status-select"
                   >
                     <option value="applied">Applied</option>
                     <option value="reviewing">Reviewing</option>
@@ -407,15 +629,27 @@ const ApplicationsManagement = () => {
                     <option value="rejected">Rejected</option>
                   </select>
                 </div>
+                
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? 'Creating...' : 'Create Application'}
+                    {loading ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin"></i>
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-plus"></i>
+                        Create Application
+                      </>
+                    )}
                   </button>
                   <button 
                     type="button" 
                     className="btn btn-secondary"
                     onClick={() => setShowForm(false)}
                   >
+                    <i className="fas fa-times"></i>
                     Cancel
                   </button>
                 </div>
