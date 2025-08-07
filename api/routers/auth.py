@@ -11,7 +11,7 @@ from config.security import (
     SecurityConfig, verify_password, get_password_hash, create_access_token, 
     create_refresh_token, verify_token, store_refresh_token, validate_refresh_token,
     revoke_refresh_token, store_user_session, validate_user_session, 
-    revoke_user_session, get_active_sessions_count, validate_password_strength
+    revoke_user_session, get_active_sessions_count, validate_password_with_feedback
 )
 from models.candidate import Candidate
 from models.recruiter import Recruiter
@@ -160,10 +160,11 @@ async def register(
             )
         
         # Validate password strength
-        if not validate_password_strength(user_data.password):
+        is_valid, message = validate_password_with_feedback(user_data.password)
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password does not meet security requirements. Must contain uppercase, lowercase, digit, and special character."
+                detail=message
             )
         
         # Create new user
@@ -447,10 +448,11 @@ async def change_password(
             )
         
         # Validate new password
-        if not validate_password_strength(new_password):
+        is_valid, message = validate_password_with_feedback(new_password)
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="New password does not meet security requirements"
+                detail=message
             )
         
         # Hash new password

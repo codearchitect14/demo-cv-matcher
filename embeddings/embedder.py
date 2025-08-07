@@ -46,31 +46,21 @@ class OptimizedEmbeddingService:
         return f"embedding:{model_name}:{text_hash}"
     
     async def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
-        """Get embedding from cache"""
+        """Get cached embedding using advanced cache service"""
         try:
-            cache_key = self._generate_cache_key(text, self.model_name)
-            cached_data = await self.redis_client.get(cache_key)
-            if cached_data:
-                embedding_data = json.loads(cached_data)
-                return np.array(embedding_data['embedding'])
+            from services.cache_service import cache_service
+            cached_embedding = await cache_service.get_cached_embedding(text, self.model_name)
+            if cached_embedding is not None:
+                return np.array(cached_embedding)
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}")
         return None
     
     async def _cache_embedding(self, text: str, embedding: np.ndarray, metadata: Dict[str, Any]):
-        """Cache embedding with metadata"""
+        """Cache embedding with metadata using advanced cache service"""
         try:
-            cache_key = self._generate_cache_key(text, self.model_name)
-            cache_data = {
-                'embedding': embedding.tolist(),
-                'metadata': metadata,
-                'timestamp': time.time()
-            }
-            await self.redis_client.setex(
-                cache_key, 
-                self.cache_ttl, 
-                json.dumps(cache_data)
-            )
+            from services.cache_service import cache_service
+            await cache_service.cache_embedding(text, embedding.tolist(), self.model_name)
         except Exception as e:
             logger.warning(f"Cache storage failed: {e}")
     

@@ -23,30 +23,50 @@ DATABASE_URL = os.getenv(
 if DATABASE_URL and not DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
-# Create engine with pgbouncer-compatible settings
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=os.getenv("DEBUG", "False").lower() == "true",
-    future=True,
-    # Connection pooling settings
-    pool_size=5,  # Reduced pool size
-    max_overflow=10,  # Reduced overflow
-    pool_timeout=30,
-    pool_recycle=1800,  # Recycle connections every 30 minutes
-    pool_pre_ping=True,
-    # Critical: Disable prepared statements for pgbouncer compatibility
-    connect_args={
-        "ssl": "require" if "supabase.co" in DATABASE_URL else False,
-        "statement_cache_size": 0,  # Disable prepared statements
-        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
-        "server_settings": {
-            "jit": "off",
-            "application_name": "cv-matcher-app",
-            "statement_timeout": "30000",  # 30 seconds
-            "idle_in_transaction_session_timeout": "30000"  # 30 seconds
+def create_db_engine():
+    """Create a fresh database engine with pgbouncer compatibility"""
+    return create_async_engine(
+        DATABASE_URL,
+        echo=os.getenv("DEBUG", "False").lower() == "true",
+        future=True,
+        # Production connection pooling settings
+        pool_size=20,  # Increased pool size for production
+        max_overflow=30,  # Increased overflow for high load
+        pool_timeout=30,
+        pool_recycle=1800,  # Recycle connections every 30 minutes
+        pool_pre_ping=True,  # Health check connections
+        # Critical: Disable prepared statements for pgbouncer compatibility
+        connect_args={
+            "ssl": "require" if "supabase.co" in DATABASE_URL else False,
+            "statement_cache_size": 0,  # Disable prepared statements
+            "command_timeout": 30,  # 30 seconds command timeout
+            "server_settings": {
+                "jit": "off",
+                "application_name": "cv-matcher-app",
+                "statement_timeout": "30000",  # 30 seconds
+                "idle_in_transaction_session_timeout": "30000",  # 30 seconds
+                "default_transaction_isolation": "read committed"
+            }
         }
-    }
-)
+    )
+
+# Create initial engine
+engine = create_db_engine()
+
+def get_fresh_engine():
+    """Get a fresh engine instance to avoid prepared statement conflicts"""
+    return create_db_engine()
+
+def get_fresh_session_factory():
+    """Get a fresh session factory with a new engine"""
+    fresh_engine = get_fresh_engine()
+    return sessionmaker(
+        fresh_engine, 
+        class_=AsyncSession, 
+        expire_on_commit=False,
+        autoflush=False,
+        autocommit=False
+    )
 
 # Create async session factory
 AsyncSessionLocal = sessionmaker(
@@ -67,6 +87,15 @@ logger = logging.getLogger(__name__)
 async def get_db_session() -> AsyncSession:
     """Get database session for dependency injection"""
     async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+async def get_fresh_db_session() -> AsyncSession:
+    """Get a fresh database session with a new engine"""
+    fresh_session_factory = get_fresh_session_factory()
+    async with fresh_session_factory() as session:
         try:
             yield session
         finally:

@@ -99,17 +99,18 @@ class JobBase(BaseModel):
 
     @validator('salary_min', 'salary_max')
     def validate_salary(cls, v):
-        if v is not None and v < 0:
-            raise ValueError('Salary cannot be negative')
-        if v is not None and v > 1000000:
-            raise ValueError('Salary cannot exceed 1,000,000')
+        if v is not None:
+            if v < 0:
+                raise ValueError('Salary cannot be negative')
+            if v > 1000000:
+                raise ValueError('Salary cannot exceed 1,000,000')
         return v
 
     @validator('salary_max')
     def validate_salary_range(cls, v, values):
-        min_salary = values.get('salary_min')
-        if v is not None and min_salary is not None and v < min_salary:
-            raise ValueError('Maximum salary cannot be less than minimum salary')
+        if v is not None and 'salary_min' in values and values['salary_min'] is not None:
+            if v < values['salary_min']:
+                raise ValueError('Maximum salary must be greater than or equal to minimum salary')
         return v
 
 class JobCreate(JobBase):
@@ -198,6 +199,18 @@ class JobResponse(JobBase):
     created_at: datetime
     updated_at: datetime
     mandatory_skills: List[JobMandatorySkillResponse] = []
+    
+    class Config:
+        from_attributes = True
+
+class JobResponseSimple(JobBase):
+    """Simple schema for job response without mandatory_skills (for public endpoints)"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    company: Optional[str] = Field(None, max_length=100)  # Make company optional
+    salary_min: Optional[int] = Field(None, ge=0, le=1000000)  # Make salary fields optional
+    salary_max: Optional[int] = Field(None, ge=0, le=1000000)
     
     class Config:
         from_attributes = True

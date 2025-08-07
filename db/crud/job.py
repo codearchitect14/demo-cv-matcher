@@ -1,16 +1,21 @@
 # File: db/crud/job.py
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from db.crud.base import CRUDBase
+from sqlalchemy import select, and_, or_, desc, func
+from sqlalchemy.orm import selectinload, joinedload
 from models.job import Job, JobMandatorySkill
+from models.base import BaseModel
 from schemas.job import JobCreate, JobUpdate
+from db.crud.base import CRUDBase
+import logging
 
+logger = logging.getLogger(__name__)
 
 class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
+    """Optimized CRUD operations for jobs with eager loading and bulk operations"""
+    
     async def get_with_skills(self, db: AsyncSession, id: int) -> Optional[Job]:
-        """Get job with mandatory skills"""
+        """Get job with mandatory skills using eager loading"""
         result = await db.execute(
             select(self.model)
             .options(selectinload(self.model.mandatory_skills))
@@ -22,22 +27,38 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         """Get job with mandatory skills (alias for get_with_skills)"""
         return await self.get_with_skills(db, id)
 
-    async def get_by_domain(self, db: AsyncSession, domain: str) -> List[Job]:
-        """Get jobs by domain"""
+    async def get_multiple_with_skills(self, db: AsyncSession, job_ids: List[int]) -> List[Job]:
+        """Get multiple jobs with skills in a single query - eliminates N+1 problem"""
+        if not job_ids:
+            return []
+        
         result = await db.execute(
-            select(self.model).where(self.model.domain == domain)
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.id.in_(job_ids))
+        )
+        return result.scalars().unique().all()
+
+    async def get_by_domain(self, db: AsyncSession, domain: str) -> List[Job]:
+        """Get jobs by domain with eager loading"""
+        result = await db.execute(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.domain == domain)
         )
         return result.scalars().all()
 
     async def get_by_location(self, db: AsyncSession, location: str) -> List[Job]:
-        """Get jobs by location"""
+        """Get jobs by location with eager loading"""
         result = await db.execute(
-            select(self.model).where(self.model.location == location)
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.location == location)
         )
         return result.scalars().all()
 
     async def get_by_recruiter(self, db: AsyncSession, recruiter_id: int) -> List[Job]:
-        """Get jobs by recruiter ID"""
+        """Get jobs by recruiter ID with eager loading"""
         result = await db.execute(
             select(self.model)
             .options(selectinload(self.model.mandatory_skills))
@@ -49,9 +70,11 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
     async def get_by_salary_range(
         self, db: AsyncSession, min_salary: int, max_salary: int
     ) -> List[Job]:
-        """Get jobs within salary range"""
+        """Get jobs within salary range with eager loading"""
         result = await db.execute(
-            select(self.model).where(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(
                 self.model.salary_min >= min_salary,
                 self.model.salary_max <= max_salary
             )
@@ -61,7 +84,7 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
     async def get_multi_with_filters(
         self, db: AsyncSession, filters: dict = None, skip: int = 0, limit: int = 100
     ) -> List[Job]:
-        """Get multiple jobs with filters"""
+        """Get multiple jobs with filters and eager loading"""
         query = select(self.model).options(selectinload(self.model.mandatory_skills))
         
         if filters:
@@ -78,9 +101,37 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
             if conditions:
                 query = query.where(*conditions)
         
-        query = query.offset(skip).limit(limit)
+        query = query.offset(skip).limit(limit).order_by(desc(self.model.created_at))
         result = await db.execute(query)
-        return result.scalars().all()
+        return result.scalars().unique().all()
+
+    async def bulk_create_with_skills(
+        self, 
+        db: AsyncSession, 
+        jobs_data: List[Dict[str, Any]]
+    ) -> List[Job]:
+        """Bulk create jobs with skills in optimized batches"""
+        created_jobs = []
+        
+        for job_data in jobs_data:
+            skills_data = job_data.pop('mandatory_skills', [])
+            job = Job(**job_data)
+            db.add(job)
+            await db.flush()  # Get the job ID
+            
+            # Add skills in batch
+            for skill_data in skills_data:
+                skill = JobMandatorySkill(
+                    job_id=job.id,
+                    skill=skill_data['skill'],
+                    min_experience=skill_data.get('min_experience', 1)
+                )
+                db.add(skill)
+            
+            created_jobs.append(job)
+        
+        await db.commit()
+        return created_jobs
 
     async def add_mandatory_skill(
         self, db: AsyncSession, job_id: int, skill_data: dict
@@ -95,114 +146,151 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         )
         if existing_skill.scalar_one_or_none():
             from core.exceptions import ValidationException
-            raise ValidationException(f"Skill '{skill_data.get('skill')}' already exists for this job")
-
-        # Create new mandatory skill
-        new_skill = JobMandatorySkill(
+            raise ValidationException(f"Skill {skill_data.get('skill')} already exists for job {job_id}")
+        
+        skill = JobMandatorySkill(
             job_id=job_id,
             skill=skill_data.get("skill"),
-            min_experience=skill_data.get("min_experience", 0)
+            min_experience=skill_data.get("min_experience", 1)
         )
-        db.add(new_skill)
+        db.add(skill)
         await db.commit()
-        await db.refresh(new_skill)
-        return new_skill
+        await db.refresh(skill)
+        return skill
+
+    async def bulk_add_skills(
+        self, 
+        db: AsyncSession, 
+        job_id: int, 
+        skills_data: List[Dict[str, Any]]
+    ) -> List[JobMandatorySkill]:
+        """Bulk add skills to a job"""
+        skills = []
+        for skill_data in skills_data:
+            skill = JobMandatorySkill(
+                job_id=job_id,
+                skill=skill_data.get("skill"),
+                min_experience=skill_data.get("min_experience", 1)
+            )
+            skills.append(skill)
+            db.add(skill)
+        
+        await db.commit()
+        return skills
 
     async def create_with_skills(self, db: AsyncSession, obj_in: JobCreate) -> Job:
-        """Create job with mandatory skills"""
-        # Create job first
-        job_data = obj_in.dict(exclude={'mandatory_skills'})
+        """Create job with skills in a single transaction"""
+        job_data = obj_in.dict()
+        skills_data = job_data.pop('mandatory_skills', [])
+        
         job = Job(**job_data)
         db.add(job)
-        await db.flush()  # Get the ID without committing
-
-        # Create mandatory skills
-        for skill_data in obj_in.mandatory_skills:
+        await db.flush()  # Get the job ID
+        
+        # Add skills
+        for skill_data in skills_data:
             skill = JobMandatorySkill(
                 job_id=job.id,
-                **skill_data.dict()
+                skill=skill_data.get("skill"),
+                min_experience=skill_data.get("min_experience", 1)
             )
             db.add(skill)
-
+        
         await db.commit()
         await db.refresh(job)
         return job
 
     async def get_active_jobs(self, db: AsyncSession, limit: int = 50) -> List[Job]:
-        """Get jobs with mandatory skills"""
+        """Get active jobs with eager loading"""
         result = await db.execute(
             select(self.model)
             .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.is_active == True)
+            .order_by(desc(self.model.created_at))
             .limit(limit)
         )
         return result.scalars().all()
 
-    async def get_jobs_without_applicants(self, db: AsyncSession, days_threshold: int = 7, limit: int = 20) -> List[Job]:
-        """Get jobs with no applicants in the last N days"""
+    async def get_jobs_without_applicants(
+        self, db: AsyncSession, days_threshold: int = 7, limit: int = 20
+    ) -> List[Job]:
+        """Get jobs without recent applicants"""
         from datetime import datetime, timedelta
-        from db.crud.application import application as application_crud
+        from models.application import Application
         
-        cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
+        threshold_date = datetime.utcnow() - timedelta(days=days_threshold)
         
-        # Get all jobs created before cutoff date
-        result = await db.execute(
-            select(self.model).where(self.model.created_at <= cutoff_date).limit(limit)
+        # Subquery to get jobs with recent applications
+        recent_applications = (
+            select(Application.job_id)
+            .where(Application.created_at >= threshold_date)
+            .distinct()
         )
-        jobs = result.scalars().all()
         
-        # Filter jobs that have no applications
-        jobs_without_applicants = []
-        for job in jobs:
-            applications = await application_crud.get_by_job(db, job.id)
-            if not applications:
-                jobs_without_applicants.append(job)
-        
-        return jobs_without_applicants
+        result = await db.execute(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(
+                and_(
+                    self.model.is_active == True,
+                    ~self.model.id.in_(recent_applications)
+                )
+            )
+            .order_by(desc(self.model.created_at))
+            .limit(limit)
+        )
+        return result.scalars().all()
 
     async def get_performance_metrics(self, db: AsyncSession, days_back: int = 30) -> dict:
-        """Get job performance metrics"""
+        """Get job performance metrics with optimized queries"""
         from datetime import datetime, timedelta
-        from db.crud.application import application as application_crud
+        from models.application import Application
         
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        start_date = datetime.utcnow() - timedelta(days=days_back)
         
-        # Get jobs created in the time period
-        result = await db.execute(
-            select(self.model).where(self.model.created_at >= cutoff_date)
+        # Get total jobs created
+        total_jobs_result = await db.execute(
+            select(func.count(self.model.id))
+            .where(self.model.created_at >= start_date)
         )
-        jobs = result.scalars().all()
+        total_jobs = total_jobs_result.scalar()
         
-        total_jobs = len(jobs)
-        total_applications = 0
-        jobs_with_applications = 0
+        # Get jobs with applications
+        jobs_with_apps_result = await db.execute(
+            select(func.count(func.distinct(self.model.id)))
+            .join(Application, self.model.id == Application.job_id)
+            .where(self.model.created_at >= start_date)
+        )
+        jobs_with_apps = jobs_with_apps_result.scalar()
         
-        for job in jobs:
-            applications = await application_crud.get_by_job(db, job.id)
-            if applications:
-                total_applications += len(applications)
-                jobs_with_applications += 1
-        
-        avg_applications_per_job = total_applications / total_jobs if total_jobs > 0 else 0
-        application_rate = jobs_with_applications / total_jobs if total_jobs > 0 else 0
+        # Get average applications per job
+        avg_apps_result = await db.execute(
+            select(func.avg(func.count(Application.id)))
+            .select_from(self.model)
+            .join(Application, self.model.id == Application.job_id)
+            .where(self.model.created_at >= start_date)
+            .group_by(self.model.id)
+        )
+        avg_apps = avg_apps_result.scalar() or 0
         
         return {
             "total_jobs": total_jobs,
-            "total_applications": total_applications,
-            "jobs_with_applications": jobs_with_applications,
-            "avg_applications_per_job": avg_applications_per_job,
-            "application_rate": application_rate,
-            "days_analyzed": days_back
+            "jobs_with_applications": jobs_with_apps,
+            "average_applications_per_job": float(avg_apps),
+            "application_rate": (jobs_with_apps / total_jobs * 100) if total_jobs > 0 else 0
         }
 
     async def count_recent(self, db: AsyncSession, days_back: int = 7) -> int:
-        """Get count of recent jobs"""
+        """Count recent jobs with optimized query"""
         from datetime import datetime, timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
         
+        start_date = datetime.utcnow() - timedelta(days=days_back)
         result = await db.execute(
-            select(self.model).where(self.model.created_at >= cutoff_date)
+            select(func.count(self.model.id))
+            .where(self.model.created_at >= start_date)
         )
-        return len(result.scalars().all())
+        return result.scalar()
 
-
-job = CRUDJob(Job)
+# Create CRUD instance
+job_crud = CRUDJob(Job)
+job = job_crud  # Maintain backward compatibility

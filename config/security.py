@@ -90,16 +90,52 @@ def validate_password_strength(password: str) -> bool:
     has_digit = any(c.isdigit() for c in password)
     has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
     
-    if SecurityConfig.PASSWORD_REQUIRE_UPPERCASE and not has_upper:
-        return False
-    if SecurityConfig.PASSWORD_REQUIRE_LOWERCASE and not has_lower:
-        return False
-    if SecurityConfig.PASSWORD_REQUIRE_DIGITS and not has_digit:
-        return False
-    if SecurityConfig.PASSWORD_REQUIRE_SPECIAL and not has_special:
-        return False
+    # More flexible password requirements
+    requirements_met = 0
+    if has_upper:
+        requirements_met += 1
+    if has_lower:
+        requirements_met += 1
+    if has_digit:
+        requirements_met += 1
+    if has_special:
+        requirements_met += 1
     
-    return True
+    # Require at least 3 out of 4 criteria to be met
+    return requirements_met >= 3
+
+def get_password_requirements() -> str:
+    """Get password requirements as a user-friendly string"""
+    return "Password must be 8-128 characters and contain at least 3 of: uppercase letter, lowercase letter, number, or special character"
+
+def validate_password_with_feedback(password: str) -> tuple[bool, str]:
+    """Validate password and return detailed feedback"""
+    if len(password) < SecurityConfig.PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {SecurityConfig.PASSWORD_MIN_LENGTH} characters"
+    if len(password) > SecurityConfig.PASSWORD_MAX_LENGTH:
+        return False, f"Password must be no more than {SecurityConfig.PASSWORD_MAX_LENGTH} characters"
+    
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
+    
+    missing_requirements = []
+    if not has_upper:
+        missing_requirements.append("uppercase letter")
+    if not has_lower:
+        missing_requirements.append("lowercase letter")
+    if not has_digit:
+        missing_requirements.append("number")
+    if not has_special:
+        missing_requirements.append("special character")
+    
+    requirements_met = 4 - len(missing_requirements)
+    
+    if requirements_met >= 3:
+        return True, "Password meets requirements"
+    else:
+        return False, f"Password must contain at least 3 of: {', '.join(['uppercase letter', 'lowercase letter', 'number', 'special character'])}"
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token"""

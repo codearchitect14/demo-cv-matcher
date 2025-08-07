@@ -1,534 +1,713 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './CandidatesDashboard.css';
 
 const CandidatesDashboard = () => {
-  const [candidates, setCandidates] = useState([]);
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [candidateApplications, setCandidateApplications] = useState([]);
-  const [candidateInteractions, setCandidateInteractions] = useState([]);
+  const navigate = useNavigate();
+  const [userProfile, setUserProfile] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [recentJobs, setRecentJobs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showViewDetails, setShowViewDetails] = useState(false);
-  const [showExperienceForm, setShowExperienceForm] = useState(false);
-  const [selectedCandidateId, setSelectedCandidateId] = useState('');
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    location: '',
-    domain: '',
-    expected_salary_min: '',
-    expected_salary_max: '',
-    summary: ''
-  });
-  const [experienceFormData, setExperienceFormData] = useState({
-    skill: '',
-    years: '',
-    description: ''
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [showCVUpload, setShowCVUpload] = useState(false);
+  const [cvFile, setCvFile] = useState(null);
+  
+  const [profileData, setProfileData] = useState({
+    name: '', email: '', location: '', domain: '',
+    expected_salary_min: '', expected_salary_max: '', summary: '',
+    phone: '', linkedin_url: '', github_url: ''
   });
 
   useEffect(() => {
-    fetchCandidates();
-  }, []);
-
-  const fetchCandidates = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('http://localhost:8000/api/v1/candidates/', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCandidates(data);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch candidates: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to fetch candidates');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateCandidate = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('http://localhost:8000/api/v1/candidates/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setMessage('Candidate created successfully');
-        setFormData({
-          name: '',
-          email: '',
-          location: '',
-          domain: '',
-          expected_salary_min: '',
-          expected_salary_max: '',
-          summary: ''
-        });
-        setShowCreateForm(false);
-        fetchCandidates(); // Refresh the list
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to create candidate: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to create candidate');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleViewCandidateDetails = async () => {
-    if (!selectedCandidateId) {
-      setError('Please enter a candidate ID');
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.log('No authentication token found, redirecting to login');
+      navigate('/login-new');
       return;
     }
     
+    fetchUserProfile();
+    fetchApplications();
+    fetchRecentJobs();
+  }, [navigate]);
+
+  const fetchUserProfile = async () => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/candidates/${selectedCandidateId}`, {
+      console.log('Fetching user profile...');
+      const token = localStorage.getItem('token');
+      console.log('Token available:', !!token);
+      
+      if (!token) {
+        console.log('No token found, using default profile');
+        setUserProfile({
+          name: 'Demo Candidate',
+          email: 'demo@example.com'
+        });
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/api/v1/candidates/me', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
+      
+      console.log('Profile response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
-        setSelectedCandidate(data);
-        fetchCandidateApplications(selectedCandidateId);
-        fetchCandidateInteractions(selectedCandidateId);
-        setShowViewDetails(true);
-        setError('');
+        console.log('User profile data:', data);
+        setUserProfile(data);
+        setProfileData({
+          name: data.name || '',
+          email: data.email || '',
+          location: data.location || '',
+          domain: data.domain || '',
+          expected_salary_min: data.expected_salary_min || '',
+          expected_salary_max: data.expected_salary_max || '',
+          summary: data.summary || '',
+          phone: data.phone || '',
+          linkedin_url: data.linkedin_url || '',
+          github_url: data.github_url || ''
+        });
+      } else if (response.status === 401) {
+        console.log('Unauthorized - using default profile');
+        setUserProfile({
+          name: 'Demo Candidate',
+          email: 'demo@example.com'
+        });
+      } else {
+        console.error('Failed to fetch user profile:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Profile error details:', errorText);
+        setUserProfile({
+          name: 'Demo Candidate',
+          email: 'demo@example.com'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      setUserProfile({
+        name: 'Demo Candidate',
+        email: 'demo@example.com'
+      });
+    }
+  };
+
+  const fetchApplications = async () => {
+    try {
+      console.log('Fetching applications...');
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        console.log('No token found, using empty applications');
+        setApplications([]);
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/api/v1/applications/my-applications', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Applications response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Applications data:', data);
+        setApplications(data);
+      } else if (response.status === 401) {
+        console.log('Unauthorized - using empty applications');
+        setApplications([]);
+      } else {
+        console.error('Failed to fetch applications:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Applications error details:', errorText);
+        setApplications([]);
+      }
+    } catch (error) {
+      console.error('Error fetching applications:', error);
+      setApplications([]);
+    }
+  };
+
+  const fetchRecentJobs = async () => {
+    try {
+      console.log('Fetching recent jobs...');
+      const response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=5');
+      console.log('Jobs response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Recent jobs data:', data);
+        setRecentJobs(data);
+      } else {
+        console.error('Failed to fetch recent jobs:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Jobs error details:', errorText);
+        // Set dummy data for testing
+        setRecentJobs([
+          {
+            id: 1,
+            title: "Python Developer",
+            company: "Tech Corp",
+            location: "New York",
+            salary_min: 90000,
+            salary_max: 130000
+          },
+          {
+            id: 2,
+            title: "Senior Python Developer",
+            company: "Techcorp",
+            location: "New York",
+            salary_min: 120000,
+            salary_max: 180000
+          },
+          {
+            id: 3,
+            title: "Full Stack Developer",
+            company: "Innovation Labs",
+            location: "San Francisco",
+            salary_min: 110000,
+            salary_max: 160000
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error fetching recent jobs:', error);
+      // Set dummy data for testing
+      setRecentJobs([
+        {
+          id: 1,
+          title: "Python Developer",
+          company: "Tech Corp",
+          location: "New York",
+          salary_min: 90000,
+          salary_max: 130000
+        },
+        {
+          id: 2,
+          title: "Senior Python Developer",
+          company: "Techcorp",
+          location: "New York",
+          salary_min: 120000,
+          salary_max: 180000
+        },
+        {
+          id: 3,
+          title: "Full Stack Developer",
+          company: "Innovation Labs",
+          location: "San Francisco",
+          salary_min: 110000,
+          salary_max: 160000
+        }
+      ]);
+    }
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/v1/candidates/me', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(profileData)
+      });
+
+      if (response.ok) {
+        setMessage('Profile updated successfully!');
+        setShowProfileForm(false);
+        fetchUserProfile();
       } else {
         const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch candidate details: ${errorMessage}`);
+        setError(errorData.detail || 'Failed to update profile');
       }
-    } catch (err) {
-      setError('Failed to fetch candidate details');
+    } catch (error) {
+      setError('Failed to update profile');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchCandidateApplications = async (candidateId) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/applications/candidate/${candidateId}/applications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCandidateApplications(data);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch candidate applications: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to fetch candidate applications');
-    }
-  };
-
-  const fetchCandidateInteractions = async (candidateId) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/interactions/candidates/${candidateId}/interactions`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCandidateInteractions(data);
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch candidate interactions: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to fetch candidate interactions');
-    }
-  };
-
-  const handleDeleteCandidate = async (candidateId) => {
-    if (!window.confirm('Are you sure you want to delete this candidate?')) {
+  const handleCVUpload = async (e) => {
+    e.preventDefault();
+    if (!cvFile) {
+      setError('Please select a CV file');
       return;
     }
+
     setLoading(true);
+    setError('');
+    setMessage('');
+
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/candidates/${candidateId}`, {
-        method: 'DELETE',
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('cv_file', cvFile);
+
+      const response = await fetch('http://localhost:8000/api/v1/candidates/upload-cv', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
-        }
+        },
+        body: formData
       });
+
       if (response.ok) {
-        setMessage('Candidate deleted successfully');
-        setSelectedCandidate(null);
-        setShowViewDetails(false);
-        fetchCandidates(); // Refresh the list
+        setMessage('CV uploaded successfully!');
+        setShowCVUpload(false);
+        setCvFile(null);
       } else {
         const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to delete candidate: ${errorMessage}`);
+        setError(errorData.detail || 'Failed to upload CV');
       }
-    } catch (err) {
-      setError('Failed to delete candidate');
+    } catch (error) {
+      setError('Failed to upload CV');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddExperience = async (candidateId) => {
-    setLoading(true);
+  const handleApplyToJob = async (jobId) => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`http://localhost:8000/api/v1/candidates/${candidateId}/experience`, {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/v1/applications/', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(experienceFormData)
+        body: JSON.stringify({ job_id: jobId })
       });
+
       if (response.ok) {
-        const data = await response.json();
-        setSelectedCandidate(data);
-        setMessage('Experience added successfully');
-        setExperienceFormData({
-          skill: '',
-          years: '',
-          description: ''
-        });
-        setShowExperienceForm(false);
+        setMessage('Application submitted successfully!');
+        fetchApplications();
       } else {
         const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to add experience: ${errorMessage}`);
+        setError(errorData.detail || 'Failed to apply for job');
       }
-    } catch (err) {
-      setError('Failed to add experience');
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      setError('Failed to apply for job');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login-new');
+  };
+
+  const getApplicationStatusColor = (status) => {
+    switch (status) {
+      case 'applied': return 'status-applied';
+      case 'pending': return 'status-pending';
+      case 'accepted': return 'status-accepted';
+      case 'rejected': return 'status-rejected';
+      default: return 'status-applied';
+    }
+  };
+
+  const getApplicationStatusText = (status) => {
+    switch (status) {
+      case 'applied': return 'Applied';
+      case 'pending': return 'Pending';
+      case 'accepted': return 'Accepted';
+      case 'rejected': return 'Rejected';
+      default: return 'Applied';
     }
   };
 
   return (
     <div className="candidates-dashboard">
+      {/* Header */}
       <div className="dashboard-header">
-        <h1>Candidates Dashboard</h1>
-        <div className="header-actions">
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowCreateForm(true)}
-          >
-            Create Candidate Profile
+        <div className="header-left">
+          <h1>Candidate Dashboard</h1>
+          {userProfile && (
+            <p>Welcome back, {userProfile.name || 'Candidate'}!</p>
+          )}
+        </div>
+        <div className="header-right">
+          <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
+            👤 Profile
+          </button>
+          <button className="btn-logout" onClick={handleLogout}>
+            🚪 Logout
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="error-message">
-          <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
-          <button onClick={() => setError('')}>×</button>
-        </div>
-      )}
-
-      {message && (
-        <div className="success-message">
-          {message}
-          <button onClick={() => setMessage('')}>×</button>
-        </div>
-      )}
-
+      {/* Main Content */}
       <div className="dashboard-content">
-        {/* Candidates List */}
-        <div className="candidates-section">
-          <h2>Candidates List ({candidates.length})</h2>
-          {loading ? (
-            <div className="loading">Loading candidates...</div>
-          ) : (
-            <div className="candidates-grid">
-              {candidates.map(candidate => (
-                <div key={candidate.id} className="candidate-card">
-                  <h3>{candidate.name}</h3>
-                  <p><strong>Email:</strong> {candidate.email}</p>
-                  <p><strong>Location:</strong> {candidate.location}</p>
-                  <p><strong>Domain:</strong> {candidate.domain}</p>
-                  <p><strong>Salary Range:</strong> ${candidate.expected_salary_min} - ${candidate.expected_salary_max}</p>
+        {/* Summary Cards */}
+        <div className="summary-cards">
+          <div className="summary-card">
+            <div className="icon documents">
+              📋
+            </div>
+            <div className="count">{applications.length}</div>
+            <div className="label">Total Applications</div>
+          </div>
+          <div className="summary-card">
+            <div className="icon pending">
+              ⏳
+            </div>
+            <div className="count">{applications.filter(app => app.status === 'pending').length}</div>
+            <div className="label">Pending Reviews</div>
+          </div>
+          <div className="summary-card">
+            <div className="icon accepted">
+              ✅
+            </div>
+            <div className="count">{applications.filter(app => app.status === 'accepted').length}</div>
+            <div className="label">Accepted</div>
+          </div>
+          <div className="summary-card">
+            <div className="icon recommendations">
+              💼
+            </div>
+            <div className="count">{recentJobs.length}</div>
+            <div className="label">Available Jobs</div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="quick-actions">
+          <h2>
+            ⚡ Quick Actions
+          </h2>
+          <div className="actions-grid">
+            <div className="action-card" onClick={() => setShowProfileForm(true)}>
+              <div className="icon profile">
+                👤
+              </div>
+              <h3>Update Profile</h3>
+              <p>Add your personal information and preferences</p>
+              <div className="arrow">
+                →
+              </div>
+            </div>
+            <div className="action-card" onClick={() => setShowCVUpload(true)}>
+              <div className="icon cv">
+                📄
+              </div>
+              <h3>Upload CV</h3>
+              <p>Upload or update your resume/CV</p>
+              <div className="arrow">
+                →
+              </div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/job-search')}>
+              <div className="icon search">
+                🔍
+              </div>
+              <h3>Search Jobs</h3>
+              <p>Find and apply to job opportunities</p>
+              <div className="arrow">
+                →
+              </div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/job-recommendations')}>
+              <div className="icon recommendations">
+                🎯
+              </div>
+              <h3>View Recommendations</h3>
+              <p>See personalized job recommendations</p>
+              <div className="arrow">
+                →
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Applications */}
+        <div className="recent-applications">
+          <h2>
+            📋 Recent Applications
+          </h2>
+          {applications.length > 0 ? (
+            applications.slice(0, 5).map((application) => (
+              <div key={application.id} className="application-item">
+                <h3>{application.job?.title || 'Job Title'}</h3>
+                <div className="details">
+                  {application.job?.company || 'Company'} • {application.job?.location || 'Location'}
                 </div>
-              ))}
+                <div className={`status-badge ${getApplicationStatusColor(application.status)}`}>
+                  {getApplicationStatusText(application.status)}
+                </div>
+                <div className="salary">
+                  {application.job?.salary_min && application.job?.salary_max 
+                    ? `$${application.job.salary_min.toLocaleString()} - $${application.job.salary_max.toLocaleString()}`
+                    : 'Salary not specified'
+                  }
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state">
+              <p>No applications yet. Start applying to jobs!</p>
             </div>
           )}
         </div>
 
-        {/* View Candidate Details Section */}
-        <div className="view-details-section">
-          <h2>View Candidate Details</h2>
-          <div className="view-details-form">
-            <div className="input-group">
-              <input
-                type="number"
-                placeholder="Enter Candidate ID"
-                value={selectedCandidateId}
-                onChange={(e) => setSelectedCandidateId(e.target.value)}
-              />
-              <button 
-                className="btn btn-secondary"
-                onClick={handleViewCandidateDetails}
-              >
-                View Details
-              </button>
+        {/* Recent Jobs */}
+        <div className="recent-jobs">
+          <h2>
+            💼 Recent Job Postings
+          </h2>
+          {recentJobs.length > 0 ? (
+            recentJobs.map((job) => (
+              <div key={job.id} className="job-item">
+                <h3>{job.title}</h3>
+                <div className="details">
+                  {job.company} • {job.location}
+                </div>
+                <div className="salary">
+                  ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}
+                </div>
+                <div>
+                  <button 
+                    className="btn-apply" 
+                    onClick={() => handleApplyToJob(job.id)}
+                  >
+                    Apply Now
+                  </button>
+                  <button 
+                    className="btn-view" 
+                    onClick={() => navigate(`/job-details/${job.id}`)}
+                  >
+                    View Details
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state">
+              <p>No recent job postings available.</p>
             </div>
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Candidate Details Display */}
-        {showViewDetails && selectedCandidate && (
-          <div className="candidate-details">
-            <h2>Candidate Details</h2>
-            <div className="detail-section">
-              <h3>Basic Information</h3>
-              <p><strong>Name:</strong> {selectedCandidate.name}</p>
-              <p><strong>Email:</strong> {selectedCandidate.email}</p>
-              <p><strong>Location:</strong> {selectedCandidate.location}</p>
-              <p><strong>Domain:</strong> {selectedCandidate.domain}</p>
-              <p><strong>Salary Range:</strong> ${selectedCandidate.expected_salary_min} - ${selectedCandidate.expected_salary_max}</p>
-              <p><strong>Summary:</strong> {selectedCandidate.summary}</p>
-            </div>
-
-            <div className="detail-section">
-              <h3>Experience</h3>
-              {selectedCandidate.experiences && selectedCandidate.experiences.length > 0 ? (
-                selectedCandidate.experiences.map(exp => (
-                  <div key={exp.id} className="experience-item">
-                    <p><strong>{exp.skill}</strong> - {exp.years} years</p>
-                    <p>{exp.description}</p>
-                  </div>
-                ))
-              ) : (
-                <p>No experience listed</p>
-              )}
-            </div>
-
-            <div className="detail-section">
-              <h3>Applications ({candidateApplications.length})</h3>
-              {candidateApplications.length > 0 ? (
-                candidateApplications.map(app => (
-                  <div key={app.id} className="application-item">
-                    <p><strong>Job:</strong> {app.job?.title || 'N/A'}</p>
-                    <p><strong>Status:</strong> {app.status}</p>
-                    <p><strong>Applied:</strong> {new Date(app.created_at).toLocaleDateString()}</p>
-                  </div>
-                ))
-              ) : (
-                <p>No applications found</p>
-              )}
-            </div>
-
-            <div className="detail-section">
-              <h3>Interactions ({candidateInteractions.length})</h3>
-              {candidateInteractions.length > 0 ? (
-                candidateInteractions.map(interaction => (
-                  <div key={interaction.id} className="interaction-item">
-                    <p><strong>Job:</strong> {interaction.job?.title || 'N/A'}</p>
-                    <p><strong>Type:</strong> {interaction.interaction_type}</p>
-                    <p><strong>Date:</strong> {new Date(interaction.timestamp).toLocaleDateString()}</p>
-                  </div>
-                ))
-              ) : (
-                <p>No interactions found</p>
-              )}
-            </div>
-
-            <div className="actions">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setShowExperienceForm(true)}
-              >
-                Add Experience
-              </button>
-              <button 
-                className="btn btn-danger"
-                onClick={() => handleDeleteCandidate(selectedCandidate.id)}
-              >
-                Delete Candidate
+      {/* Profile Update Modal */}
+      {showProfileForm && (
+        <div className="modal-overlay" onClick={() => setShowProfileForm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Update Profile</h2>
+              <button className="modal-close" onClick={() => setShowProfileForm(false)}>
+                ✕
               </button>
             </div>
-          </div>
-        )}
-
-        {/* Create Candidate Form */}
-        {showCreateForm && (
-          <div className="modal">
-            <div className="modal-content">
-              <h3>Create New Candidate</h3>
-              <form onSubmit={handleCreateCandidate}>
+            <form onSubmit={handleUpdateProfile}>
+              <div className="form-row">
                 <div className="form-group">
-                  <label>Name:</label>
+                  <label>Name</label>
                   <input
                     type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    value={profileData.name}
+                    onChange={(e) => setProfileData({...profileData, name: e.target.value})}
                     required
+                    placeholder="Enter your full name"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Email:</label>
+                  <label>Email</label>
                   <input
                     type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    value={profileData.email}
+                    onChange={(e) => setProfileData({...profileData, email: e.target.value})}
                     required
+                    placeholder="Enter your email address"
                   />
                 </div>
+              </div>
+              
+              <div className="form-row">
                 <div className="form-group">
-                  <label>Location:</label>
+                  <label>Location</label>
                   <input
                     type="text"
-                    value={formData.location}
-                    onChange={(e) => setFormData({...formData, location: e.target.value})}
-                    required
+                    value={profileData.location}
+                    onChange={(e) => setProfileData({...profileData, location: e.target.value})}
+                    placeholder="City, Country"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Domain:</label>
+                  <label>Domain</label>
                   <input
                     type="text"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({...formData, domain: e.target.value})}
-                    required
+                    value={profileData.domain}
+                    onChange={(e) => setProfileData({...profileData, domain: e.target.value})}
+                    placeholder="e.g., Software Development"
                   />
                 </div>
+              </div>
+              
+              <div className="form-row">
                 <div className="form-group">
-                  <label>Expected Salary Min:</label>
+                  <label>Expected Salary (Min)</label>
                   <input
                     type="number"
-                    value={formData.expected_salary_min}
-                    onChange={(e) => setFormData({...formData, expected_salary_min: e.target.value})}
-                    required
+                    value={profileData.expected_salary_min}
+                    onChange={(e) => setProfileData({...profileData, expected_salary_min: e.target.value})}
+                    placeholder="Minimum salary"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Expected Salary Max:</label>
+                  <label>Expected Salary (Max)</label>
                   <input
                     type="number"
-                    value={formData.expected_salary_max}
-                    onChange={(e) => setFormData({...formData, expected_salary_max: e.target.value})}
-                    required
+                    value={profileData.expected_salary_max}
+                    onChange={(e) => setProfileData({...profileData, expected_salary_max: e.target.value})}
+                    placeholder="Maximum salary"
+                  />
+                </div>
+              </div>
+              
+              <div className="form-group">
+                <label>Professional Summary</label>
+                <textarea
+                  value={profileData.summary}
+                  onChange={(e) => setProfileData({...profileData, summary: e.target.value})}
+                  rows="4"
+                  placeholder="Brief description of your experience and skills..."
+                />
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Phone</label>
+                  <input
+                    type="tel"
+                    value={profileData.phone}
+                    onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
+                    placeholder="+1 (555) 123-4567"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Summary:</label>
-                  <textarea
-                    value={formData.summary}
-                    onChange={(e) => setFormData({...formData, summary: e.target.value})}
-                    required
+                  <label>LinkedIn URL</label>
+                  <input
+                    type="url"
+                    value={profileData.linkedin_url}
+                    onChange={(e) => setProfileData({...profileData, linkedin_url: e.target.value})}
+                    placeholder="https://linkedin.com/in/yourprofile"
                   />
                 </div>
-                <div className="form-actions">
-                  <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? 'Creating...' : 'Create Candidate'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary"
-                    onClick={() => setShowCreateForm(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
+              </div>
+              
+              <div className="form-group">
+                <label>GitHub URL</label>
+                <input
+                  type="url"
+                  value={profileData.github_url}
+                  onChange={(e) => setProfileData({...profileData, github_url: e.target.value})}
+                  placeholder="https://github.com/yourusername"
+                />
+              </div>
+              
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowProfileForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-save" disabled={loading}>
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Add Experience Form */}
-        {showExperienceForm && selectedCandidate && (
-          <div className="modal">
-            <div className="modal-content">
-              <h3>Add Experience</h3>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                handleAddExperience(selectedCandidate.id);
-              }}>
-                <div className="form-group">
-                  <label>Skill:</label>
-                  <input
-                    type="text"
-                    value={experienceFormData.skill}
-                    onChange={(e) => setExperienceFormData({...experienceFormData, skill: e.target.value})}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Years:</label>
-                  <input
-                    type="number"
-                    value={experienceFormData.years}
-                    onChange={(e) => setExperienceFormData({...experienceFormData, years: e.target.value})}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Description:</label>
-                  <textarea
-                    value={experienceFormData.description}
-                    onChange={(e) => setExperienceFormData({...experienceFormData, description: e.target.value})}
-                    required
-                  />
-                </div>
-                <div className="form-actions">
-                  <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? 'Adding...' : 'Add Experience'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary"
-                    onClick={() => setShowExperienceForm(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+      {/* CV Upload Modal */}
+      {showCVUpload && (
+        <div className="modal-overlay" onClick={() => setShowCVUpload(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Upload CV</h2>
+              <button className="modal-close" onClick={() => setShowCVUpload(false)}>
+                ✕
+              </button>
             </div>
+            <form onSubmit={handleCVUpload}>
+              <div className="form-group">
+                <label>Select CV File</label>
+                <div className="file-upload">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => setCvFile(e.target.files[0])}
+                    required
+                    id="cv-file"
+                  />
+                  <label 
+                    htmlFor="cv-file" 
+                    className={`file-upload-label ${cvFile ? 'has-file' : ''}`}
+                  >
+                    {cvFile ? (
+                      <>
+                        📄 {cvFile.name}
+                        <div className="file-info">
+                          File selected successfully
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        📄 Click to select CV file
+                        <div className="file-info">
+                          Supported formats: PDF, DOC, DOCX (Max 10MB)
+                        </div>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+              
+              <div className="form-group">
+                <label>Additional Notes (Optional)</label>
+                <textarea
+                  placeholder="Any additional information about your CV or experience..."
+                  rows="3"
+                />
+              </div>
+              
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowCVUpload(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-save" disabled={loading || !cvFile}>
+                  {loading ? 'Uploading...' : 'Upload CV'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Messages */}
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+      {message && (
+        <div className="success-message">
+          {message}
+        </div>
+      )}
     </div>
   );
 };

@@ -122,6 +122,15 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         result = await db.execute(query)
         return result.scalars().unique().all()
 
+    async def get_active_candidates_with_skills(self, db: AsyncSession, limit: int = 50) -> List[Candidate]:
+        """Get active candidates with their skills and experiences"""
+        query = select(Candidate).options(
+            selectinload(Candidate.experiences)
+        ).limit(limit)
+        
+        result = await db.execute(query)
+        return result.scalars().unique().all()
+
     async def get_experiences(self, db: AsyncSession, candidate_id: int) -> List[CandidateExperience]:
         """Get candidate experiences with optimized query"""
         query = select(CandidateExperience).where(
@@ -273,3 +282,4 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
 
 # Create instance
 candidate = CRUDCandidate(Candidate)
+candidate_crud = candidate  # Maintain backward compatibility
