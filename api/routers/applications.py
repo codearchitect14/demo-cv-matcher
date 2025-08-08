@@ -302,25 +302,14 @@ async def get_my_applications(
         # Convert to response format with job details
         response_applications = []
         for app in applications:
-            app_dict = {
+            response_applications.append({
                 "id": app.id,
                 "job_id": app.job_id,
                 "candidate_id": app.candidate_id,
-                "recruiter_id": app.recruiter_id,
                 "status": app.status,
                 "created_at": app.created_at,
-                "updated_at": app.updated_at,
-                "job": {
-                    "id": app.job.id,
-                    "title": app.job.title,
-                    "company": app.job.company,
-                    "location": app.job.location,
-                    "salary_min": app.job.salary_min,
-                    "salary_max": app.job.salary_max,
-                    "domain": app.job.domain
-                } if app.job else None
-            }
-            response_applications.append(app_dict)
+                "updated_at": app.updated_at
+            })
         
         return response_applications
     except Exception as e:

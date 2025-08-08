@@ -21,7 +21,7 @@ const CandidatesDashboard = () => {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
     if (!token) {
       console.log('No authentication token found, redirecting to login');
       navigate('/login-new');
@@ -36,7 +36,7 @@ const CandidatesDashboard = () => {
   const fetchUserProfile = async () => {
     try {
       console.log('Fetching user profile...');
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       console.log('Token available:', !!token);
       
       if (!token) {
@@ -100,7 +100,7 @@ const CandidatesDashboard = () => {
   const fetchApplications = async () => {
     try {
       console.log('Fetching applications...');
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
       if (!token) {
         console.log('No token found, using empty applications');
@@ -217,7 +217,7 @@ const CandidatesDashboard = () => {
     setMessage('');
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const response = await fetch('http://localhost:8000/api/v1/candidates/me', {
         method: 'PUT',
         headers: {
@@ -254,7 +254,7 @@ const CandidatesDashboard = () => {
     setMessage('');
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const formData = new FormData();
       formData.append('cv_file', cvFile);
 
@@ -283,7 +283,7 @@ const CandidatesDashboard = () => {
 
   const handleApplyToJob = async (jobId) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const response = await fetch('http://localhost:8000/api/v1/applications/', {
         method: 'POST',
         headers: {
@@ -332,21 +332,46 @@ const CandidatesDashboard = () => {
 
   return (
     <div className="candidates-dashboard">
-      {/* Header */}
+      {/* Modern Header */}
       <div className="dashboard-header">
-        <div className="header-left">
-          <h1>Candidate Dashboard</h1>
-          {userProfile && (
-            <p>Welcome back, {userProfile.name || 'Candidate'}!</p>
-          )}
-        </div>
-        <div className="header-right">
-          <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
-            👤 Profile
-          </button>
-          <button className="btn-logout" onClick={handleLogout}>
-            🚪 Logout
-          </button>
+        <div className="header-content">
+          <div className="header-left">
+            <h1 className="dashboard-title">Candidate Dashboard</h1>
+            {userProfile && (
+              <p className="welcome-text">Welcome back, {userProfile.name || 'Candidate'}!</p>
+            )}
+          </div>
+          
+          {/* Header Navigation */}
+          <div className="header-navigation">
+            <button className="nav-item" onClick={() => setShowProfileForm(true)}>
+              <span className="nav-icon">👤</span>
+              <span>Update Profile</span>
+            </button>
+            <button className="nav-item" onClick={() => setShowCVUpload(true)}>
+              <span className="nav-icon">📄</span>
+              <span>Upload CV</span>
+            </button>
+            <button className="nav-item" onClick={() => navigate('/job-search')}>
+              <span className="nav-icon">🔍</span>
+              <span>Search Jobs</span>
+            </button>
+            <button className="nav-item" onClick={() => navigate('/job-recommendations')}>
+              <span className="nav-icon">👁️</span>
+              <span>Job Recommendations</span>
+            </button>
+          </div>
+          
+          <div className="header-right">
+            <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
+              <span className="btn-icon">👤</span>
+              <span>Profile</span>
+            </button>
+            <button className="btn-logout" onClick={handleLogout}>
+              <span className="btn-icon">🚪</span>
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -355,78 +380,92 @@ const CandidatesDashboard = () => {
         {/* Summary Cards */}
         <div className="summary-cards">
           <div className="summary-card">
-            <div className="icon documents">
+            <div className="card-icon documents">
               📋
             </div>
-            <div className="count">{applications.length}</div>
-            <div className="label">Total Applications</div>
+            <div className="card-content">
+              <div className="card-count">{applications.length}</div>
+              <div className="card-label">Total Applications</div>
+            </div>
           </div>
           <div className="summary-card">
-            <div className="icon pending">
+            <div className="card-icon pending">
               ⏳
             </div>
-            <div className="count">{applications.filter(app => app.status === 'pending').length}</div>
-            <div className="label">Pending Reviews</div>
+            <div className="card-content">
+              <div className="card-count">{applications.filter(app => app.status === 'pending').length}</div>
+              <div className="card-label">Pending Reviews</div>
+            </div>
           </div>
           <div className="summary-card">
-            <div className="icon accepted">
+            <div className="card-icon accepted">
               ✅
             </div>
-            <div className="count">{applications.filter(app => app.status === 'accepted').length}</div>
-            <div className="label">Accepted</div>
+            <div className="card-content">
+              <div className="card-count">{applications.filter(app => app.status === 'accepted').length}</div>
+              <div className="card-label">Accepted</div>
+            </div>
           </div>
           <div className="summary-card">
-            <div className="icon recommendations">
+            <div className="card-icon recommendations">
               💼
             </div>
-            <div className="count">{recentJobs.length}</div>
-            <div className="label">Available Jobs</div>
+            <div className="card-content">
+              <div className="card-count">{recentJobs.length}</div>
+              <div className="card-label">Available Jobs</div>
+            </div>
           </div>
         </div>
 
         {/* Quick Actions */}
         <div className="quick-actions">
-          <h2>
-            ⚡ Quick Actions
-          </h2>
+          <h2 className="section-title">Quick Actions</h2>
           <div className="actions-grid">
             <div className="action-card" onClick={() => setShowProfileForm(true)}>
-              <div className="icon profile">
+              <div className="action-icon profile">
                 👤
               </div>
-              <h3>Update Profile</h3>
-              <p>Add your personal information and preferences</p>
-              <div className="arrow">
+              <div className="action-content">
+                <h3>Update Profile</h3>
+                <p>Fill out your personal information and preferences</p>
+              </div>
+              <div className="action-arrow">
                 →
               </div>
             </div>
             <div className="action-card" onClick={() => setShowCVUpload(true)}>
-              <div className="icon cv">
+              <div className="action-icon cv">
                 📄
               </div>
-              <h3>Upload CV</h3>
-              <p>Upload or update your resume/CV</p>
-              <div className="arrow">
+              <div className="action-content">
+                <h3>Upload CV</h3>
+                <p>Upload or update your resume/CV</p>
+              </div>
+              <div className="action-arrow">
                 →
               </div>
             </div>
             <div className="action-card" onClick={() => navigate('/job-search')}>
-              <div className="icon search">
+              <div className="action-icon search">
                 🔍
               </div>
-              <h3>Search Jobs</h3>
-              <p>Find and apply to job opportunities</p>
-              <div className="arrow">
+              <div className="action-content">
+                <h3>Search Jobs</h3>
+                <p>Find and apply to job opportunities</p>
+              </div>
+              <div className="action-arrow">
                 →
               </div>
             </div>
             <div className="action-card" onClick={() => navigate('/job-recommendations')}>
-              <div className="icon recommendations">
-                🎯
+              <div className="action-icon recommendations">
+                👁️
               </div>
-              <h3>View Recommendations</h3>
-              <p>See personalized job recommendations</p>
-              <div className="arrow">
+              <div className="action-content">
+                <h3>View Recommendations</h3>
+                <p>See personalized job recommendations</p>
+              </div>
+              <div className="action-arrow">
                 →
               </div>
             </div>
@@ -435,70 +474,79 @@ const CandidatesDashboard = () => {
 
         {/* Recent Applications */}
         <div className="recent-applications">
-          <h2>
-            📋 Recent Applications
-          </h2>
-          {applications.length > 0 ? (
-            applications.slice(0, 5).map((application) => (
-              <div key={application.id} className="application-item">
-                <h3>{application.job?.title || 'Job Title'}</h3>
-                <div className="details">
-                  {application.job?.company || 'Company'} • {application.job?.location || 'Location'}
-                </div>
-                <div className={`status-badge ${getApplicationStatusColor(application.status)}`}>
-                  {getApplicationStatusText(application.status)}
-                </div>
-                <div className="salary">
-                  {application.job?.salary_min && application.job?.salary_max 
-                    ? `$${application.job.salary_min.toLocaleString()} - $${application.job.salary_max.toLocaleString()}`
-                    : 'Salary not specified'
-                  }
-                </div>
-              </div>
-            ))
-          ) : (
+          <h2 className="section-title">Recent Applications</h2>
+          {applications.length === 0 ? (
             <div className="empty-state">
-              <p>No applications yet. Start applying to jobs!</p>
+              <div className="empty-icon">📝</div>
+              <h3>No applications yet</h3>
+              <p>Start applying to jobs to see your applications here!</p>
+              <button 
+                className="cta-button" 
+                onClick={() => navigate('/job-search')}
+              >
+                🔍 Search Jobs Now
+              </button>
+            </div>
+          ) : (
+            <div className="applications-grid">
+              {applications.slice(0, 5).map((application, index) => (
+                <div key={index} className="application-card">
+                  <div className="application-header">
+                    <h3>{application.job_title || 'Job Application'}</h3>
+                    <span className={`status-badge ${application.status}`}>
+                      {getApplicationStatusText(application.status)}
+                    </span>
+                  </div>
+                  <div className="application-details">
+                    <p><strong>Company:</strong> {application.company || 'Unknown'}</p>
+                    <p><strong>Applied:</strong> {new Date(application.applied_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Recent Jobs */}
+        {/* Recent Job Postings */}
         <div className="recent-jobs">
-          <h2>
-            💼 Recent Job Postings
-          </h2>
-          {recentJobs.length > 0 ? (
-            recentJobs.map((job) => (
-              <div key={job.id} className="job-item">
-                <h3>{job.title}</h3>
-                <div className="details">
-                  {job.company} • {job.location}
+          <h2 className="section-title">Recent Job Postings</h2>
+          <div className="jobs-grid">
+            {recentJobs.map((job, index) => (
+              <div key={index} className="job-card">
+                <div className="job-header">
+                  <div className="job-logo">
+                    {job.company ? job.company.charAt(0).toUpperCase() : '🏢'}
+                  </div>
+                  <div className="job-info">
+                    <h3 className="job-title">{job.title}</h3>
+                    <span className="company-name">{job.company}</span>
+                  </div>
                 </div>
-                <div className="salary">
-                  ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}
-                </div>
-                <div>
-                  <button 
-                    className="btn-apply" 
-                    onClick={() => handleApplyToJob(job.id)}
-                  >
-                    Apply Now
-                  </button>
-                  <button 
-                    className="btn-view" 
-                    onClick={() => navigate(`/job-details/${job.id}`)}
-                  >
-                    View Details
-                  </button>
+                <div className="job-details">
+                  <div className="job-meta">
+                    <span className="location">📍 {job.location}</span>
+                    <span className="salary">
+                      💰 ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="job-actions">
+                    <button 
+                      className="btn-view-details"
+                      onClick={() => navigate(`/job-search?job=${job.id}`)}
+                    >
+                      View Details
+                    </button>
+                    <button 
+                      className="btn-apply-now"
+                      onClick={() => handleApplyToJob(job.id)}
+                    >
+                      Apply Now
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="empty-state">
-              <p>No recent job postings available.</p>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       </div>
 

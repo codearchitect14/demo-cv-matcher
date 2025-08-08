@@ -44,14 +44,28 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('=== LOGIN SUCCESS ===');
+        console.log('Login response:', data);
+        
         // Use apiService to set token
         apiService.setToken(data.access_token);
+        console.log('Token set in localStorage:', localStorage.getItem('access_token'));
+        
         // Call success callback if provided
         if (onSignInSuccess) {
+          console.log('Calling onSignInSuccess callback');
           onSignInSuccess(data);
         } else {
           // Navigate to candidates dashboard after successful login
-          navigate('/candidates-dashboard');
+          console.log('Navigating to /candidates-dashboard');
+          try {
+            navigate('/candidates-dashboard');
+            console.log('Navigation successful');
+          } catch (navError) {
+            console.error('Navigation failed:', navError);
+            // Fallback: try to redirect manually
+            window.location.href = '/candidates-dashboard';
+          }
         }
       } else {
         const errorData = await response.json();

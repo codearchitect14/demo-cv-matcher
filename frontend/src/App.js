@@ -33,6 +33,7 @@ function App() {
           {/* Welcome and Auth Routes */}
           <Route path="/" element={<WelcomePage />} />
           <Route path="/signup-new" element={<SignUpNew />} />
+          <Route path="/login" element={<LoginNew />} />
           <Route path="/login-new" element={<LoginNew />} />
           
           {/* Enhanced Test Page */}
