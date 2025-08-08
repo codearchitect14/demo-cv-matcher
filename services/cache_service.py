@@ -2,7 +2,7 @@ import json
 import time
 import hashlib
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from datetime import datetime, timedelta
 import redis.asyncio as redis
 from dataclasses import dataclass, asdict
@@ -28,7 +28,7 @@ class RedisCacheService:
     def __init__(self, redis_url: str = None):
         self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://localhost:6379')
         self.redis_client = None
-        self.compression_threshold = 1024  # Compress data larger than 1KB
+        self.compression_threshold = 4096  # Increased to 4KB
         self.max_cache_size = 100 * 1024 * 1024  # 100MB
         self.cache_stats = {
             'hits': 0,
@@ -61,6 +61,18 @@ class RedisCacheService:
             'analytics': 3600,       # 1 hour
             'session': 1800          # 30 minutes
         }
+        
+        # Adaptive compression settings
+        self.compression_settings = {
+            'embedding': {'threshold': 2048, 'always_compress': True},  # Always compress embeddings
+            'recommendation': {'threshold': 4096, 'always_compress': False},
+            'job': {'threshold': 2048, 'always_compress': False},
+            'candidate': {'threshold': 2048, 'always_compress': False},
+            'skill': {'threshold': 1024, 'always_compress': False},
+            'search': {'threshold': 8192, 'always_compress': False},  # Large search results
+            'analytics': {'threshold': 4096, 'always_compress': False},
+            'session': {'threshold': 1024, 'always_compress': False}
+        }
     
     async def connect(self):
         """Connect to Redis"""
@@ -89,18 +101,43 @@ class RedisCacheService:
         """Generate cache key with prefix and version"""
         return f"{self.prefixes.get(prefix, 'cache:')}{identifier}:v{version}"
     
-    def _compress_data(self, data: Any) -> bytes:
-        """Compress data if it exceeds threshold"""
+    def _should_compress(self, data: Any, prefix: str) -> bool:
+        """Determine if data should be compressed based on type and size"""
         try:
             serialized = pickle.dumps(data)
-            if len(serialized) > self.compression_threshold:
+            data_size = len(serialized)
+            
+            # Get compression settings for this data type
+            settings = self.compression_settings.get(prefix, {'threshold': self.compression_threshold, 'always_compress': False})
+            
+            # Always compress if configured for this type
+            if settings.get('always_compress', False):
+                return True
+            
+            # Compress if size exceeds threshold
+            return data_size > settings.get('threshold', self.compression_threshold)
+            
+        except Exception as e:
+            logger.warning(f"Error determining compression for {prefix}: {e}")
+            return False
+    
+    def _compress_data(self, data: Any, prefix: str = 'cache') -> bytes:
+        """Compress data if it exceeds threshold or type-specific settings"""
+        try:
+            serialized = pickle.dumps(data)
+            
+            # Check if compression is needed
+            if self._should_compress(data, prefix):
                 compressed = gzip.compress(serialized)
                 self.cache_stats['compressions'] += 1
+                logger.debug(f"Compressed {prefix} data: {len(serialized)} -> {len(compressed)} bytes")
                 return compressed
+            
             return serialized
+            
         except Exception as e:
-            logger.error(f"Compression failed: {e}")
-            return pickle.dumps(data)
+            logger.error(f"Error compressing data: {e}")
+            return pickle.dumps(data)  # Fallback to uncompressed
     
     def _decompress_data(self, data: bytes) -> Any:
         """Decompress data if it was compressed"""
@@ -150,7 +187,7 @@ class RedisCacheService:
             ttl = ttl or self.default_ttl.get(prefix, 3600)
             
             # Compress and store data
-            compressed_data = self._compress_data(data)
+            compressed_data = self._compress_data(data, prefix)
             
             # Store data
             await self.redis_client.setex(cache_key, ttl, compressed_data)
@@ -293,24 +330,179 @@ class RedisCacheService:
         return data.get('results') if data else None
     
     async def invalidate_job_cache(self, job_id: str):
-        """Invalidate all cache entries related to a job"""
-        await self.delete('job', job_id)
-        # Also invalidate related recommendations
-        pattern = f"{self.prefixes['recommendation']}*:{job_id}:*"
-        if self.redis_client:
-            keys = await self.redis_client.keys(pattern)
-            if keys:
-                await self.redis_client.delete(*keys)
-    
+        """Invalidate job-related cache entries"""
+        try:
+            # Invalidate job data
+            await self.delete('job', job_id)
+            
+            # Invalidate related recommendations
+            recommendation_pattern = f"{self.prefixes['recommendation']}*job_{job_id}*"
+            await self._invalidate_pattern(recommendation_pattern)
+            
+            # Invalidate search results that might include this job
+            search_pattern = f"{self.prefixes['search']}*"
+            await self._invalidate_pattern(search_pattern)
+            
+            logger.info(f"Invalidated cache for job {job_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate job cache: {e}")
+
     async def invalidate_candidate_cache(self, candidate_id: str):
-        """Invalidate all cache entries related to a candidate"""
-        await self.delete('candidate', candidate_id)
-        # Also invalidate related recommendations
-        pattern = f"{self.prefixes['recommendation']}*:{candidate_id}:*"
-        if self.redis_client:
-            keys = await self.redis_client.keys(pattern)
-            if keys:
-                await self.redis_client.delete(*keys)
+        """Invalidate candidate-related cache entries"""
+        try:
+            # Invalidate candidate data
+            await self.delete('candidate', candidate_id)
+            
+            # Invalidate related recommendations
+            recommendation_pattern = f"{self.prefixes['recommendation']}*candidate_{candidate_id}*"
+            await self._invalidate_pattern(recommendation_pattern)
+            
+            # Invalidate search results that might include this candidate
+            search_pattern = f"{self.prefixes['search']}*"
+            await self._invalidate_pattern(search_pattern)
+            
+            logger.info(f"Invalidated cache for candidate {candidate_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate candidate cache: {e}")
+    
+    async def _invalidate_pattern(self, pattern: str) -> int:
+        """Invalidate cache entries matching a pattern"""
+        try:
+            if not self.redis_client:
+                return 0
+            
+            # Scan for keys matching pattern
+            deleted_count = 0
+            cursor = 0
+            
+            while True:
+                cursor, keys = await self.redis_client.scan(
+                    cursor=cursor, 
+                    match=pattern, 
+                    count=100
+                )
+                
+                if keys:
+                    # Delete matching keys
+                    deleted = await self.redis_client.delete(*keys)
+                    deleted_count += deleted
+                
+                if cursor == 0:
+                    break
+            
+            logger.debug(f"Invalidated {deleted_count} cache entries matching pattern: {pattern}")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate pattern {pattern}: {e}")
+            return 0
+    
+    async def invalidate_skill_cache(self, skill_name: str = None):
+        """Invalidate skill-related cache entries"""
+        try:
+            if skill_name:
+                # Invalidate specific skill
+                await self.delete('skill', skill_name)
+            else:
+                # Invalidate all skill cache
+                await self.clear_prefix('skill')
+            
+            # Invalidate recommendations that depend on skills
+            recommendation_pattern = f"{self.prefixes['recommendation']}*"
+            await self._invalidate_pattern(recommendation_pattern)
+            
+            logger.info(f"Invalidated skill cache for: {skill_name or 'all skills'}")
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate skill cache: {e}")
+    
+    async def invalidate_embedding_cache(self, text_hash: str = None):
+        """Invalidate embedding cache entries"""
+        try:
+            if text_hash:
+                # Invalidate specific embedding
+                await self.delete('embedding', text_hash)
+            else:
+                # Invalidate all embedding cache
+                await self.clear_prefix('embedding')
+            
+            logger.info(f"Invalidated embedding cache for: {text_hash or 'all embeddings'}")
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate embedding cache: {e}")
+    
+    async def invalidate_analytics_cache(self, analytics_type: str = None):
+        """Invalidate analytics cache entries"""
+        try:
+            if analytics_type:
+                # Invalidate specific analytics type
+                await self.clear_prefix(f"analytics:{analytics_type}")
+            else:
+                # Invalidate all analytics cache
+                await self.clear_prefix('analytics')
+            
+            logger.info(f"Invalidated analytics cache for: {analytics_type or 'all analytics'}")
+            
+        except Exception as e:
+            logger.error(f"Failed to invalidate analytics cache: {e}")
+    
+    async def smart_invalidate(self, entity_type: str, entity_id: str, dependencies: List[str] = None):
+        """Smart cache invalidation based on entity dependencies"""
+        try:
+            # Invalidate the main entity
+            await self.delete(entity_type, entity_id)
+            
+            # Invalidate dependencies if provided
+            if dependencies:
+                for dep_type, dep_id in dependencies:
+                    await self.delete(dep_type, dep_id)
+            
+            # Invalidate related caches based on entity type
+            if entity_type == 'job':
+                await self.invalidate_job_cache(entity_id)
+            elif entity_type == 'candidate':
+                await self.invalidate_candidate_cache(entity_id)
+            elif entity_type == 'skill':
+                await self.invalidate_skill_cache(entity_id)
+            
+            logger.info(f"Smart invalidation completed for {entity_type}:{entity_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to perform smart invalidation: {e}")
+    
+    async def get_cache_dependencies(self, prefix: str, identifier: str) -> List[Tuple[str, str]]:
+        """Get cache dependencies for a specific entry"""
+        try:
+            # This could be enhanced to track actual dependencies
+            # For now, return common dependencies based on prefix
+            dependencies = []
+            
+            if prefix == 'job':
+                # Job cache might depend on skills and candidates
+                dependencies.extend([
+                    ('skill', 'all'),  # All skills might be affected
+                    ('recommendation', f'job_{identifier}')  # Job recommendations
+                ])
+            elif prefix == 'candidate':
+                # Candidate cache might depend on skills and jobs
+                dependencies.extend([
+                    ('skill', 'all'),  # All skills might be affected
+                    ('recommendation', f'candidate_{identifier}')  # Candidate recommendations
+                ])
+            elif prefix == 'skill':
+                # Skill cache might affect all recommendations
+                dependencies.extend([
+                    ('recommendation', 'all'),  # All recommendations
+                    ('search', 'all')  # All search results
+                ])
+            
+            return dependencies
+            
+        except Exception as e:
+            logger.error(f"Failed to get cache dependencies: {e}")
+            return []
     
     async def cleanup_expired_cache(self) -> int:
         """Clean up expired cache entries (Redis handles this automatically)"""

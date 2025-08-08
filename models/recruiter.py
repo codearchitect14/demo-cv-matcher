@@ -60,5 +60,5 @@ class Recruiter(BaseModel):
     
     # Relationships
     # jobs = relationship("Job", back_populates="recruiter", cascade="all, delete-orphan")  # Commented out since recruiter_id is commented
-    applications = relationship("Application", back_populates="recruiter", cascade="all, delete-orphan")
+    # applications relationship removed - no longer needed since recruiter_id was removed from applications
     # interactions relationship removed - InteractionLog uses generic user_id approach 

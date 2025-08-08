@@ -12,7 +12,10 @@ from db.crud.job import job as job_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user, get_current_recruiter
 from schemas.job import JobCreate, JobUpdate, JobResponse, JobResponseSimple, JobMandatorySkillCreate, JobSearchFilter
-from sqlalchemy import select
+from sqlalchemy import select, text
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Jobs"])
 
@@ -283,26 +286,79 @@ async def list_jobs(
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """List jobs with filters"""
+    """List jobs with filters using raw SQL to avoid prepared statements"""
     try:
-        filters = {}
-        if location:
-            filters["location"] = location
-        if domain:
-            filters["domain"] = domain
-        if salary_min is not None:
-            filters["salary_min"] = salary_min
-        if salary_max is not None:
-            filters["salary_max"] = salary_max
+        # Build raw SQL query to avoid prepared statements
+        query = """
+            SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id, 
+                   jms.created_at as skill_created_at, jms.updated_at as skill_updated_at
+            FROM jobs j
+            LEFT JOIN job_mandatory_skills jms ON j.id = jms.job_id
+            WHERE 1=1
+        """
+        params = {}
         
-        jobs = await job_crud.get_multi_with_filters(
-            db, filters=filters, skip=skip, limit=limit
-        )
-        return jobs
+        if location:
+            query += " AND j.location = :location"
+            params["location"] = location
+        
+        if domain:
+            query += " AND j.domain = :domain"
+            params["domain"] = domain
+        
+        if salary_min is not None:
+            query += " AND j.salary_min >= :salary_min"
+            params["salary_min"] = salary_min
+        
+        if salary_max is not None:
+            query += " AND j.salary_max <= :salary_max"
+            params["salary_max"] = salary_max
+        
+        query += " ORDER BY j.created_at DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = skip
+        
+        # Execute raw SQL
+        result = await db.execute(text(query), params)
+        rows = result.fetchall()
+        
+        # Group by job
+        jobs = {}
+        for row in rows:
+            job_id = row.id
+            if job_id not in jobs:
+                jobs[job_id] = {
+                    "id": row.id,
+                    "title": row.title,
+                    "company": row.company,
+                    "location": row.location,
+                    "salary_min": row.salary_min,
+                    "salary_max": row.salary_max,
+                    "domain": row.domain,
+                    "total_years_required": row.total_years_required,
+                    "job_description": row.job_description,
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                    "mandatory_skills": []
+                }
+            
+            if row.skill:
+                jobs[job_id]["mandatory_skills"].append({
+                    "id": row.skill_id,
+                    "skill": row.skill,
+                    "min_experience": row.min_experience,
+                    "job_id": job_id,
+                    "created_at": row.skill_created_at,
+                    "updated_at": row.skill_updated_at
+                })
+        
+        return list(jobs.values())
+        
     except Exception as e:
+        logger.error(f"Error listing jobs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve jobs: {str(e)}"
+            detail="Failed to retrieve jobs. Please try again later."
         )
 
 @router.get("/{job_id}/applications")

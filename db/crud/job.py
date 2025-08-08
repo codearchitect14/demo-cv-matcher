@@ -1,7 +1,7 @@
 # File: db/crud/job.py
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, func
+from sqlalchemy import select, and_, or_, desc, func, text
 from sqlalchemy.orm import selectinload, joinedload
 from models.job import Job, JobMandatorySkill
 from models.base import BaseModel
@@ -290,6 +290,83 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
             .where(self.model.created_at >= start_date)
         )
         return result.scalar()
+
+    async def get_with_skills_raw_sql(self, db: AsyncSession, id: int) -> Optional[Dict]:
+        """Get job with mandatory skills using raw SQL to avoid prepared statements"""
+        try:
+            # Use raw SQL to avoid prepared statements
+            result = await db.execute(text("""
+                SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id
+                FROM jobs j
+                LEFT JOIN job_mandatory_skills jms ON j.id = jms.job_id
+                WHERE j.id = :job_id
+            """), {"job_id": id})
+            
+            rows = result.fetchall()
+            if not rows:
+                return None
+            
+            # Build job object manually
+            job_data = dict(rows[0])
+            mandatory_skills = []
+            
+            for row in rows:
+                if row.skill:
+                    mandatory_skills.append({
+                        "id": row.skill_id,
+                        "skill": row.skill,
+                        "min_experience": row.min_experience,
+                        "job_id": row.id
+                    })
+            
+            job_data["mandatory_skills"] = mandatory_skills
+            return job_data
+            
+        except Exception as e:
+            logger.error(f"Error in get_with_skills_raw_sql: {e}")
+            return None
+
+    async def get_multiple_with_skills_raw_sql(self, db: AsyncSession, job_ids: List[int]) -> List[Dict]:
+        """Get multiple jobs with skills using raw SQL to avoid prepared statements"""
+        if not job_ids:
+            return []
+        
+        try:
+            # Use raw SQL to avoid prepared statements
+            placeholders = ",".join([f":id_{i}" for i in range(len(job_ids))])
+            params = {f"id_{i}": job_id for i, job_id in enumerate(job_ids)}
+            
+            result = await db.execute(text(f"""
+                SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id
+                FROM jobs j
+                LEFT JOIN job_mandatory_skills jms ON j.id = jms.job_id
+                WHERE j.id IN ({placeholders})
+                ORDER BY j.created_at DESC
+            """), params)
+            
+            rows = result.fetchall()
+            
+            # Group by job
+            jobs = {}
+            for row in rows:
+                job_id = row.id
+                if job_id not in jobs:
+                    jobs[job_id] = dict(row)
+                    jobs[job_id]["mandatory_skills"] = []
+                
+                if row.skill:
+                    jobs[job_id]["mandatory_skills"].append({
+                        "id": row.skill_id,
+                        "skill": row.skill,
+                        "min_experience": row.min_experience,
+                        "job_id": job_id
+                    })
+            
+            return list(jobs.values())
+            
+        except Exception as e:
+            logger.error(f"Error in get_multiple_with_skills_raw_sql: {e}")
+            return []
 
 # Create CRUD instance
 job_crud = CRUDJob(Job)

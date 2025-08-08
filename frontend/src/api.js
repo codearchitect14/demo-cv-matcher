@@ -10,6 +10,9 @@ const api = axios.create({
   },
 });
 
+// Export the api instance
+export default api;
+
 // API Service for all backend interactions
 export const apiService = {
   // Authentication APIs
@@ -170,13 +173,33 @@ export const apiService = {
   },
 
   // Application APIs
-  applyForJob: async (applicationData) => {
-    const response = await api.post('/applications', applicationData);
+  createApplication: async (applicationData) => {
+    try {
+      const response = await api.post('/applications', applicationData);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating application:', error);
+      throw error;
+    }
+  },
+
+  getApplications: async (filters = {}) => {
+    const response = await api.get('/applications', { params: filters });
     return response.data;
   },
 
   getApplication: async (applicationId) => {
     const response = await api.get(`/applications/${applicationId}`);
+    return response.data;
+  },
+
+  updateApplication: async (applicationId, updateData) => {
+    const response = await api.put(`/applications/${applicationId}`, updateData);
+    return response.data;
+  },
+
+  deleteApplication: async (applicationId) => {
+    const response = await api.delete(`/applications/${applicationId}`);
     return response.data;
   },
 
@@ -186,9 +209,9 @@ export const apiService = {
   },
 
   // Recommendation APIs
-  getJobRecommendations: async (candidateId, useMlRanking = true) => {
-    const response = await api.get(`/candidates/${candidateId}/job-recommendations`, {
-      params: { use_ml_ranking: useMlRanking }
+  getJobRecommendations: async (limit = 10) => {
+    const response = await api.get('/recommendations/jobs', {
+      params: { limit }
     });
     return response.data;
   },
@@ -562,6 +585,4 @@ export const apiService = {
       throw error;
     }
   }
-};
-
-export default apiService; 
+}; 
