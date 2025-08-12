@@ -234,10 +234,10 @@ async def get_job_recommendations(
 ):
     """Get personalized job recommendations for current user"""
     try:
-        from recommender.semantic import semantic_service
+        from recommender.semantic import semantic_search_service
         
         # Get recommendations using the semantic service
-        recommendations = await semantic_service.find_similar_jobs(
+        recommendations = await semantic_search_service.find_similar_jobs(
             candidate_id=current_user.id,
             db=db,
             k=limit

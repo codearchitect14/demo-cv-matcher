@@ -50,3 +50,4 @@ Thumbs.db
 
 # Env file
 .env.templates/
+config.bat

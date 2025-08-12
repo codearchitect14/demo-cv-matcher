@@ -65,19 +65,88 @@ class OptimizedEmbeddingService:
             logger.warning(f"Cache storage failed: {e}")
     
     def _validate_embedding_quality(self, embedding: np.ndarray) -> Tuple[bool, float]:
-        """Validate embedding quality"""
-        # Check embedding norm
-        norm = np.linalg.norm(embedding)
-        if norm < self.min_embedding_norm or norm > self.max_embedding_norm:
-            return False, norm
-        
-        # Check for NaN or infinite values
-        if np.any(np.isnan(embedding)) or np.any(np.isinf(embedding)):
-            return False, norm
-        
-        # Calculate quality score (higher is better)
-        quality_score = 1.0 / (1.0 + norm)  # Normalize between 0 and 1
-        return True, quality_score
+        """Validate embedding quality with comprehensive checks"""
+        try:
+            # Check embedding norm
+            norm = np.linalg.norm(embedding)
+            if norm < self.min_embedding_norm or norm > self.max_embedding_norm:
+                logger.warning(f"Embedding norm {norm:.4f} outside valid range [{self.min_embedding_norm}, {self.max_embedding_norm}]")
+                return False, norm
+            
+            # Check for NaN or infinite values
+            if np.any(np.isnan(embedding)) or np.any(np.isinf(embedding)):
+                logger.warning("Embedding contains NaN or infinite values")
+                return False, norm
+            
+            # Check for zero vectors
+            if norm == 0:
+                logger.warning("Embedding is a zero vector")
+                return False, norm
+            
+            # Distribution analysis
+            mean_val = np.mean(embedding)
+            std_val = np.std(embedding)
+            
+            # Check for reasonable distribution (not all same values)
+            if std_val < 1e-6:
+                logger.warning("Embedding has very low variance")
+                return False, norm
+            
+            # Outlier detection using IQR method
+            q1 = np.percentile(embedding, 25)
+            q3 = np.percentile(embedding, 75)
+            iqr = q3 - q1
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            
+            outliers = np.sum((embedding < lower_bound) | (embedding > upper_bound))
+            outlier_ratio = outliers / len(embedding)
+            
+            # Allow up to 10% outliers
+            if outlier_ratio > 0.1:
+                logger.warning(f"Embedding has {outlier_ratio:.2%} outliers")
+                return False, norm
+            
+            # Check for reasonable value ranges
+            min_val = np.min(embedding)
+            max_val = np.max(embedding)
+            
+            # Embeddings should typically be in reasonable range
+            if abs(min_val) > 10 or abs(max_val) > 10:
+                logger.warning(f"Embedding values outside expected range: [{min_val:.4f}, {max_val:.4f}]")
+                return False, norm
+            
+            # Calculate quality score based on multiple factors
+            quality_factors = []
+            
+            # Norm quality (closer to 1 is better)
+            norm_quality = 1.0 / (1.0 + abs(norm - 1.0))
+            quality_factors.append(norm_quality)
+            
+            # Variance quality (higher variance is better for embeddings)
+            variance_quality = min(1.0, std_val / 2.0)  # Normalize to [0, 1]
+            quality_factors.append(variance_quality)
+            
+            # Outlier quality (fewer outliers is better)
+            outlier_quality = 1.0 - outlier_ratio
+            quality_factors.append(outlier_quality)
+            
+            # Distribution symmetry (closer to 0 mean is better)
+            symmetry_quality = 1.0 / (1.0 + abs(mean_val))
+            quality_factors.append(symmetry_quality)
+            
+            # Overall quality score (geometric mean of factors)
+            quality_score = np.power(np.prod(quality_factors), 1.0 / len(quality_factors))
+            
+            # Log quality metrics for monitoring
+            logger.debug(f"Embedding quality metrics: norm={norm:.4f}, std={std_val:.4f}, "
+                        f"outlier_ratio={outlier_ratio:.4f}, mean={mean_val:.4f}, quality={quality_score:.4f}")
+            
+            return True, quality_score
+            
+        except Exception as e:
+            logger.error(f"Error validating embedding quality: {e}")
+            return False, 0.0
     
     def _preprocess_text(self, text: str) -> str:
         """Preprocess text for embedding generation"""
@@ -99,22 +168,41 @@ class OptimizedEmbeddingService:
     async def generate_embedding_batch(
         self, 
         texts: List[str], 
-        batch_size: Optional[int] = None
+        batch_size: Optional[int] = None,
+        chunk_size: Optional[int] = None
     ) -> List[EmbeddingResult]:
-        """Generate embeddings for multiple texts with batch processing"""
+        """Generate embeddings for multiple texts with chunked batch processing"""
         if not texts:
             return []
         
         batch_size = batch_size or self.batch_size
+        chunk_size = chunk_size or min(100, len(texts))  # Default chunk size
         results = []
         
-        # Process in batches
+        # Process in chunks to avoid memory issues
+        for i in range(0, len(texts), chunk_size):
+            chunk_texts = texts[i:i + chunk_size]
+            chunk_results = await self._process_chunk(chunk_texts, batch_size)
+            results.extend(chunk_results)
+            
+            # Log progress for large datasets
+            if len(texts) > 100:
+                progress = min(100, (i + chunk_size) / len(texts) * 100)
+                logger.info(f"Embedding generation progress: {progress:.1f}% ({i + len(chunk_texts)}/{len(texts)})")
+        
+        return results
+    
+    async def _process_chunk(self, texts: List[str], batch_size: int) -> List[EmbeddingResult]:
+        """Process a chunk of texts with batch processing"""
+        chunk_results = []
+        
+        # Process chunk in batches
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size]
             batch_results = await self._process_batch(batch_texts)
-            results.extend(batch_results)
+            chunk_results.extend(batch_results)
         
-        return results
+        return chunk_results
     
     async def _process_batch(self, texts: List[str]) -> List[EmbeddingResult]:
         """Process a batch of texts for embedding generation"""
@@ -157,39 +245,41 @@ class OptimizedEmbeddingService:
             
             # Process results
             for i, (text, embedding) in enumerate(zip(texts_to_process, embeddings)):
-                # Validate quality
+                # Validate embedding quality
                 is_valid, quality_score = self._validate_embedding_quality(embedding)
                 
                 if is_valid:
                     # Cache the embedding
-                    metadata = {
+                    await self._cache_embedding(text, embedding, {
+                        'model_name': self.model_name,
                         'quality_score': quality_score,
-                        'generation_time': generation_time / len(texts_to_process)
-                    }
-                    await self._cache_embedding(text, embedding, metadata)
+                        'generation_time': generation_time
+                    })
                     
                     batch_results.append(EmbeddingResult(
                         embedding=embedding,
                         text=text,
                         model_name=self.model_name,
-                        generation_time=generation_time / len(texts_to_process),
+                        generation_time=generation_time,
                         quality_score=quality_score,
                         cache_hit=False
                     ))
                 else:
-                    logger.warning(f"Low quality embedding generated for text: {text[:100]}...")
+                    logger.warning(f"Invalid embedding generated for text: {text[:100]}...")
                     # Return zero embedding for invalid results
                     batch_results.append(EmbeddingResult(
                         embedding=np.zeros(self.model.get_sentence_embedding_dimension()),
                         text=text,
                         model_name=self.model_name,
-                        generation_time=generation_time / len(texts_to_process),
+                        generation_time=generation_time,
                         quality_score=0.0,
                         cache_hit=False
                     ))
         
-        # Combine cache hits and new results
-        return cache_results + batch_results
+        # Add cache results
+        batch_results.extend(cache_results)
+        
+        return batch_results
     
     async def generate_job_embedding(self, job_data: Dict[str, Any]) -> Optional[np.ndarray]:
         """Generate embedding for job data with optimized processing"""
@@ -235,58 +325,167 @@ class OptimizedEmbeddingService:
         self, 
         entity_type: str, 
         entity_ids: List[int],
-        get_entity_data_func
+        get_entity_data_func,
+        batch_size: Optional[int] = None,
+        chunk_size: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Update embeddings incrementally for specific entities"""
+        """Update embeddings incrementally with chunked processing"""
+        batch_size = batch_size or self.batch_size
+        chunk_size = chunk_size or min(50, len(entity_ids))  # Smaller chunks for incremental updates
+        
+        results = {
+            'total_entities': len(entity_ids),
+            'processed': 0,
+            'successful': 0,
+            'failed': 0,
+            'errors': [],
+            'processing_time': 0.0
+        }
+        
+        start_time = time.time()
+        
         try:
-            start_time = time.time()
-            updated_count = 0
-            failed_count = 0
-            
-            # Get entity data
-            entities_data = await get_entity_data_func(entity_ids)
-            
-            # Generate embeddings in batches
-            texts = []
-            entity_map = {}
-            
-            for entity in entities_data:
-                if entity_type == "job":
-                    text = f"{entity.get('title', '')} {entity.get('company', '')} {entity.get('location', '')} {entity.get('domain', '')} {entity.get('job_description', '')}"
-                else:  # candidate
-                    text = f"{entity.get('name', '')} {entity.get('location', '')} {entity.get('domain', '')} {entity.get('summary', '')}"
+            # Process entities in chunks
+            for i in range(0, len(entity_ids), chunk_size):
+                chunk_ids = entity_ids[i:i + chunk_size]
                 
-                texts.append(text)
-                entity_map[text] = entity['id']
-            
-            # Generate embeddings
-            embedding_results = await self.generate_embedding_batch(texts)
-            
-            # Process results
-            for result in embedding_results:
-                if result.quality_score > 0.5:
-                    updated_count += 1
-                else:
-                    failed_count += 1
-            
-            processing_time = time.time() - start_time
-            
-            return {
-                "entity_type": entity_type,
-                "entities_processed": len(entity_ids),
-                "embeddings_updated": updated_count,
-                "embeddings_failed": failed_count,
-                "processing_time": processing_time,
-                "average_quality_score": np.mean([r.quality_score for r in embedding_results]) if embedding_results else 0.0
-            }
-            
+                # Get entity data for chunk
+                chunk_data = []
+                for entity_id in chunk_ids:
+                    try:
+                        entity_data = await get_entity_data_func(entity_id)
+                        if entity_data:
+                            chunk_data.append((entity_id, entity_data))
+                    except Exception as e:
+                        results['failed'] += 1
+                        results['errors'].append(f"Failed to get data for {entity_type} {entity_id}: {e}")
+                
+                # Process chunk
+                chunk_results = await self._process_entity_chunk(
+                    entity_type, chunk_data, batch_size
+                )
+                
+                # Update results
+                results['processed'] += len(chunk_data)
+                results['successful'] += chunk_results['successful']
+                results['failed'] += chunk_results['failed']
+                results['errors'].extend(chunk_results['errors'])
+                
+                # Log progress
+                progress = min(100, (i + chunk_size) / len(entity_ids) * 100)
+                logger.info(f"Incremental embedding update progress: {progress:.1f}% "
+                           f"({results['processed']}/{len(entity_ids)})")
+        
         except Exception as e:
-            logger.error(f"Incremental embedding update failed: {e}")
-            return {
-                "error": str(e),
-                "entity_type": entity_type,
-                "entities_processed": 0
-            }
+            logger.error(f"Error in incremental embedding update: {e}")
+            results['errors'].append(f"General error: {e}")
+        
+        results['processing_time'] = time.time() - start_time
+        
+        logger.info(f"Incremental embedding update completed: "
+                   f"{results['successful']} successful, {results['failed']} failed, "
+                   f"time: {results['processing_time']:.2f}s")
+        
+        return results
+    
+    async def _process_entity_chunk(
+        self, 
+        entity_type: str, 
+        chunk_data: List[Tuple[int, Dict]], 
+        batch_size: int
+    ) -> Dict[str, Any]:
+        """Process a chunk of entities for embedding generation"""
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        try:
+            # Extract text data from entities
+            texts = []
+            entity_map = []
+            
+            for entity_id, entity_data in chunk_data:
+                try:
+                    # Extract text based on entity type
+                    if entity_type == 'job':
+                        text = self._extract_job_text(entity_data)
+                    elif entity_type == 'candidate':
+                        text = self._extract_candidate_text(entity_data)
+                    else:
+                        text = str(entity_data)
+                    
+                    if text:
+                        texts.append(text)
+                        entity_map.append(entity_id)
+                    
+                except Exception as e:
+                    results['failed'] += 1
+                    results['errors'].append(f"Failed to extract text for {entity_type} {entity_id}: {e}")
+            
+            if texts:
+                # Generate embeddings for texts
+                embedding_results = await self._process_batch(texts)
+                
+                # Map results back to entities
+                for i, (entity_id, embedding_result) in enumerate(zip(entity_map, embedding_results)):
+                    if embedding_result.quality_score > 0.5:  # Only consider good quality embeddings
+                        results['successful'] += 1
+                        # Here you would save the embedding to the database
+                        # await save_embedding_to_db(entity_type, entity_id, embedding_result.embedding)
+                    else:
+                        results['failed'] += 1
+                        results['errors'].append(f"Low quality embedding for {entity_type} {entity_id}")
+        
+        except Exception as e:
+            logger.error(f"Error processing entity chunk: {e}")
+            results['errors'].append(f"Chunk processing error: {e}")
+        
+        return results
+    
+    def _extract_job_text(self, job_data: Dict) -> str:
+        """Extract text from job data for embedding"""
+        text_parts = []
+        
+        if job_data.get('title'):
+            text_parts.append(job_data['title'])
+        
+        if job_data.get('description'):
+            text_parts.append(job_data['description'])
+        
+        if job_data.get('requirements'):
+            text_parts.append(job_data['requirements'])
+        
+        if job_data.get('skills'):
+            if isinstance(job_data['skills'], list):
+                text_parts.extend(job_data['skills'])
+            else:
+                text_parts.append(str(job_data['skills']))
+        
+        return ' '.join(text_parts)
+    
+    def _extract_candidate_text(self, candidate_data: Dict) -> str:
+        """Extract text from candidate data for embedding"""
+        text_parts = []
+        
+        if candidate_data.get('summary'):
+            text_parts.append(candidate_data['summary'])
+        
+        if candidate_data.get('experiences'):
+            for exp in candidate_data['experiences']:
+                if exp.get('skill'):
+                    text_parts.append(exp['skill'])
+                if exp.get('description'):
+                    text_parts.append(exp['description'])
+        
+        if candidate_data.get('skills'):
+            if isinstance(candidate_data['skills'], list):
+                text_parts.extend(candidate_data['skills'])
+            else:
+                text_parts.append(str(candidate_data['skills']))
+        
+        return ' '.join(text_parts)
     
     async def get_embedding_stats(self) -> Dict[str, Any]:
         """Get embedding service statistics"""

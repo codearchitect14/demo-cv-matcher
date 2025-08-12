@@ -6,6 +6,7 @@ import logging
 import pickle
 import os
 from pathlib import Path
+import json
 
 # ML Libraries
 try:
@@ -42,6 +43,7 @@ class MLTrainerService:
         self.current_model = None
         self.model_metadata = {}
         self.feature_scaler = None
+        self.current_model_path = None
         
         # Model configuration
         self.model_config = {
@@ -341,7 +343,7 @@ class MLTrainerService:
         metadata: Dict[str, Any]
     ) -> bool:
         """
-        Save trained model to disk
+        Save trained model to disk with versioning
         
         Args:
             model: Trained model
@@ -353,27 +355,174 @@ class MLTrainerService:
         """
         try:
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            model_filename = f"{model_type}_{timestamp}.pkl"
+            version = metadata.get("version", "1.0.0")
+            model_filename = f"{model_type}_v{version}_{timestamp}.pkl"
             model_path = self.model_dir / model_filename
             
-            # Save model
+            # Create model metadata with versioning info
+            model_metadata = {
+                "model_type": model_type,
+                "version": version,
+                "timestamp": timestamp,
+                "created_at": datetime.utcnow().isoformat(),
+                "model_filename": model_filename,
+                "model_path": str(model_path),
+                "feature_names": metadata.get("feature_names", []),
+                "training_samples": metadata.get("training_samples", 0),
+                "validation_samples": metadata.get("validation_samples", 0),
+                "test_samples": metadata.get("test_samples", 0),
+                "performance_metrics": metadata.get("performance_metrics", {}),
+                "hyperparameters": metadata.get("hyperparameters", {}),
+                "data_version": metadata.get("data_version", "unknown"),
+                "model_size_mb": 0,  # Will be calculated after saving
+                "checksum": "",  # Will be calculated after saving
+                **metadata
+            }
+            
+            # Save model with metadata
+            model_data = {
+                "model": model,
+                "metadata": model_metadata,
+                "feature_scaler": self.feature_scaler
+            }
+            
             with open(model_path, 'wb') as f:
-                pickle.dump({
-                    "model": model,
-                    "metadata": metadata,
-                    "feature_scaler": self.feature_scaler
-                }, f)
+                pickle.dump(model_data, f)
+            
+            # Calculate model size and checksum
+            model_size = model_path.stat().st_size / (1024 * 1024)  # MB
+            model_metadata["model_size_mb"] = round(model_size, 2)
+            
+            # Calculate checksum for integrity
+            import hashlib
+            with open(model_path, 'rb') as f:
+                file_hash = hashlib.md5(f.read()).hexdigest()
+            model_metadata["checksum"] = file_hash
+            
+            # Update model registry
+            self._update_model_registry(model_metadata)
             
             # Update current model reference
             self.current_model = model
-            self.model_metadata = metadata
+            self.model_metadata = model_metadata
+            self.current_model_path = str(model_path)
             
-            logger.info(f"Model saved to {model_path}")
+            logger.info(f"Model saved to {model_path} (v{version}, {model_size:.2f}MB)")
             return True
             
         except Exception as e:
             logger.error(f"Failed to save model: {e}")
             return False
+    
+    def _update_model_registry(self, model_metadata: Dict[str, Any]):
+        """Update model registry with new model information"""
+        registry_path = self.model_dir / "model_registry.json"
+        
+        try:
+            if registry_path.exists():
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+            else:
+                registry = {"models": [], "current_model": None}
+            
+            # Add new model to registry
+            registry["models"].append(model_metadata)
+            
+            # Keep only last 10 models to prevent registry bloat
+            if len(registry["models"]) > 10:
+                registry["models"] = registry["models"][-10:]
+            
+            # Update current model reference
+            registry["current_model"] = model_metadata["model_filename"]
+            
+            # Save updated registry
+            with open(registry_path, 'w') as f:
+                json.dump(registry, f, indent=2)
+                
+        except Exception as e:
+            logger.error(f"Failed to update model registry: {e}")
+    
+    def get_model_versions(self) -> List[Dict[str, Any]]:
+        """Get list of all model versions"""
+        registry_path = self.model_dir / "model_registry.json"
+        
+        try:
+            if registry_path.exists():
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+                return registry.get("models", [])
+            else:
+                return []
+        except Exception as e:
+            logger.error(f"Failed to get model versions: {e}")
+            return []
+    
+    def rollback_model(self, version: str) -> bool:
+        """
+        Rollback to a specific model version
+        
+        Args:
+            version: Model version to rollback to
+            
+        Returns:
+            True if rollback successful
+        """
+        try:
+            # Find model with specified version
+            models = self.get_model_versions()
+            target_model = None
+            
+            for model in models:
+                if model.get("version") == version:
+                    target_model = model
+                    break
+            
+            if not target_model:
+                logger.error(f"Model version {version} not found")
+                return False
+            
+            # Load the target model
+            model_path = self.model_dir / target_model["model_filename"]
+            if not model_path.exists():
+                logger.error(f"Model file {model_path} not found")
+                return False
+            
+            # Verify checksum
+            import hashlib
+            with open(model_path, 'rb') as f:
+                current_checksum = hashlib.md5(f.read()).hexdigest()
+            
+            if current_checksum != target_model["checksum"]:
+                logger.error(f"Model checksum mismatch for version {version}")
+                return False
+            
+            # Load the model
+            success = self.load_model(str(model_path))
+            if success:
+                logger.info(f"Successfully rolled back to model version {version}")
+                return True
+            else:
+                logger.error(f"Failed to load model version {version}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to rollback model: {e}")
+            return False
+    
+    def get_current_model_info(self) -> Dict[str, Any]:
+        """Get information about the currently loaded model"""
+        if self.model_metadata:
+            return {
+                "version": self.model_metadata.get("version"),
+                "model_type": self.model_metadata.get("model_type"),
+                "created_at": self.model_metadata.get("created_at"),
+                "performance_metrics": self.model_metadata.get("performance_metrics", {}),
+                "training_samples": self.model_metadata.get("training_samples", 0),
+                "model_size_mb": self.model_metadata.get("model_size_mb", 0),
+                "is_loaded": self.current_model is not None
+            }
+        else:
+            return {"is_loaded": False}
     
     def load_model(self, model_path: str) -> bool:
         """

@@ -14,28 +14,32 @@ class RedisRateLimiter:
     """Redis-based rate limiter with distributed session management"""
     
     def __init__(self):
+        """Initialize rate limiter with Redis and fallback cache"""
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         self.redis_client = None
-        self.fallback_limits = {}  # In-memory fallback
-        self.fallback_enabled = True
+        self.fallback_enabled = False
         
-        # Rate limit configurations
+        # Rate limiting configuration
         self.limits = {
-            'default': {'requests': 100, 'window': 3600},  # 100 requests per hour
-            'auth': {'requests': 10, 'window': 300},       # 10 auth attempts per 5 minutes
-            'api': {'requests': 1000, 'window': 3600},     # 1000 API calls per hour
-            'search': {'requests': 50, 'window': 300},      # 50 searches per 5 minutes
-            'upload': {'requests': 10, 'window': 3600},     # 10 uploads per hour
-            'admin': {'requests': 500, 'window': 3600},     # 500 admin calls per hour
+            'api': {'requests': 100, 'window': 60},  # 100 requests per minute
+            'auth': {'requests': 5, 'window': 60},   # 5 auth attempts per minute
+            'search': {'requests': 50, 'window': 60}, # 50 searches per minute
+            'upload': {'requests': 10, 'window': 60}, # 10 uploads per minute
+            'default': {'requests': 1000, 'window': 3600}  # 1000 requests per hour
         }
         
-        # User role limits
-        self.role_limits = {
-            'admin': {'requests': 1000, 'window': 3600},
-            'recruiter': {'requests': 500, 'window': 3600},
-            'candidate': {'requests': 200, 'window': 3600},
-            'guest': {'requests': 50, 'window': 3600},
-        }
+        # Fallback cache with LRU eviction and memory limits
+        self.fallback_limits = {}
+        self.fallback_cache_size = 1000  # Maximum number of entries
+        self.fallback_memory_limit = 50 * 1024 * 1024  # 50MB memory limit
+        self.fallback_access_times = {}  # Track access times for LRU
+        self.fallback_memory_usage = 0  # Track memory usage
+        
+        # LRU cache implementation
+        self.lru_cache = {}
+        self.lru_order = []  # List to maintain access order
+        
+        logger.info("Rate limiter initialized with fallback cache")
     
     async def connect(self):
         """Connect to Redis"""
@@ -147,13 +151,112 @@ class RedisRateLimiter:
             logger.error(f"[ERROR] Redis rate limit check failed: {e}")
             return False, {}
     
+    def _cleanup_fallback_cache(self):
+        """Clean up fallback cache using LRU eviction"""
+        try:
+            current_time = time.time()
+            
+            # Remove expired entries first
+            expired_keys = []
+            for key, data in self.fallback_limits.items():
+                window_start = current_time - data['window']
+                data['requests'] = [
+                    req_time for req_time in data['requests']
+                    if req_time > window_start
+                ]
+                
+                # Remove empty entries
+                if not data['requests']:
+                    expired_keys.append(key)
+            
+            for key in expired_keys:
+                self._remove_from_fallback_cache(key)
+            
+            # Check memory usage and apply LRU eviction if needed
+            while (len(self.fallback_limits) > self.fallback_cache_size or 
+                   self.fallback_memory_usage > self.fallback_memory_limit):
+                
+                if not self.lru_order:
+                    break
+                
+                # Remove least recently used entry
+                oldest_key = self.lru_order.pop(0)
+                if oldest_key in self.fallback_limits:
+                    self._remove_from_fallback_cache(oldest_key)
+                    logger.debug(f"LRU eviction: removed {oldest_key}")
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up fallback cache: {e}")
+    
+    def _remove_from_fallback_cache(self, key: str):
+        """Remove entry from fallback cache and update memory tracking"""
+        try:
+            if key in self.fallback_limits:
+                # Estimate memory usage (rough calculation)
+                entry_size = len(str(self.fallback_limits[key])) * 2  # Rough estimate
+                self.fallback_memory_usage = max(0, self.fallback_memory_usage - entry_size)
+                
+                del self.fallback_limits[key]
+            
+            if key in self.fallback_access_times:
+                del self.fallback_access_times[key]
+            
+            if key in self.lru_cache:
+                del self.lru_cache[key]
+                
+        except Exception as e:
+            logger.error(f"Error removing from fallback cache: {e}")
+    
+    def _update_lru_order(self, key: str):
+        """Update LRU order for a key"""
+        try:
+            # Remove from current position if exists
+            if key in self.lru_order:
+                self.lru_order.remove(key)
+            
+            # Add to end (most recently used)
+            self.lru_order.append(key)
+            
+            # Update access time
+            self.fallback_access_times[key] = time.time()
+            
+        except Exception as e:
+            logger.error(f"Error updating LRU order: {e}")
+    
+    def _add_to_fallback_cache(self, key: str, data: Dict):
+        """Add entry to fallback cache with memory tracking"""
+        try:
+            # Estimate memory usage
+            entry_size = len(str(data)) * 2  # Rough estimate
+            self.fallback_memory_usage += entry_size
+            
+            # Add to cache
+            self.fallback_limits[key] = data
+            
+            # Update LRU order
+            self._update_lru_order(key)
+            
+            # Cleanup if needed
+            self._cleanup_fallback_cache()
+            
+        except Exception as e:
+            logger.error(f"Error adding to fallback cache: {e}")
+    
     def _check_fallback_limit(self, identifier: str, endpoint: str, limit_config: Dict) -> Tuple[bool, Dict]:
-        """Check rate limit using in-memory fallback"""
+        """Check rate limit using in-memory fallback with LRU eviction"""
         key = f"{identifier}:{endpoint}"
         current_time = time.time()
         
+        # Cleanup expired entries periodically
+        if len(self.fallback_limits) % 10 == 0:  # Cleanup every 10th request
+            self._cleanup_fallback_cache()
+        
         if key not in self.fallback_limits:
-            self.fallback_limits[key] = {'requests': [], 'limit': limit_config['requests'], 'window': limit_config['window']}
+            self.fallback_limits[key] = {
+                'requests': [], 
+                'limit': limit_config['requests'], 
+                'window': limit_config['window']
+            }
         
         # Clean old requests
         window_start = current_time - limit_config['window']
@@ -166,9 +269,11 @@ class RedisRateLimiter:
         current_requests = len(self.fallback_limits[key]['requests'])
         limit_reached = current_requests >= limit_config['requests']
         
-        # Add current request
+        # Add current request if limit not reached
         if not limit_reached:
             self.fallback_limits[key]['requests'].append(current_time)
+            # Update LRU order
+            self._update_lru_order(key)
         
         return limit_reached, {
             'current': current_requests,

@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 from typing import List, Dict, Tuple, Optional, Any
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -8,6 +9,7 @@ from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,16 @@ class AdvancedSkillMatcher:
         self.vectorizer = None
         self._build_skill_vectors()
         
-        # Fuzzy matching thresholds
-        self.exact_match_threshold = 100
-        self.fuzzy_match_threshold = 85
-        self.semantic_match_threshold = 0.7
-        self.context_match_threshold = 0.6
+        # Thread pool for CPU-intensive operations
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="skill_matcher")
+        
+        # Load thresholds from environment variables with defaults
+        self.exact_match_threshold = float(os.getenv("SKILL_EXACT_MATCH_THRESHOLD", "100"))
+        self.fuzzy_match_threshold = float(os.getenv("SKILL_FUZZY_MATCH_THRESHOLD", "85"))
+        self.semantic_match_threshold = float(os.getenv("SKILL_SEMANTIC_MATCH_THRESHOLD", "0.7"))
+        self.context_match_threshold = float(os.getenv("SKILL_CONTEXT_MATCH_THRESHOLD", "0.6"))
+        self.min_skill_confidence = float(os.getenv("SKILL_MIN_CONFIDENCE", "0.3"))
+        self.max_skill_variations = int(os.getenv("SKILL_MAX_VARIATIONS", "5"))
         
         # Skill categories for context-aware matching
         self.skill_categories = {
@@ -38,6 +45,73 @@ class AdvancedSkillMatcher:
             'tools': ['git', 'jira', 'confluence', 'slack', 'microsoft office', 'adobe creative suite'],
             'soft_skills': ['leadership', 'communication', 'teamwork', 'problem solving', 'time management', 'adaptability']
         }
+        
+        logger.info(f"Skill matcher initialized with thresholds: exact={self.exact_match_threshold}, "
+                   f"fuzzy={self.fuzzy_match_threshold}, semantic={self.semantic_match_threshold}")
+    
+    def __del__(self):
+        """Cleanup thread pool executor"""
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=True)
+    
+    async def find_skill_matches_async(self, query_skill: str, threshold: float = 0.3) -> List[Tuple[str, float]]:
+        """Async wrapper for skill matching with thread pool execution"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.find_skill_matches,
+            query_skill,
+            threshold
+        )
+    
+    async def calculate_skill_overlap_async(self, required_skills: List[str], candidate_skills: List[str]) -> Dict[str, float]:
+        """Async wrapper for skill overlap calculation"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.calculate_skill_overlap,
+            required_skills,
+            candidate_skills
+        )
+    
+    async def validate_skill_requirements_async(self, job_skills: List[Dict], candidate_skills: List[Dict]) -> Dict[str, Dict]:
+        """Async wrapper for skill requirement validation"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.validate_skill_requirements,
+            job_skills,
+            candidate_skills
+        )
+    
+    async def calculate_overall_match_score_async(self, validation_results: Dict[str, Dict]) -> float:
+        """Async wrapper for overall match score calculation"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.calculate_overall_match_score,
+            validation_results
+        )
+    
+    async def expand_skill_matches_async(self, skills: List[str], threshold: float = 0.4) -> List[str]:
+        """Async wrapper for skill expansion"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.expand_skill_matches,
+            skills,
+            threshold
+        )
+    
+    async def get_related_skills_async(self, skill_name: str, threshold: float = 0.3) -> List[str]:
+        """Async wrapper for related skills lookup"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.get_related_skills,
+            skill_name,
+            threshold
+        )
     
     def _load_skill_taxonomy(self) -> Dict[str, List[str]]:
         """Load skill taxonomy from JSON files"""

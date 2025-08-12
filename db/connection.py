@@ -2,7 +2,7 @@
 # import os
 # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.database import engine, Base
+from config.database import get_fresh_engine, Base
 import asyncio
 
 # Import models to register them with SQLAlchemy
@@ -25,7 +25,8 @@ def import_all_models():
 async def create_tables():
     """Create all database tables"""
     models = import_all_models()
-    async with engine.begin() as conn:
+    fresh_engine = get_fresh_engine()
+    async with fresh_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         print(f"Created tables for {len(models)} models")
 
@@ -33,7 +34,8 @@ async def create_tables():
 async def drop_tables():
     """Drop all database tables"""
     import_all_models()  # Register models first
-    async with engine.begin() as conn:
+    fresh_engine = get_fresh_engine()
+    async with fresh_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         print("All tables dropped successfully!")
 

@@ -120,29 +120,44 @@ class ColdStartHandler:
         """Get content-based recommendations based on candidate profile"""
         
         try:
+            logger.info(f"[DEBUG] Getting content-based recommendations for candidate {candidate.id}")
+            logger.info(f"[DEBUG] Candidate domain: {candidate.domain}")
+            logger.info(f"[DEBUG] Candidate location: {candidate.location}")
+            
+            # First, let's check how many jobs exist in total
+            total_jobs_result = await db.execute(
+                select(func.count(Job.id))
+            )
+            total_jobs = total_jobs_result.scalar()
+            logger.info(f"[DEBUG] Total jobs in database: {total_jobs}")
+            
+            # Check how many active jobs exist
+            active_jobs_result = await db.execute(
+                select(func.count(Job.id))
+            )
+            active_jobs = active_jobs_result.scalar()
+            logger.info(f"[DEBUG] Jobs in database: {active_jobs}")
+            
             # Find jobs that match candidate's domain and role
             jobs_result = await db.execute(
                 select(Job)
-                .where(
-                    and_(
-                        Job.domain == candidate.domain,
-                        Job.is_active == True
-                    )
-                )
+                .where(Job.domain == candidate.domain)
                 .order_by(Job.created_at.desc())
                 .limit(limit * 2)  # Get more to filter
             )
             jobs = jobs_result.scalars().all()
+            logger.info(f"[DEBUG] Found {len(jobs)} jobs matching domain '{candidate.domain}'")
             
             if not jobs:
-                # Fallback: get any active jobs
+                # Fallback: get any jobs
+                logger.info(f"[DEBUG] No domain-specific jobs found, getting any jobs")
                 jobs_result = await db.execute(
                     select(Job)
-                    .where(Job.is_active == True)
                     .order_by(Job.created_at.desc())
                     .limit(limit)
                 )
                 jobs = jobs_result.scalars().all()
+                logger.info(f"[DEBUG] Found {len(jobs)} jobs as fallback")
             
             recommendations = []
             for job in jobs:
@@ -176,13 +191,14 @@ class ColdStartHandler:
                 if score > 0:
                     recommendations.append({
                         'job_id': job.id,
-                        'job': job,
+                        'job': self._job_to_dict(job),
                         'score': score,
                         'method': 'content_based',
                         'factors': factors,
                         'explanation': f"Based on your profile: {', '.join(factors)}"
                     })
             
+            logger.info(f"[DEBUG] Generated {len(recommendations)} content-based recommendations")
             # Sort by score and return top results
             recommendations.sort(key=lambda x: x['score'], reverse=True)
             return recommendations[:limit]
@@ -204,12 +220,7 @@ class ColdStartHandler:
             popular_jobs_result = await db.execute(
                 select(Job, func.count(Application.id).label('application_count'))
                 .outerjoin(Application, Job.id == Application.job_id)
-                .where(
-                    and_(
-                        Job.domain == domain,
-                        Job.is_active == True
-                    )
-                )
+                .where(Job.domain == domain)
                 .group_by(Job.id)
                 .order_by(desc('application_count'))
                 .limit(limit)
@@ -220,7 +231,7 @@ class ColdStartHandler:
             for job, app_count in popular_jobs:
                 recommendations.append({
                     'job_id': job.id,
-                    'job': job,
+                    'job': self._job_to_dict(job),
                     'score': min(1.0, app_count / 10.0),  # Normalize score
                     'method': 'popular_jobs',
                     'factors': ['popularity'],
@@ -274,7 +285,7 @@ class ColdStartHandler:
             for job, similar_apps in similar_jobs:
                 recommendations.append({
                     'job_id': job.id,
-                    'job': job,
+                    'job': self._job_to_dict(job),
                     'score': min(1.0, similar_apps / 5.0),  # Normalize score
                     'method': 'similar_users',
                     'factors': ['similar_users'],
@@ -412,6 +423,22 @@ class ColdStartHandler:
         except Exception as e:
             logger.error(f"[ERROR] Failed to get domain-based candidates: {e}")
             return []
+    
+    def _job_to_dict(self, job: Job) -> Dict[str, Any]:
+        """Convert a Job SQLAlchemy object to a dictionary"""
+        return {
+            'id': job.id,
+            'title': job.title,
+            'company': job.company,
+            'location': job.location,
+            'salary_min': job.salary_min,
+            'salary_max': job.salary_max,
+            'domain': job.domain,
+            'total_years_required': job.total_years_required,
+            'job_description': job.job_description,
+            'created_at': job.created_at,
+            'updated_at': job.updated_at
+        }
     
     def _remove_duplicates(self, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Remove duplicate recommendations based on ID"""
