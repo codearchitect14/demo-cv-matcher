@@ -131,26 +131,47 @@ async def update_my_profile(
             detail="Failed to update profile. Please try again later."
         )
 
+@router.post("/test-upload")
+async def test_upload(
+    test_file: UploadFile = File(...),
+    current_user: Candidate = Depends(get_current_user)
+):
+    """Test endpoint for file upload functionality"""
+    try:
+        return {
+            "message": "Test upload successful",
+            "filename": test_file.filename,
+            "size": test_file.size,
+            "content_type": test_file.content_type,
+            "candidate_id": current_user.id
+        }
+    except Exception as e:
+        print(f"Test upload error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Test upload failed"
+        )
+
 @router.post("/upload-cv")
 async def upload_cv(
-    cv_file: UploadFile = File(...),
+    cv_file: UploadFile = File(...),  # Remove max_length parameter
     current_user: Candidate = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     """Upload CV for current user"""
     try:
-        # Validate file type
+        # Validate file type - only PDF, DOC, and DOCX files allowed
         if not cv_file.filename.lower().endswith(('.pdf', '.doc', '.docx')):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only PDF, DOC, and DOCX files are allowed."
+                detail="Only PDF, DOC, and DOCX files are allowed for CV upload."
             )
         
-        # Validate file size (max 10MB)
-        if cv_file.size and cv_file.size > 10 * 1024 * 1024:
+        # Validate file size (max 100MB)
+        if cv_file.size and cv_file.size > 100 * 1024 * 1024:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size must be less than 10MB."
+                detail="File size must be less than 100MB."
             )
         
         # Read file content
@@ -166,7 +187,9 @@ async def upload_cv(
         return {
             "message": "CV uploaded successfully",
             "filename": cv_file.filename,
-            "size": len(file_content)
+            "size": len(file_content),
+            "candidate_id": current_user.id,
+            "file_type": cv_file.content_type
         }
         
     except HTTPException:

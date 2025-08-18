@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import time
 import logging
+import os
 
 from config.database import init_db
 from config.logging import setup_logging, log_api_request, log_security_event
@@ -17,6 +18,9 @@ from services.cache_service import cache_service
 # Setup logging
 loggers = setup_logging()
 logger = loggers["api"]
+
+# Note: File size limit is configured via uvicorn command line arguments
+# Use: uvicorn api.main:app --host 0.0.0.0 --port 8000 --limit-request-line 0 --limit-request-field_size 0 --limit-request-fields 0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

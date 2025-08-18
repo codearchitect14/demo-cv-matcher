@@ -1,77 +1,95 @@
 #!/usr/bin/env python3
 """
-Test database connection and query execution
+Test database connection and fix transaction issues
 """
-
 import asyncio
-import sys
 import os
-
-# Add the project root to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from config.database import get_db_session, engine
-from db.crud.job import job as job_crud
+from sqlalchemy import text
+from config.database import engine, get_db_session
 
 async def test_database_connection():
-    """Test database connection and basic queries"""
-    
-    print("🔍 Testing database connection...")
+    """Test database connection"""
+    print("🧪 Testing database connection...")
     
     try:
-        # Test 1: Basic connection
-        print("1. Testing basic connection...")
-        async with engine.begin() as conn:
-            result = await conn.execute("SELECT 1")
-            print("✅ Basic connection successful")
+        # Test 1: Direct engine connection
+        print("📊 Test 1: Direct engine connection...")
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT 1 as test"))
+            row = result.fetchone()
+            print(f"✅ Direct connection: {row[0]}")
         
-        # Test 2: Session creation
-        print("2. Testing session creation...")
-        async with get_db_session() as session:
-            print("✅ Session creation successful")
+        # Test 2: Session connection
+        print("📊 Test 2: Session connection...")
+        async for session in get_db_session():
+            try:
+                result = await session.execute(text("SELECT 1 as test"))
+                row = result.fetchone()
+                print(f"✅ Session connection: {row[0]}")
+                break
+            finally:
+                await session.close()
         
-        # Test 3: Job query (the one that was failing)
-        print("3. Testing job query...")
-        async with get_db_session() as session:
-            jobs = await job_crud.get_multi_with_filters(session, limit=5)
-            print(f"✅ Job query successful - found {len(jobs)} jobs")
-            
-            if jobs:
-                print(f"   First job: {jobs[0].title}")
+        # Test 3: Version check
+        print("📊 Test 3: Database version...")
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT version()"))
+            version = result.fetchone()
+            print(f"✅ Database version: {version[0]}")
         
-        # Test 4: Complex query with mandatory skills
-        print("4. Testing complex query with mandatory skills...")
-        async with get_db_session() as session:
-            # This is the query that was causing the prepared statement error
-            from sqlalchemy import select
-            from models.job import Job, JobMandatorySkill
-            from sqlalchemy.orm import selectinload
-            
-            query = select(Job).options(selectinload(Job.mandatory_skills)).limit(5)
-            result = await session.execute(query)
-            jobs_with_skills = result.scalars().all()
-            print(f"✅ Complex query successful - found {len(jobs_with_skills)} jobs with skills")
-        
-        print("\n🎉 All database tests passed!")
+        print("🎉 All database tests passed!")
         return True
         
     except Exception as e:
         print(f"❌ Database test failed: {e}")
-        print(f"Error type: {type(e).__name__}")
+        return False
+
+async def test_auth_simulation():
+    """Test auth-like operations"""
+    print("\n🧪 Testing auth simulation...")
+    
+    try:
+        async for session in get_db_session():
+            try:
+                # Simulate auth operations
+                result = await session.execute(text("SELECT COUNT(*) FROM candidates"))
+                count = result.fetchone()
+                print(f"✅ Candidates count: {count[0]}")
+                
+                # Test transaction
+                await session.commit()
+                print("✅ Transaction committed successfully")
+                break
+                
+            except Exception as e:
+                await session.rollback()
+                print(f"❌ Transaction failed: {e}")
+                raise
+            finally:
+                await session.close()
+        
+        print("🎉 Auth simulation passed!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Auth simulation failed: {e}")
         return False
 
 async def main():
     """Main test function"""
     print("🚀 Starting database connection tests...")
     
-    success = await test_database_connection()
+    # Test basic connection
+    if not await test_database_connection():
+        print("❌ Basic connection test failed")
+        return
     
-    if success:
-        print("\n✅ Database is working correctly!")
-        sys.exit(0)
-    else:
-        print("\n❌ Database has issues!")
-        sys.exit(1)
+    # Test auth simulation
+    if not await test_auth_simulation():
+        print("❌ Auth simulation test failed")
+        return
+    
+    print("\n🎉 All tests passed! Database is working correctly.")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

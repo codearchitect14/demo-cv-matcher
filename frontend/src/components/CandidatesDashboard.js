@@ -6,7 +6,7 @@ const CandidatesDashboard = () => {
   const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState(null);
   const [applications, setApplications] = useState([]);
-  const [recentJobs, setRecentJobs] = useState([]);
+  const [jobRecommendations, setJobRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -30,7 +30,7 @@ const CandidatesDashboard = () => {
     
     fetchUserProfile();
     fetchApplications();
-    fetchRecentJobs();
+    fetchJobRecommendations();
   }, [navigate]);
 
   const fetchUserProfile = async () => {
@@ -108,7 +108,8 @@ const CandidatesDashboard = () => {
         return;
       }
       
-      const response = await fetch('http://localhost:8000/api/v1/applications/my-applications', {
+      // First try the authenticated endpoint
+      let response = await fetch('http://localhost:8000/api/v1/applications/my-applications', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -121,9 +122,40 @@ const CandidatesDashboard = () => {
         const data = await response.json();
         console.log('Applications data:', data);
         setApplications(data);
-      } else if (response.status === 401) {
-        console.log('Unauthorized - using empty applications');
-        setApplications([]);
+      } else if (response.status === 401 || response.status === 422) {
+        console.log('Authentication issue - trying to get user profile first');
+        
+        // Try to get user profile to get candidate ID
+        const profileResponse = await fetch('http://localhost:8000/api/v1/candidates/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json();
+          console.log('Profile data for applications:', profileData);
+          
+          // Use the public endpoint with candidate ID
+          const publicResponse = await fetch(`http://localhost:8000/api/v1/applications/candidate/${profileData.id}/applications/public`, {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (publicResponse.ok) {
+            const publicData = await publicResponse.json();
+            console.log('Public applications data:', publicData);
+            setApplications(publicData);
+          } else {
+            console.log('Public endpoint failed, using empty applications');
+            setApplications([]);
+          }
+        } else {
+          console.log('Profile fetch failed, using empty applications');
+          setApplications([]);
+        }
       } else {
         console.error('Failed to fetch applications:', response.status, response.statusText);
         const errorText = await response.text();
@@ -136,77 +168,121 @@ const CandidatesDashboard = () => {
     }
   };
 
-  const fetchRecentJobs = async () => {
+  const fetchJobRecommendations = async () => {
     try {
-      console.log('Fetching recent jobs...');
-      const response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=5');
-      console.log('Jobs response status:', response.status);
+      console.log('Fetching job recommendations...');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      
+      if (!token) {
+        console.log('No token found, using empty recommendations');
+        setJobRecommendations([]);
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/api/v1/jobs/recommendations', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Recommendations response status:', response.status);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('Recent jobs data:', data);
-        setRecentJobs(data);
+        console.log('Job recommendations data:', data);
+        setJobRecommendations(data);
       } else {
-        console.error('Failed to fetch recent jobs:', response.status, response.statusText);
+        console.error('Failed to fetch job recommendations:', response.status, response.statusText);
         const errorText = await response.text();
-        console.error('Jobs error details:', errorText);
-        // Set dummy data for testing
-        setRecentJobs([
-          {
-            id: 1,
-            title: "Python Developer",
-            company: "Tech Corp",
-            location: "New York",
-            salary_min: 90000,
-            salary_max: 130000
-          },
-          {
-            id: 2,
-            title: "Senior Python Developer",
-            company: "Techcorp",
-            location: "New York",
-            salary_min: 120000,
-            salary_max: 180000
-          },
-          {
-            id: 3,
-            title: "Full Stack Developer",
-            company: "Innovation Labs",
-            location: "San Francisco",
-            salary_min: 110000,
-            salary_max: 160000
-          }
-        ]);
+        console.error('Recommendations error details:', errorText);
+        // If recommendations fail, fetch all available jobs as fallback
+        await fetchAllJobs();
       }
     } catch (error) {
-      console.error('Error fetching recent jobs:', error);
-      // Set dummy data for testing
-      setRecentJobs([
-        {
-          id: 1,
-          title: "Python Developer",
-          company: "Tech Corp",
-          location: "New York",
-          salary_min: 90000,
-          salary_max: 130000
-        },
-        {
-          id: 2,
-          title: "Senior Python Developer",
-          company: "Techcorp",
-          location: "New York",
-          salary_min: 120000,
-          salary_max: 180000
-        },
-        {
-          id: 3,
-          title: "Full Stack Developer",
-          company: "Innovation Labs",
-          location: "San Francisco",
-          salary_min: 110000,
-          salary_max: 160000
+      console.error('Error fetching job recommendations:', error);
+      // If recommendations fail, fetch all available jobs as fallback
+      await fetchAllJobs();
+    }
+  };
+
+  const fetchAllJobs = async () => {
+    try {
+      console.log('Fetching all available jobs as fallback...');
+      const response = await fetch('http://localhost:8000/api/v1/jobs/', {
+        headers: {
+          'Content-Type': 'application/json'
         }
-      ]);
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('All jobs data:', data);
+        // Limit to first 6 jobs for dashboard display
+        setJobRecommendations(data.slice(0, 6));
+      } else {
+        console.error('Failed to fetch all jobs:', response.status);
+        setJobRecommendations([]);
+      }
+    } catch (error) {
+      console.error('Error fetching all jobs:', error);
+      setJobRecommendations([]);
+    }
+  };
+
+  const handleApplyToRecommendedJob = async (jobId) => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      
+      if (!token) {
+        setError('Please log in to apply for jobs');
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/api/v1/applications/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          job_id: jobId,
+          status: 'applied'
+        })
+      });
+
+      if (response.ok) {
+        setMessage('Application submitted successfully!');
+        // Refresh applications list
+        fetchApplications();
+        // Remove the applied job from recommendations
+        setJobRecommendations(prev => prev.filter(job => job.id !== jobId));
+      } else {
+        const errorData = await response.json();
+        // Handle validation errors properly
+        if (errorData.detail && typeof errorData.detail === 'object') {
+          // This is a validation error object
+          const errorMessages = [];
+          if (Array.isArray(errorData.detail)) {
+            errorData.detail.forEach(err => {
+              if (err.msg) {
+                errorMessages.push(err.msg);
+              }
+            });
+          } else if (errorData.detail.msg) {
+            errorMessages.push(errorData.detail.msg);
+          }
+          setError(errorMessages.join(', ') || 'Validation error occurred');
+        } else {
+          setError(errorData.detail || 'Failed to apply for job');
+        }
+      }
+    } catch (error) {
+      console.error('Error applying to job:', error);
+      setError('Failed to apply for job. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -298,7 +374,23 @@ const CandidatesDashboard = () => {
         fetchApplications();
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Failed to apply for job');
+        // Handle validation errors properly
+        if (errorData.detail && typeof errorData.detail === 'object') {
+          // This is a validation error object
+          const errorMessages = [];
+          if (Array.isArray(errorData.detail)) {
+            errorData.detail.forEach(err => {
+              if (err.msg) {
+                errorMessages.push(err.msg);
+              }
+            });
+          } else if (errorData.detail.msg) {
+            errorMessages.push(errorData.detail.msg);
+          }
+          setError(errorMessages.join(', ') || 'Validation error occurred');
+        } else {
+          setError(errorData.detail || 'Failed to apply for job');
+        }
       }
     } catch (error) {
       setError('Failed to apply for job');
@@ -356,10 +448,7 @@ const CandidatesDashboard = () => {
               <span className="nav-icon">🔍</span>
               <span>Search Jobs</span>
             </button>
-            <button className="nav-item" onClick={() => navigate('/job-recommendations')}>
-              <span className="nav-icon">👁️</span>
-              <span>Job Recommendations</span>
-            </button>
+
           </div>
           
           <div className="header-right">
@@ -411,8 +500,8 @@ const CandidatesDashboard = () => {
               💼
             </div>
             <div className="card-content">
-              <div className="card-count">{recentJobs.length}</div>
-              <div className="card-label">Available Jobs</div>
+              <div className="card-count">{jobRecommendations.length}</div>
+              <div className="card-label">Recommended Jobs</div>
             </div>
           </div>
         </div>
@@ -457,18 +546,7 @@ const CandidatesDashboard = () => {
                 →
               </div>
             </div>
-            <div className="action-card" onClick={() => navigate('/job-recommendations')}>
-              <div className="action-icon recommendations">
-                👁️
-              </div>
-              <div className="action-content">
-                <h3>View Recommendations</h3>
-                <p>See personalized job recommendations</p>
-              </div>
-              <div className="action-arrow">
-                →
-              </div>
-            </div>
+
           </div>
         </div>
 
@@ -499,7 +577,7 @@ const CandidatesDashboard = () => {
                   </div>
                   <div className="application-details">
                     <p><strong>Company:</strong> {application.company || 'Unknown'}</p>
-                    <p><strong>Applied:</strong> {new Date(application.applied_at).toLocaleDateString()}</p>
+                    <p><strong>Applied:</strong> {application.applied_at ? new Date(application.applied_at).toLocaleDateString() : new Date(application.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
               ))}
@@ -507,11 +585,24 @@ const CandidatesDashboard = () => {
           )}
         </div>
 
-        {/* Recent Job Postings */}
-        <div className="recent-jobs">
-          <h2 className="section-title">Recent Job Postings</h2>
-          <div className="jobs-grid">
-            {recentJobs.map((job, index) => (
+        {/* Recommended Jobs */}
+        <div className="recommended-jobs">
+          <h2 className="section-title">Recommended Jobs</h2>
+          {jobRecommendations.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">💼</div>
+              <h3>No recommended jobs yet</h3>
+              <p>Complete your profile to get personalized job recommendations!</p>
+              <button 
+                className="cta-button" 
+                onClick={() => setShowProfileForm(true)}
+              >
+                👤 Complete Profile
+              </button>
+            </div>
+          ) : (
+            <div className="jobs-grid">
+              {jobRecommendations.map((job, index) => (
               <div key={index} className="job-card">
                 <div className="job-header">
                   <div className="job-logo">
@@ -538,7 +629,7 @@ const CandidatesDashboard = () => {
                     </button>
                     <button 
                       className="btn-apply-now"
-                      onClick={() => handleApplyToJob(job.id)}
+                      onClick={() => handleApplyToRecommendedJob(job.id)}
                     >
                       Apply Now
                     </button>
@@ -546,7 +637,8 @@ const CandidatesDashboard = () => {
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 

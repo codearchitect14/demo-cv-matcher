@@ -40,6 +40,7 @@ async def apply_for_job(
         
         # Create application with current user's ID
         application_data_dict = application_data.dict()
+        # Always use the authenticated user's ID, regardless of what was sent
         application_data_dict["candidate_id"] = current_user.id
         
         print(f"DEBUG: Application data: {application_data_dict}")
@@ -70,6 +71,13 @@ async def create_application_public(
     """Create application for testing (public endpoint)"""
     try:
         print(f"DEBUG: Creating application - candidate_id: {application_data.candidate_id}, job_id: {application_data.job_id}")
+        
+        # Ensure candidate_id is provided for public endpoint
+        if not application_data.candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="candidate_id is required for public endpoint"
+            )
         
         # Check if already applied
         existing_application = await application_crud.get_by_candidate_and_job(
@@ -253,10 +261,37 @@ async def get_candidate_applications_public(
 ):
     """Get candidate's applications (public endpoint for testing)"""
     try:
-        applications = await application_crud.get_by_candidate(
-            db, candidate_id=candidate_id, skip=skip, limit=limit, status=status_filter
+        # Use get_by_candidate_id to get applications with job details
+        applications = await application_crud.get_by_candidate_id(
+            db, candidate_id=candidate_id, skip=skip, limit=limit
         )
-        return applications
+        
+        # Convert to response format with job details
+        response_applications = []
+        for app in applications:
+            job_details = {
+                "id": app.id,
+                "job_id": app.job_id,
+                "candidate_id": app.candidate_id,
+                "status": app.status,
+                "created_at": app.created_at,
+                "updated_at": app.updated_at,
+                "applied_at": app.created_at  # Use created_at as applied_at
+            }
+            
+            # Add job details if available
+            if hasattr(app, 'job') and app.job:
+                job_details.update({
+                    "job_title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                    "salary_min": app.job.salary_min,
+                    "salary_max": app.job.salary_max
+                })
+            
+            response_applications.append(job_details)
+        
+        return response_applications
     except HTTPException:
         raise
     except Exception as e:
@@ -302,14 +337,27 @@ async def get_my_applications(
         # Convert to response format with job details
         response_applications = []
         for app in applications:
-            response_applications.append({
+            job_details = {
                 "id": app.id,
                 "job_id": app.job_id,
                 "candidate_id": app.candidate_id,
                 "status": app.status,
                 "created_at": app.created_at,
-                "updated_at": app.updated_at
-            })
+                "updated_at": app.updated_at,
+                "applied_at": app.created_at  # Use created_at as applied_at
+            }
+            
+            # Add job details if available
+            if hasattr(app, 'job') and app.job:
+                job_details.update({
+                    "job_title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                    "salary_min": app.job.salary_min,
+                    "salary_max": app.job.salary_max
+                })
+            
+            response_applications.append(job_details)
         
         return response_applications
     except Exception as e:

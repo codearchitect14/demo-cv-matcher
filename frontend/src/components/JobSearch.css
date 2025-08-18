@@ -15,7 +15,8 @@
 }
 
 .header-content {
-  max-width: 1200px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   padding: 0 2rem;
   text-align: center;
@@ -38,7 +39,8 @@
 
 /* Search Container */
 .search-container {
-  max-width: 1200px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   padding: 0 2rem;
 }
@@ -183,9 +185,10 @@
 /* Job Cards Grid */
 .search-results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+  gap: 2rem;
   padding: 2rem;
+  width: 100%;
 }
 
 .job-card {
@@ -522,6 +525,13 @@
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .search-results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.5rem;
+  }
+}
+
 @media (max-width: 768px) {
   .header-text h1 {
     font-size: 2rem;
@@ -542,6 +552,7 @@
   .search-results-grid {
     grid-template-columns: 1fr;
     padding: 1rem;
+    width: 100%;
   }
   
   .results-header {

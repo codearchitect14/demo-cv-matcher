@@ -158,12 +158,10 @@ const JobSearch = () => {
         }
       }
       
-      // Create application with ALL required fields
+      // Create application with required fields only
       const applicationData = {
         job_id: jobId,  // Use the correct job ID
-        candidate_id: candidateId,
-        status: 'applied',
-        applied_at: new Date().toISOString()
+        status: 'applied'
       };
       
       console.log('Sending application with token:', accessToken ? 'Token present' : 'No token');
