@@ -49,3 +49,5 @@ Thumbs.db
 *.wmv
 
 embeddings/faiss_index/ 
+"venv/" 
+"embeddings/faiss_index/" 
