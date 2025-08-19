@@ -8,6 +8,10 @@ const InteractionsAnalytics = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('interactions');
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState({ key: 'timestamp', dir: 'desc' });
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [showLogForm, setShowLogForm] = useState(false);
   
   // Interaction history params
@@ -53,11 +57,14 @@ const InteractionsAnalytics = () => {
         })
       });
 
-      const response = await fetch(`http://localhost:8000/api/v1/interactions/candidates/${interactionParams.candidate_id}/interactions?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // Use public (no-auth) endpoint if no token is present
+      const basePath = token
+        ? `http://localhost:8000/api/v1/interactions/candidates/${interactionParams.candidate_id}/interactions`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${interactionParams.candidate_id}/interactions`;
+
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      const response = await fetch(`${basePath}?${queryParams}`, { headers });
       
       if (response.ok) {
         const data = await response.json();
@@ -76,6 +83,50 @@ const InteractionsAnalytics = () => {
     }
   };
 
+  const filteredSorted = () => {
+    let rows = Array.isArray(interactions) ? [...interactions] : [];
+    // Search (by job_id, user_id, interaction_type)
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(r =>
+        String(r.job_id || '').includes(q) ||
+        String(r.user_id || '').includes(q) ||
+        (r.interaction_type || '').toLowerCase().includes(q)
+      );
+    }
+    // Sort
+    rows.sort((a, b) => {
+      const { key, dir } = sortBy;
+      const va = a[key];
+      const vb = b[key];
+      if (key === 'timestamp') {
+        const da = new Date(va).getTime();
+        const db = new Date(vb).getTime();
+        return dir === 'asc' ? da - db : db - da;
+      }
+      if (va === vb) return 0;
+      return dir === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+    });
+    return rows;
+  };
+
+  const paginated = () => {
+    const rows = filteredSorted();
+    const start = (page - 1) * perPage;
+    return rows.slice(start, start + perPage);
+  };
+
+  const totalResults = () => filteredSorted().length;
+
+  const toggleSort = (key) => {
+    setSortBy(prev => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, dir: 'asc' };
+    });
+  };
+
   const fetchBehaviorPatterns = async () => {
     if (!behaviorParams.candidate_id) {
       setError('Please enter a candidate ID');
@@ -90,11 +141,11 @@ const InteractionsAnalytics = () => {
         days_back: behaviorParams.days_back
       });
 
-      const response = await fetch(`http://localhost:8000/api/v1/interactions/candidates/${behaviorParams.candidate_id}/behavior-patterns?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const basePath = token
+        ? `http://localhost:8000/api/v1/interactions/candidates/${behaviorParams.candidate_id}/behavior-patterns`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${behaviorParams.candidate_id}/behavior-patterns`;
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${basePath}?${queryParams}`, { headers });
       
       if (response.ok) {
         const data = await response.json();
@@ -127,11 +178,11 @@ const InteractionsAnalytics = () => {
         limit: similarUsersParams.limit
       });
 
-      const response = await fetch(`http://localhost:8000/api/v1/interactions/candidates/${similarUsersParams.candidate_id}/similar-users?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const basePath = token
+        ? `http://localhost:8000/api/v1/interactions/candidates/${similarUsersParams.candidate_id}/similar-users`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${similarUsersParams.candidate_id}/similar-users`;
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${basePath}?${queryParams}`, { headers });
       
       if (response.ok) {
         const data = await response.json();
@@ -309,30 +360,81 @@ const InteractionsAnalytics = () => {
             </div>
 
             <div className="results-section">
-              <h3>Results ({interactions.length})</h3>
-              {interactions.length > 0 ? (
-                <div className="interactions-grid">
-                  {interactions.map((interaction, index) => (
-                    <div key={interaction.id || index} className="interaction-card">
-                      <div className="interaction-header">
-                        <span 
-                          className="interaction-type"
-                          style={{ backgroundColor: getInteractionTypeColor(interaction.interaction_type) }}
-                        >
-                          {interaction.interaction_type}
-                        </span>
-                        <span className="timestamp">
-                          {new Date(interaction.timestamp).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p><strong>Job ID:</strong> {interaction.job_id}</p>
-                      <p><strong>User ID:</strong> {interaction.user_id}</p>
-                    </div>
+              <div className="table-controls">
+                <input className="search-input" placeholder="Search interactions..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+                <div className="quick-filters">
+                  {['viewed', 'applied', 'rejected'].map(t => (
+                    <button key={t} className={`quick-filter ${interactionParams.interaction_types.includes(t) ? 'active' : ''}`}
+                      onClick={() => {
+                        const exists = interactionParams.interaction_types.includes(t);
+                        const next = exists ? interactionParams.interaction_types.filter(x => x !== t) : [...interactionParams.interaction_types, t];
+                        setInteractionParams({ ...interactionParams, interaction_types: next });
+                      }}>
+                      {t}
+                    </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="summary-cards">
+                <div className="summary-card"><span className="count">{interactions.length}</span><span className="label">Total</span></div>
+                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='applied').length}</span><span className="label">Applications</span></div>
+                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='viewed').length}</span><span className="label">Views</span></div>
+                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='rejected').length}</span><span className="label">Rejections</span></div>
+              </div>
+
+              {totalResults() > 0 ? (
+                <div className="table-wrapper">
+                  <table className="interactions-table" role="table" aria-label="Interaction history">
+                    <thead>
+                      <tr>
+                        <th onClick={() => toggleSort('timestamp')} className="sortable-header">Date <span className="sort-indicator">{sortBy.key==='timestamp' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
+                        <th onClick={() => toggleSort('interaction_type')} className="sortable-header">Interaction <span className="sort-indicator">{sortBy.key==='interaction_type' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
+                        <th onClick={() => toggleSort('user_id')} className="sortable-header">Candidate ID <span className="sort-indicator">{sortBy.key==='user_id' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
+                        <th onClick={() => toggleSort('job_id')} className="sortable-header">Job ID <span className="sort-indicator">{sortBy.key==='job_id' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginated().map((row, idx) => (
+                        <tr key={row.id || idx}>
+                          <td>{new Date(row.timestamp).toLocaleDateString()}</td>
+                          <td>
+                            <span className={`status-badge ${row.interaction_type==='applied'?'status-applied': row.interaction_type==='rejected'?'status-rejected':'status-viewed'}`}>
+                              {row.interaction_type}
+                            </span>
+                          </td>
+                          <td>{row.user_id}</td>
+                          <td>{row.job_id}</td>
+                          <td>
+                            <button className="page-btn" onClick={() => alert(`View job ${row.job_id}`)}>View</button>
+                          </td>
+                          <td>
+                            <button className="page-btn" onClick={() => alert(`Details for interaction ${row.id || idx}`)}>Details</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               ) : (
                 <p className="no-results">No interactions found</p>
               )}
+
+              <div className="table-footer">
+                <div>
+                  Showing {(page-1)*perPage + Math.min(perPage, paginated().length)} of {totalResults()} results
+                </div>
+                <div className="pagination">
+                  <button className={`page-btn ${page===1?'active':''}`} onClick={()=>setPage(1)}>First</button>
+                  <button className="page-btn" onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
+                  <button className="page-btn" onClick={()=>setPage(p=>p+1)}>Next</button>
+                </div>
+                <select className="per-page" value={perPage} onChange={(e)=>{setPerPage(parseInt(e.target.value)); setPage(1);}}>
+                  {[10,25,50,100].map(n=> <option key={n} value={n}>{n}/page</option>)}
+                </select>
+              </div>
             </div>
           </div>
         )}

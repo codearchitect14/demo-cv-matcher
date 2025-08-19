@@ -27,8 +27,9 @@ async def create_job(
 ):
     """Create a new job posting"""
     try:
-        # Create the job
-        job = await job_crud.create(db, obj_in=job_data)
+        # Create the job (exclude relationship data to avoid SA relationship assignment errors)
+        base_job_dict = job_data.dict(exclude={'mandatory_skills'})
+        job = await job_crud.create(db, obj_in=base_job_dict)
         
         # Add mandatory skills if provided
         if job_data.mandatory_skills:
@@ -55,10 +56,10 @@ async def create_job_as_recruiter(
 ):
     """Create a new job posting as a recruiter"""
     try:
-        # Create the job with recruiter ID
-        job_dict = job_data.dict()
+        # Create the job with recruiter ID (exclude relationship field first)
+        job_dict = job_data.dict(exclude={'mandatory_skills'})
         job_dict["recruiter_id"] = current_recruiter.id
-        job = await job_crud.create(db, obj_in=JobCreate(**job_dict))
+        job = await job_crud.create(db, obj_in=job_dict)
         
         # Add mandatory skills if provided
         if job_data.mandatory_skills:
@@ -84,10 +85,9 @@ async def create_job_public(
 ):
     """Create a new job posting (public endpoint for testing)"""
     try:
-        # Use default recruiter ID for public endpoint
-        job_dict = job_data.dict()
-        job_dict["recruiter_id"] = 1  # Default recruiter ID
-        job = await job_crud.create(db, obj_in=JobCreate(**job_dict))
+        # Create base job (no recruiter_id column in current model)
+        job_dict = job_data.dict(exclude={'mandatory_skills'})
+        job = await job_crud.create(db, obj_in=job_dict)
         
         # Add mandatory skills if provided
         if job_data.mandatory_skills:

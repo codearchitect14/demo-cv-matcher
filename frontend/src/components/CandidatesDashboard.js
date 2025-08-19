@@ -424,11 +424,12 @@ const CandidatesDashboard = () => {
 
   return (
     <div className="candidates-dashboard">
-      {/* Modern Header */}
+      {/* Professional Header */}
       <div className="dashboard-header">
         <div className="header-content">
           <div className="header-left">
             <h1 className="dashboard-title">Candidate Dashboard</h1>
+            <p className="header-subtitle">Candidate Portal</p>
             {userProfile && (
               <p className="welcome-text">Welcome back, {userProfile.name || 'Candidate'}!</p>
             )}

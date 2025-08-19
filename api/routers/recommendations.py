@@ -25,7 +25,7 @@ router = APIRouter(tags=["Recommendations"])
 # Initialize enhanced recommendation service
 recommendation_service = EnhancedRecommendationService()
 
-@router.post("/candidate/jobs", response_model=List[RecommendationResponse])
+@router.post("/candidate/jobs")
 async def get_candidate_job_recommendations(
     request: CandidateRecommendationRequest,
     db: AsyncSession = Depends(get_db_session)
@@ -40,32 +40,35 @@ async def get_candidate_job_recommendations(
         )
         
         # Convert to response format
-        response_data = []
-        for rec in recommendations:
-            response_data.append(RecommendationResponse(
-                candidate_id=rec.candidate_id,
-                job_id=rec.job_id,
-                match_score=rec.overall_match_score,
-                explanation=rec.explanation,
-                skill_matches=[{
-                    'skill_name': sm.skill_name,
-                    'required_years': sm.required_years,
-                    'candidate_years': sm.candidate_years,
-                    'match_score': sm.match_score,
-                    'proficiency_level': sm.proficiency_level,
-                    'meets_requirement': sm.meets_requirement
-                } for sm in rec.skill_matches],
-                missing_skills=rec.missing_skills,
-                experience_gaps=rec.experience_gaps,
-                strengths=rec.strengths
-            ))
-        
-        return response_data
+        # Return plain JSON matching the frontend expectations
+        return [
+            {
+                'candidate_id': rec.candidate_id,
+                'job_id': rec.job_id,
+                'match_score': rec.overall_match_score,
+                'explanation': rec.explanation,
+                'skill_matches': [
+                    {
+                        'skill_name': sm.skill_name,
+                        'required_years': sm.required_years,
+                        'candidate_years': sm.candidate_years,
+                        'match_score': sm.match_score,
+                        'proficiency_level': sm.proficiency_level,
+                        'meets_requirement': sm.meets_requirement,
+                    }
+                    for sm in rec.skill_matches
+                ],
+                'missing_skills': rec.missing_skills,
+                'experience_gaps': rec.experience_gaps,
+                'strengths': rec.strengths,
+            }
+            for rec in recommendations
+        ]
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting recommendations: {str(e)}")
 
-@router.post("/recruiter/candidates", response_model=List[RecommendationResponse])
+@router.post("/recruiter/candidates")
 async def get_recruiter_candidate_recommendations(
     request: RecruiterRecommendationRequest,
     db: AsyncSession = Depends(get_db_session)
@@ -80,27 +83,30 @@ async def get_recruiter_candidate_recommendations(
         )
         
         # Convert to response format
-        response_data = []
-        for rec in recommendations:
-            response_data.append(RecommendationResponse(
-                candidate_id=rec.candidate_id,
-                job_id=rec.job_id,
-                match_score=rec.overall_match_score,
-                explanation=rec.explanation,
-                skill_matches=[{
-                    'skill_name': sm.skill_name,
-                    'required_years': sm.required_years,
-                    'candidate_years': sm.candidate_years,
-                    'match_score': sm.match_score,
-                    'proficiency_level': sm.proficiency_level,
-                    'meets_requirement': sm.meets_requirement
-                } for sm in rec.skill_matches],
-                missing_skills=rec.missing_skills,
-                experience_gaps=rec.experience_gaps,
-                strengths=rec.strengths
-            ))
-        
-        return response_data
+        # Return plain JSON matching the frontend expectations
+        return [
+            {
+                'candidate_id': rec.candidate_id,
+                'job_id': rec.job_id,
+                'match_score': rec.overall_match_score,
+                'explanation': rec.explanation,
+                'skill_matches': [
+                    {
+                        'skill_name': sm.skill_name,
+                        'required_years': sm.required_years,
+                        'candidate_years': sm.candidate_years,
+                        'match_score': sm.match_score,
+                        'proficiency_level': sm.proficiency_level,
+                        'meets_requirement': sm.meets_requirement,
+                    }
+                    for sm in rec.skill_matches
+                ],
+                'missing_skills': rec.missing_skills,
+                'experience_gaps': rec.experience_gaps,
+                'strengths': rec.strengths,
+            }
+            for rec in recommendations
+        ]
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting recommendations: {str(e)}")

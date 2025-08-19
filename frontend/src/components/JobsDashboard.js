@@ -30,6 +30,30 @@ const JobsDashboard = () => {
     min_experience: ''
   });
 
+  // Normalize a job record from the API into our local form shape
+  const normalizeJobToForm = (jobObj) => {
+    if (!jobObj) return {
+      title: '', company: '', location: '', salary_min: '', salary_max: '', domain: '', total_years_required: '', job_description: '', skills: []
+    };
+    const mappedSkills = Array.isArray(jobObj.mandatory_skills)
+      ? jobObj.mandatory_skills.map((s) => ({
+          skill: s.skill || s.name || '',
+          min_experience: s.min_experience ?? s.min_years_experience ?? 0,
+        }))
+      : (Array.isArray(jobObj.skills) ? jobObj.skills : []);
+    return {
+      title: jobObj.title || '',
+      company: jobObj.company || '',
+      location: jobObj.location || '',
+      salary_min: jobObj.salary_min ?? '',
+      salary_max: jobObj.salary_max ?? '',
+      domain: jobObj.domain || '',
+      total_years_required: jobObj.total_years_required ?? '',
+      job_description: jobObj.job_description || '',
+      skills: mappedSkills || [],
+    };
+  };
+
   // Debug: Log when jobs state changes
   useEffect(() => {
     console.log('🔄 Jobs state changed:', jobs);
@@ -235,6 +259,7 @@ const JobsDashboard = () => {
         <div className="header-actions">
           <button 
             className="btn-post-job"
+            aria-label="Post new job"
             onClick={() => setShowForm(true)}
           >
             <span className="btn-icon">➕</span>
@@ -245,36 +270,42 @@ const JobsDashboard = () => {
 
       {/* Main Content */}
       <div className="dashboard-content">
-        {/* Filters Section */}
-        <div className="filters-section">
-          <div className="filter-group">
-            <label>Location</label>
-            <input
-              type="text"
-              placeholder="Filter by location"
-              value={filters.location}
-              onChange={(e) => setFilters({...filters, location: e.target.value})}
-              className="filter-input"
-            />
-          </div>
-          <div className="filter-group">
-            <label>Limit</label>
-            <select
-              value={filters.limit}
-              onChange={(e) => setFilters({...filters, limit: parseInt(e.target.value)})}
-              className="filter-select"
-            >
-              <option value={5}>5</option>
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
+        {/* Filters Bar */}
+        <div className="filters-bar">
+          <div className="filters-section">
+            <div className="filter-group">
+              <label htmlFor="filter-location">Location</label>
+              <input
+                id="filter-location"
+                aria-label="Filter jobs by location"
+                type="text"
+                placeholder="Filter by location"
+                value={filters.location}
+                onChange={(e) => setFilters({...filters, location: e.target.value})}
+                className="filter-input"
+              />
+            </div>
+            <div className="filter-group">
+              <label htmlFor="filter-limit">Limit</label>
+              <select
+                id="filter-limit"
+                aria-label="Number of jobs to display"
+                value={filters.limit}
+                onChange={(e) => setFilters({...filters, limit: parseInt(e.target.value)})}
+                className="filter-select"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
           </div>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="error-banner">
+          <div className="error-banner" role="alert" aria-live="polite">
             <span className="error-icon">⚠️</span>
             {error}
             <button 
@@ -344,9 +375,10 @@ const JobsDashboard = () => {
                     <div className="card-actions">
                       <button 
                         className="btn-edit"
+                        aria-label={`Edit job ${job.title || 'job'}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFormData(job);
+                          setFormData(normalizeJobToForm(job));
                           setSelectedJob(job);
                           setShowForm(true);
                         }}
@@ -355,6 +387,7 @@ const JobsDashboard = () => {
                       </button>
                       <button 
                         className="btn-delete"
+                        aria-label={`Delete job ${job.title || 'job'}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteJob(job.id);
@@ -534,7 +567,7 @@ const JobsDashboard = () => {
                 </div>
 
                 {/* Display Added Skills */}
-                {formData.skills.length > 0 && (
+                {Array.isArray(formData.skills) && formData.skills.length > 0 && (
                   <div className="skills-list">
                     <h4>Added Skills:</h4>
                     {formData.skills.map((skill, index) => (
@@ -604,7 +637,8 @@ const JobsDashboard = () => {
                       salary_max: '',
                       domain: '',
                       total_years_required: '',
-                      job_description: ''
+                      job_description: '',
+                      skills: []
                     });
                   }}
                 >

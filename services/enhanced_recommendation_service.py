@@ -66,8 +66,11 @@ class EnhancedRecommendationService:
                 logger.warning(f"⚠️ Candidate {candidate_id} not found")
                 return []
             
-            # Get all active jobs with skill requirements
-            jobs = await job.get_active_jobs_with_skills(db, limit=100)
+            # Get all active jobs with skill requirements (fallback to simple getter)
+            try:
+                jobs = await job.get_active_jobs_with_skills(db, limit=100)  # type: ignore[attr-defined]
+            except Exception:
+                jobs = await job.get_multi_with_filters(db, filters=None, skip=0, limit=100)
             
             recommendations = []
             for job_data in jobs:
@@ -107,13 +110,12 @@ class EnhancedRecommendationService:
             candidates = await candidate.get_active_candidates_with_skills(db, limit=100)
             
             recommendations = []
-            for candidate_data in candidates:
-                # Calculate skill-specific match
+            for cand in candidates:
+                # Calculate skill-specific match (no DB I/O inside loop)
                 match_result = await self._calculate_job_candidate_match(
-                    db, candidate_data, job_data
+                    db, cand, job_data
                 )
-                
-                if match_result.overall_match_score > 0.1:  # Minimum threshold
+                if match_result.overall_match_score > 0.1:
                     recommendations.append(match_result)
             
             # Sort by match score
@@ -134,8 +136,45 @@ class EnhancedRecommendationService:
         """Calculate detailed match between job and candidate"""
         
         # Extract skill requirements and experience
-        job_skills = job_data.get('skills', [])
-        candidate_skills = candidate_data.get('skills', [])
+        # Normalize ORM objects to dicts when necessary
+        def _to_list(skills_obj):
+            if isinstance(skills_obj, list):
+                return skills_obj
+            return []
+
+        # Support ORM object attributes as well as dicts
+        if isinstance(job_data, dict):
+            job_skills = job_data.get('skills', []) or job_data.get('mandatory_skills', [])
+        else:
+            # Prefer normalized job_skills (Skill relation) when available; fallback to mandatory_skills (string based)
+            job_skills = getattr(job_data, 'job_skills', None) or getattr(job_data, 'mandatory_skills', [])
+        # Prefer candidate_skills when present; otherwise fall back to experiences
+        if isinstance(candidate_data, dict):
+            candidate_skills = candidate_data.get('skills', [])
+        else:
+            cs_list = getattr(candidate_data, 'candidate_skills', []) or []
+            if cs_list:
+                candidate_skills = [
+                    {
+                        'name': (cs.skill.name if getattr(cs, 'skill', None) else getattr(cs, 'name', '')),
+                        'years_experience': getattr(cs, 'years_experience', getattr(cs, 'years', 0)),
+                        'proficiency_level': getattr(cs, 'proficiency_level', 'beginner'),
+                        'last_used': getattr(cs, 'last_used', None)
+                    }
+                    for cs in cs_list
+                ]
+            else:
+                # Fallback to CandidateExperience rows
+                exp_list = getattr(candidate_data, 'experiences', []) or []
+                candidate_skills = [
+                    {
+                        'name': getattr(exp, 'skill', ''),
+                        'years_experience': float(getattr(exp, 'years', 0)),
+                        'proficiency_level': 'intermediate',
+                        'last_used': None
+                    }
+                    for exp in exp_list
+                ]
         
         # Calculate skill-specific matches
         skill_matches = []
@@ -147,8 +186,30 @@ class EnhancedRecommendationService:
         total_skills = len(job_skills)
         
         for job_skill in job_skills:
-            skill_name = job_skill['name']
-            required_years = job_skill.get('min_years_experience', 0)
+            # job_skill can be dict, ORM JobSkill (with Skill relation), or ORM JobMandatorySkill (string field)
+            if isinstance(job_skill, dict):
+                skill_name = job_skill.get('skill') or job_skill.get('name') or ''
+            else:
+                # ORM object path
+                if hasattr(job_skill, 'skill'):
+                    value = getattr(job_skill, 'skill')
+                    # If this is joined Skill entity
+                    try:
+                        skill_name = value.name  # type: ignore[attr-defined]
+                    except Exception:
+                        # If value is a plain string (JobMandatorySkill)
+                        skill_name = str(value)
+                else:
+                    skill_name = getattr(job_skill, 'name', '')
+            if isinstance(job_skill, dict):
+                required_years = job_skill.get('min_years_experience')
+                if required_years is None:
+                    required_years = job_skill.get('min_experience', 0)
+            else:
+                # ORM JobSkill or JobMandatorySkill
+                required_years = getattr(job_skill, 'min_years_experience', None)
+                if required_years is None:
+                    required_years = getattr(job_skill, 'min_experience', 0)
             
             # Find matching candidate skill
             candidate_skill = self._find_matching_candidate_skill(skill_name, candidate_skills)
@@ -201,9 +262,13 @@ class EnhancedRecommendationService:
             skill_matches, missing_skills, experience_gaps, strengths, overall_score
         )
         
+        # Resolve ids for both dicts and ORM instances
+        cand_id = candidate_data['id'] if isinstance(candidate_data, dict) else getattr(candidate_data, 'id', 0)
+        job_id_val = job_data['id'] if isinstance(job_data, dict) else getattr(job_data, 'id', 0)
+
         return EnhancedRecommendationResult(
-            candidate_id=candidate_data['id'],
-            job_id=job_data['id'],
+            candidate_id=cand_id,
+            job_id=job_id_val,
             overall_match_score=overall_score,
             skill_matches=skill_matches,
             missing_skills=missing_skills,

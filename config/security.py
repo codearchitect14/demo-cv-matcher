@@ -46,7 +46,9 @@ class SecurityConfig:
     MAX_DESCRIPTION_LENGTH = 2000
     
     # SQL Injection Prevention
-    MAX_QUERY_LENGTH = 10000
+    MAX_QUERY_LENGTH = 10000  # for JSON / URL-encoded requests
+    # Max allowed body for multipart uploads (bytes). Defaults to 100MB.
+    MAX_UPLOAD_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_CONTENT_LENGTH", str(100 * 1024 * 1024)))
     FORBIDDEN_SQL_KEYWORDS = [
         "DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "INSERT", 
         "UPDATE", "EXEC", "EXECUTE", "UNION", "SELECT", "SCRIPT"

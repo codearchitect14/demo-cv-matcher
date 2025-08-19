@@ -12,23 +12,23 @@
   line-height: 1.6;
 }
 
-/* Modern Header with Gradient */
+/* Professional Header - Clean White */
 .dashboard-header {
-  background: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%) !important;
+  background: linear-gradient(135deg, #1F2937 0%, #0F172A 100%) !important;
   color: #FFFFFF !important;
-  padding: 0;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.15);
+  padding: 16px 20px;
   position: sticky;
   top: 0;
   z-index: 100;
-  border-bottom: none;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .header-content {
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
-  padding: 1.5rem 2rem;
+  padding: 1.25rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -43,12 +43,17 @@
 }
 
 .dashboard-title {
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: 30px;
+  font-weight: 700;
   margin: 0;
-  color: #FFFFFF !important;
-  letter-spacing: -0.025em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #ffffff !important;
+  letter-spacing: -0.02em;
+}
+
+.header-subtitle {
+  font-size: 0.95rem;
+  margin: 2px 0 0 0;
+  color: rgba(255, 255, 255, 0.8) !important;
 }
 
 .welcome-text {
@@ -72,31 +77,21 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 12px;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none;
-  color: rgba(255, 255, 255, 0.8) !important;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.12);
   position: relative;
 }
 
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: #FFFFFF !important;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
+.nav-item:hover { background: rgba(255, 255, 255, 0.2) !important; color: #ffffff !important; transform: translateY(-1px); }
 
-.nav-item.active {
-  background: rgba(255, 255, 255, 0.25) !important;
-  color: #FFFFFF !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
+.nav-item.active { background: rgba(255, 255, 255, 0.28) !important; color: #ffffff !important; border-color: rgba(255,255,255,0.35); }
 
 .nav-item.active::after {
   content: '';
@@ -137,10 +132,7 @@
   backdrop-filter: blur(10px);
 }
 
-.btn-profile {
-  background: rgba(255, 255, 255, 0.15);
-  color: #FFFFFF;
-}
+.btn-profile { background: rgba(255, 255, 255, 0.12); color: #ffffff; border: 1px solid rgba(255,255,255,0.25); }
 
 .btn-profile:hover {
   background: rgba(255, 255, 255, 0.25);
@@ -149,18 +141,8 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.btn-logout {
-  background: rgba(239, 68, 68, 0.2);
-  color: #FECACA;
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.btn-logout:hover {
-  background: rgba(239, 68, 68, 0.3);
-  color: #FECACA;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
-}
+.btn-logout { background: #dc2626; color: #fff; border: none; }
+.btn-logout:hover { background: #b91c1c; }
 
 .btn-icon {
   font-size: 1rem;
@@ -313,7 +295,7 @@
   border-radius: 20px;
   padding: 2rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid #E5E7EB;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
@@ -505,8 +487,8 @@
 
 .application-header h3 {
   font-size: 1.125rem;
-  font-weight: 600;
-  color: #374151;
+  font-weight: 700;
+  color: #1F2937;
   margin: 0;
 }
 
@@ -550,10 +532,10 @@
 }
 
 .status-badge.accepted {
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  background: linear-gradient(135deg, #6366F1 0%, #7C3AED 100%);
   color: #FFFFFF;
   border: none;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 .status-badge.accepted::before {
@@ -563,14 +545,14 @@
 }
 
 .status-badge.rejected {
-  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
-  color: #FFFFFF;
+  background: linear-gradient(135deg, #CBD5E1 0%, #94A3B8 100%);
+  color: #0F172A;
   border: none;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 2px 8px rgba(148, 163, 184, 0.35);
 }
 
 .status-badge.rejected::before {
-  content: '❌';
+  content: '🚫';
   font-size: 0.75rem;
   margin-right: 0.25rem;
 }
@@ -718,17 +700,17 @@
 }
 
 .btn-apply-now {
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  background: linear-gradient(135deg, #06B6D4 0%, #0EA5E9 100%);
   color: #FFFFFF;
   border: 2px solid transparent;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
 }
 
 .btn-apply-now:hover {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
   color: #FFFFFF;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 6px 20px rgba(3, 105, 161, 0.4);
 }
 
 /* Responsive Design - Modern */
@@ -885,25 +867,14 @@
   background: #FFFFFF !important;
   border-radius: 20px !important;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-  width: 600px !important;
-  max-width: 600px !important;
+  width: 1000px !important;
+  max-width: 95vw !important;
   max-height: 85vh !important;
   overflow-y: auto !important;
   position: relative !important;
   animation: modalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
   margin: 0 auto !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .candidates-dashboard .modal-header {
@@ -915,6 +886,10 @@
   background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%) !important;
   border-radius: 20px 20px 0 0 !important;
   position: relative !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  margin-bottom: 0.75rem !important;
 }
 
 .candidates-dashboard .modal-header h2 {
@@ -955,20 +930,26 @@
 }
 
 .candidates-dashboard .modal form {
-  padding: 2.5rem !important;
+  padding: 2.25rem 2.25rem !important;
   background: #FFFFFF !important;
 }
 
+/* Row cards for better alignment and visual grouping */
 .candidates-dashboard .form-row {
   display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 2rem !important;
-  margin-bottom: 2rem !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 1.25rem 1.5rem !important;
+  margin-bottom: 1.25rem !important;
+  background: #F8FAFC !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 14px !important;
+  padding: 1rem 1rem !important;
 }
 
 .candidates-dashboard .form-group {
-  margin-bottom: 2rem !important;
+  margin-bottom: 0 !important;
   position: relative !important;
+  min-width: 0 !important;
 }
 
 /* Hide Name and Email fields in Update Profile modal */
@@ -981,7 +962,7 @@
   font-size: 0.9rem !important;
   font-weight: 700 !important;
   color: #1E293B !important;
-  margin-bottom: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
   letter-spacing: -0.01em !important;
   text-transform: uppercase !important;
   font-size: 0.75rem !important;
@@ -991,16 +972,16 @@
 .candidates-dashboard .form-group input,
 .candidates-dashboard .form-group textarea {
   width: 100% !important;
-  padding: 1rem 1.25rem !important;
+  padding: 0.9rem 1.1rem !important;
   border: 2px solid #E2E8F0 !important;
   border-radius: 12px !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  background: #F8FAFC !important;
+  background: #FFFFFF !important;
   color: #1E293B !important;
   box-sizing: border-box !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
 }
 
 .candidates-dashboard .form-group input:focus,
@@ -1045,11 +1026,12 @@
   padding: 3rem 2rem !important;
   border: 2px dashed #CBD5E1 !important;
   border-radius: 16px !important;
-  background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%) !important;
+  background: #F8FAFC !important;
+  border-color: #E5E7EB !important;
   cursor: pointer !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   text-align: center !important;
-  min-height: 140px !important;
+  min-height: 160px !important;
   position: relative !important;
   overflow: hidden !important;
 }

@@ -24,12 +24,24 @@ const EnhancedRecruiterRecommendations = () => {
   const fetchRecruiterJobs = async () => {
     setIsLoadingJobs(true);
     try {
-      // For testing purposes, fetch all jobs instead of recruiter-specific jobs
-      const response = await fetch('http://localhost:8000/api/v1/jobs/?skip=0&limit=20');
+      // Fetch recent jobs (newest first)
+      const response = await fetch('http://localhost:8000/api/v1/jobs/?skip=0&limit=50');
 
       if (response.ok) {
         const jobs = await response.json();
-        setRecruiterJobs(jobs);
+        // Sort by created_at descending if available
+        const sorted = Array.isArray(jobs)
+          ? [...jobs].sort((a, b) => {
+              const ad = new Date(a.created_at || 0).getTime();
+              const bd = new Date(b.created_at || 0).getTime();
+              return bd - ad;
+            })
+          : [];
+        setRecruiterJobs(sorted);
+        // Auto-select the newest job for convenience
+        if (sorted.length > 0) {
+          setSelectedJobId(String(sorted[0].id));
+        }
         console.log('Fetched jobs:', jobs);
       } else {
         setError('Failed to fetch jobs. Please try again.');
@@ -143,9 +155,9 @@ const EnhancedRecruiterRecommendations = () => {
       {/* Header with Logout */}
       <div className="page-header">
         <div className="header-content">
-          <h1 className="page-title">
-            <span className="title-icon">🎯</span>
-            Enhanced Candidate Recommendations
+          <h1 className="page-title" aria-label="Candidate Recommendations">
+            <span className="title-icon" aria-hidden="true">🎯</span>
+            Candidate Recommendations
           </h1>
           <p className="page-subtitle">
             Find the best candidates for your job based on skill-specific experience matching
@@ -182,52 +194,66 @@ const EnhancedRecruiterRecommendations = () => {
             </div>
           ) : (
             <>
-              <div className="form-group">
-                <label>Select Job:</label>
-                <select
-                  value={selectedJobId}
-                  onChange={(e) => setSelectedJobId(e.target.value)}
-                  className="form-select"
-                >
-                  <option value="">Choose a job...</option>
-                  {recruiterJobs.map((job) => (
-                    <option key={job.id} value={job.id}>
-                      {job.title} - {job.company} ({job.location})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <div className="form-grid" role="form" aria-labelledby="job-select">
+                <div className="form-group full">
+                  <label htmlFor="job-select">Select Job</label>
+                  <select
+                    id="job-select"
+                    aria-label="Select job to find matching candidates"
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="">Choose a job...</option>
+                    {recruiterJobs.map((job) => {
+                      const label = `[${job.id}] ${job.title} - ${job.company || 'Company'} (${job.location || 'Location'})`;
+                      return (
+                        <option key={job.id} value={job.id}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
 
-              <div className="form-group">
-                <label>Number of Candidates:</label>
-                <input
-                  type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(parseInt(e.target.value))}
-                  min="1"
-                  max="50"
-                  className="form-input"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>
+                <div className="form-group compact">
+                  <label htmlFor="limit-input">Number of Candidates</label>
                   <input
-                    type="checkbox"
-                    checked={includeExplanation}
-                    onChange={(e) => setIncludeExplanation(e.target.checked)}
+                    id="limit-input"
+                    aria-label="Number of candidates to fetch"
+                    type="number"
+                    value={limit}
+                    onChange={(e) => setLimit(parseInt(e.target.value) || 0)}
+                    min="1"
+                    max="50"
+                    className="form-input"
                   />
-                  Include detailed explanations
-                </label>
-              </div>
+                </div>
 
-              <button 
-                onClick={handleSubmit}
-                disabled={!selectedJobId || isLoading}
-                className="btn-primary"
-              >
-                {isLoading ? '🔍 Finding Candidates...' : '🎯 Find Candidates'}
-              </button>
+                <div className="form-group checkbox">
+                  <label htmlFor="include-expl">
+                    <input
+                      id="include-expl"
+                      type="checkbox"
+                      checked={includeExplanation}
+                      onChange={(e) => setIncludeExplanation(e.target.checked)}
+                      aria-label="Include detailed explanations"
+                    />
+                    Include detailed explanations
+                  </label>
+                </div>
+
+                <div className="form-actions">
+                  <button 
+                    onClick={handleSubmit}
+                    disabled={!selectedJobId || isLoading}
+                    className="btn-primary btn-find"
+                    aria-label="Find candidates for the selected job"
+                  >
+                    {isLoading ? '🔍 Finding Candidates...' : '🎯 Find Candidates'}
+                  </button>
+                </div>
+              </div>
             </>
           )}
 

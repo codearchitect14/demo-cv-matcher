@@ -157,7 +157,16 @@ class SecurityMiddleware:
             if content_length:
                 try:
                     size = int(content_length)
-                    if size > SecurityConfig.MAX_QUERY_LENGTH:
+                    content_type = request.headers.get("content-type", "")
+                    # Allow larger size for multipart uploads (file upload)
+                    if "multipart/form-data" in content_type:
+                        if size > SecurityConfig.MAX_UPLOAD_CONTENT_LENGTH:
+                            self._log_security_event(request, "Request too large")
+                            return JSONResponse(
+                                status_code=413,
+                                content={"detail": "Request too large"}
+                            )
+                    elif size > SecurityConfig.MAX_QUERY_LENGTH:
                         self._log_security_event(request, "Request too large")
                         return JSONResponse(
                             status_code=413,

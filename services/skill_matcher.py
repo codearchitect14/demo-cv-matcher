@@ -465,7 +465,8 @@ class AdvancedSkillMatcher:
     
     def find_skill_matches(self, query_skill: str, threshold: float = 0.3) -> List[Tuple[str, float]]:
         """Find skill matches using semantic similarity"""
-        if not self.skill_vectors or not self.skill_names:
+        # Avoid ambiguous truth-value checks on sparse matrices/ndarrays
+        if self.skill_vectors is None or not self.skill_names:
             return []
         
         try:

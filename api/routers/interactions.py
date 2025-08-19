@@ -79,6 +79,25 @@ async def get_candidate_interactions(
             detail=f"Failed to retrieve interactions: {str(e)}"
         )
 
+@router.get("/public/candidates/{candidate_id}/interactions")
+async def get_candidate_interactions_public(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    days_back: int = Query(30, ge=1, le=365, description="Days to look back"),
+    interaction_types: Optional[List[str]] = Query(None, description="Filter by interaction types")
+):
+    """Public endpoint to get candidate's interaction history (no auth - for testing)"""
+    try:
+        interactions = await interaction_service.get_user_interactions(
+            db, candidate_id, days_back=days_back, interaction_types=interaction_types
+        )
+        return interactions
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve interactions: {str(e)}"
+        )
+
 @router.get("/candidates/{candidate_id}/behavior-patterns")
 async def get_candidate_behavior_patterns(
     candidate_id: int,
@@ -93,15 +112,30 @@ async def get_candidate_behavior_patterns(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Can only view own behavior patterns"
             )
-        
         patterns = await interaction_service.get_user_behavior_patterns(
             db, candidate_id, days_back=days_back
         )
-        
         return patterns
-        
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve behavior patterns: {str(e)}"
+        )
+
+@router.get("/public/candidates/{candidate_id}/behavior-patterns")
+async def get_candidate_behavior_patterns_public(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    days_back: int = Query(90, ge=1, le=365, description="Days to analyze")
+):
+    """Public endpoint to get behavior patterns (no auth - for testing)"""
+    try:
+        patterns = await interaction_service.get_user_behavior_patterns(
+            db, candidate_id, days_back=days_back
+        )
+        return patterns
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -122,17 +156,32 @@ async def get_similar_users(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Can only view own similar users"
             )
-        
         similar_users = await interaction_service.get_similar_users(
             db, candidate_id, limit=limit
         )
-        
         return similar_users
-        
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve similar users: {str(e)}"
-        ) 
+        )
+
+@router.get("/public/candidates/{candidate_id}/similar-users")
+async def get_similar_users_public(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    limit: int = Query(10, ge=1, le=50, description="Number of similar users")
+):
+    """Public endpoint to get similar users (no auth - for testing)"""
+    try:
+        similar_users = await interaction_service.get_similar_users(
+            db, candidate_id, limit=limit
+        )
+        return similar_users
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve similar users: {str(e)}"
+        )

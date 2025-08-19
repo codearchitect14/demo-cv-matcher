@@ -115,19 +115,21 @@ const EnhancedCandidateRecommendations = () => {
   };
 
   const getMatchScoreColor = (score) => {
-    if (score >= 0.8) return '#28a745';
-    if (score >= 0.6) return '#ffc107';
-    if (score >= 0.4) return '#fd7e14';
-    return '#dc3545';
+    // Color-blind friendly scale: cyan -> blue -> indigo -> slate
+    if (score >= 0.8) return '#0EA5E9';      // cyan
+    if (score >= 0.6) return '#3B82F6';      // blue
+    if (score >= 0.4) return '#6366F1';      // indigo
+    return '#64748B';                        // slate
   };
 
   const getProficiencyColor = (level) => {
+    // Color-blind friendly badges
     switch (level) {
-      case 'expert': return '#28a745';
-      case 'advanced': return '#17a2b8';
-      case 'intermediate': return '#ffc107';
-      case 'beginner': return '#6c757d';
-      default: return '#6c757d';
+      case 'expert': return '#0EA5E9';        // cyan
+      case 'advanced': return '#6366F1';      // indigo
+      case 'intermediate': return '#3B82F6';  // blue
+      case 'beginner': return '#94A3B8';      // gray
+      default: return '#94A3B8';
     }
   };
 
@@ -165,24 +167,28 @@ const EnhancedCandidateRecommendations = () => {
                 accept=".pdf,.doc,.docx"
                 onChange={handleFileChange}
                 className="file-input"
+                aria-label="Upload CV file (PDF or Word)"
               />
               <button 
                 onClick={handleCvUpload}
                 disabled={!cvFile || isLoading}
                 className="btn-upload"
+                aria-label="Upload and analyze CV"
               >
                 {isLoading ? 'Uploading...' : 'Upload & Analyze'}
               </button>
             </div>
 
             <div className="candidate-id-input">
-              <label>Candidate ID (for testing):</label>
+              <label htmlFor="candidate-id-upload">Candidate ID (for testing):</label>
               <input
+                id="candidate-id-upload"
                 type="number"
                 value={candidateId}
                 onChange={(e) => setCandidateId(e.target.value)}
                 placeholder="Enter candidate ID"
                 className="form-input"
+                aria-label="Candidate ID"
               />
             </div>
 
@@ -245,25 +251,29 @@ const EnhancedCandidateRecommendations = () => {
             <h3>Use Existing Profile</h3>
             
             <div className="form-group">
-              <label>Candidate ID:</label>
+              <label htmlFor="candidate-id-profile">Candidate ID:</label>
               <input
+                id="candidate-id-profile"
                 type="number"
                 value={candidateId}
                 onChange={(e) => setCandidateId(e.target.value)}
                 placeholder="Enter candidate ID"
                 className="form-input"
+                aria-label="Candidate ID"
               />
             </div>
 
             <div className="form-group">
-              <label>Number of Recommendations:</label>
+              <label htmlFor="rec-limit">Number of Recommendations:</label>
               <input
+                id="rec-limit"
                 type="number"
                 value={limit}
                 onChange={(e) => setLimit(parseInt(e.target.value))}
                 min="1"
                 max="50"
                 className="form-input"
+                aria-label="Number of recommendations"
               />
             </div>
 
@@ -273,6 +283,7 @@ const EnhancedCandidateRecommendations = () => {
                   type="checkbox"
                   checked={includeExplanation}
                   onChange={(e) => setIncludeExplanation(e.target.checked)}
+                  aria-label="Include detailed explanations"
                 />
                 Include detailed explanations
               </label>
@@ -282,6 +293,7 @@ const EnhancedCandidateRecommendations = () => {
               onClick={handleProfileRecommendations}
               disabled={!candidateId || isLoading}
               className="btn-primary"
+              aria-label="Get job recommendations"
             >
               {isLoading ? 'Loading...' : 'Get Recommendations'}
             </button>

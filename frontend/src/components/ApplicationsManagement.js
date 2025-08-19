@@ -36,11 +36,18 @@ const ApplicationsManagement = () => {
 
   const fetchCandidates = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/candidates/public?limit=100');
-      if (response.ok) {
+      // Try public endpoint first
+      let response = await fetch('http://localhost:8000/api/v1/candidates/public?limit=100');
+      if (!response.ok) {
+        // Fallback to non-public listing (no auth required)
+        response = await fetch('http://localhost:8000/api/v1/candidates?skip=0&limit=100');
+      }
+      if (response && response.ok) {
         const data = await response.json();
         setCandidates(data);
         setFilteredCandidates(data);
+      } else {
+        console.error('Failed to fetch candidates (public and fallback).');
       }
     } catch (err) {
       console.error('Failed to fetch candidates:', err);
@@ -49,13 +56,18 @@ const ApplicationsManagement = () => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=100');
-      if (response.ok) {
+      // Try public endpoint first
+      let response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=100');
+      if (!response.ok) {
+        // Fallback to non-public listing (no auth required)
+        response = await fetch('http://localhost:8000/api/v1/jobs?skip=0&limit=100');
+      }
+      if (response && response.ok) {
         const data = await response.json();
         setJobs(data);
         setFilteredJobs(data);
       } else {
-        console.error('Failed to fetch jobs:', response.status, response.statusText);
+        console.error('Failed to fetch jobs (public and fallback).');
       }
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
@@ -112,7 +124,8 @@ const ApplicationsManagement = () => {
   const fetchJobApplications = async (jobId) => {
     try {
       // Use public endpoint for testing
-      const response = await fetch(`http://localhost:8000/api/v1/applications/public/job/${jobId}/applications`);
+      // Use existing job applications route (no public suffix needed)
+      const response = await fetch(`http://localhost:8000/api/v1/applications/job/${jobId}/applications`);
       if (response.ok) {
         const data = await response.json();
         setApplications(data);
@@ -131,7 +144,8 @@ const ApplicationsManagement = () => {
   const fetchCandidateApplications = async (candidateId) => {
     try {
       // Use public endpoint for testing
-      const response = await fetch(`http://localhost:8000/api/v1/applications/public/candidate/${candidateId}/applications`);
+      // Use correct public route path
+      const response = await fetch(`http://localhost:8000/api/v1/applications/candidate/${candidateId}/applications/public`);
       if (response.ok) {
         const data = await response.json();
         setApplications(data);
@@ -356,8 +370,6 @@ const ApplicationsManagement = () => {
                 >
                   <option value="">All Statuses</option>
                   <option value="applied">Applied</option>
-                  <option value="reviewing">Reviewing</option>
-                  <option value="interviewed">Interviewed</option>
                   <option value="accepted">Accepted</option>
                   <option value="rejected">Rejected</option>
                 </select>
@@ -438,8 +450,6 @@ const ApplicationsManagement = () => {
                             className="status-select"
                           >
                             <option value="applied">Applied</option>
-                            <option value="reviewing">Reviewing</option>
-                            <option value="interviewed">Interviewed</option>
                             <option value="accepted">Accepted</option>
                             <option value="rejected">Rejected</option>
                           </select>
@@ -527,8 +537,6 @@ const ApplicationsManagement = () => {
                     className="status-select"
                   >
                     <option value="applied">Applied</option>
-                    <option value="reviewing">Reviewing</option>
-                    <option value="interviewed">Interviewed</option>
                     <option value="accepted">Accepted</option>
                     <option value="rejected">Rejected</option>
                   </select>
@@ -623,8 +631,6 @@ const ApplicationsManagement = () => {
                     className="status-select"
                   >
                     <option value="applied">Applied</option>
-                    <option value="reviewing">Reviewing</option>
-                    <option value="interviewed">Interviewed</option>
                     <option value="accepted">Accepted</option>
                     <option value="rejected">Rejected</option>
                   </select>

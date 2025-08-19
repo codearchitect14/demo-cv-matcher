@@ -8,6 +8,7 @@ import logging
 import time
 
 from models.candidate import Candidate, CandidateExperience
+from models.candidate_skill import CandidateSkill
 from db.crud.base import CRUDBase
 from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateSearchFilter
 
@@ -244,10 +245,10 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         return result.scalars().unique().all()
     
     async def get_active_candidates_with_skills(self, db: AsyncSession, limit: int = 50) -> List[Candidate]:
-        """Get active candidates with skills using eager loading"""
+        """Get active candidates with skills using eager loading (including Skill for each CandidateSkill)"""
         query = select(Candidate).options(
             selectinload(Candidate.experiences),
-            selectinload(Candidate.candidate_skills)
+            selectinload(Candidate.candidate_skills).selectinload(CandidateSkill.skill)
         ).limit(limit).order_by(desc(Candidate.created_at))
         
         result = await db.execute(query)

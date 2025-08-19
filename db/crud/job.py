@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, desc, func, text
 from sqlalchemy.orm import selectinload, joinedload
+from models.job_skill import JobSkill
+from models.skill import Skill
 from models.job import Job, JobMandatorySkill
 from models.base import BaseModel
 from schemas.job import JobCreate, JobUpdate
@@ -18,7 +20,12 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         """Get job with mandatory skills using eager loading"""
         result = await db.execute(
             select(self.model)
-            .options(selectinload(self.model.mandatory_skills))
+            .options(
+                # Load string-based mandatory skills
+                selectinload(self.model.mandatory_skills),
+                # Load normalized job_skills and their linked Skill entity
+                selectinload(self.model.job_skills).selectinload(JobSkill.skill),
+            )
             .where(self.model.id == id)
         )
         return result.scalar_one_or_none()
