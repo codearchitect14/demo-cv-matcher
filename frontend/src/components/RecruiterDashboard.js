@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { 
+  FaClipboardList, 
+  FaUsers, 
+  FaCheck, 
+  FaChartBar, 
+  FaFileAlt, 
+  FaUser, 
+  FaSignOutAlt, 
+  FaBolt, 
+  FaClock,
+  FaArrowRight
+} from 'react-icons/fa';
 import './RecruiterDashboard.css';
 
 const RecruiterDashboard = () => {
@@ -17,7 +29,7 @@ const RecruiterDashboard = () => {
       type: 'job_posted',
       title: 'New job posted: Senior Python Developer',
       time: '2 hours ago',
-      icon: '📋',
+      icon: <FaClipboardList />,
       color: '#667eea'
     },
     {
@@ -25,7 +37,7 @@ const RecruiterDashboard = () => {
       type: 'applications',
       title: '5 new applications for React Developer position',
       time: '4 hours ago',
-      icon: '👥',
+      icon: <FaUsers />,
       color: '#e74c3c'
     },
     {
@@ -33,7 +45,7 @@ const RecruiterDashboard = () => {
       type: 'reviewed',
       title: 'Application reviewed: John Doe for Frontend Developer',
       time: '1 day ago',
-      icon: '✅',
+      icon: <FaCheck />,
       color: '#28a745'
     }
   ]);
@@ -58,7 +70,7 @@ const RecruiterDashboard = () => {
       description: "Create, edit, and manage your job postings",
       action: () => navigate('/jobs-dashboard'),
       color: "#667eea",
-      icon: "📋",
+      icon: <FaClipboardList />,
       gradient: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
     },
     {
@@ -66,7 +78,7 @@ const RecruiterDashboard = () => {
       description: "Search and match candidates for your jobs",
       action: () => navigate('/enhanced-recruiter-recommendations'),
       color: "#e74c3c",
-      icon: "👥",
+      icon: <FaUsers />,
       gradient: "linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)"
     },
     {
@@ -74,7 +86,7 @@ const RecruiterDashboard = () => {
       description: "Track job performance and candidate interactions",
       action: () => navigate('/interactions-analytics'),
       color: "#28a745",
-      icon: "📊",
+      icon: <FaChartBar />,
       gradient: "linear-gradient(135deg, #28a745 0%, #20c997 100%)"
     },
     {
@@ -82,7 +94,7 @@ const RecruiterDashboard = () => {
       description: "Manage and review job applications",
       action: () => navigate('/applications-management'),
       color: "#fd7e14",
-      icon: "📝",
+      icon: <FaFileAlt />,
       gradient: "linear-gradient(135deg, #fd7e14 0%, #ff6b35 100%)"
     }
   ];
@@ -93,9 +105,6 @@ const RecruiterDashboard = () => {
       <div className="dashboard-header">
         <div className="header-content">
           <div className="header-left">
-            <div className="header-icon">
-              <span className="icon-bg">🏢</span>
-            </div>
             <div className="header-text">
               <h1 className="header-title">Recruiter Dashboard</h1>
               <p className="header-subtitle">Welcome back, {recruiterData?.full_name || 'Recruiter'}!</p>
@@ -103,11 +112,11 @@ const RecruiterDashboard = () => {
           </div>
           <div className="header-actions">
             <button className="btn-profile" onClick={() => alert('Profile settings coming soon!')}>
-              <span className="btn-icon">👤</span>
+              <span className="btn-icon"><FaUser /></span>
               Profile
             </button>
             <button className="btn-logout" onClick={handleLogout}>
-              <span className="btn-icon">🚪</span>
+              <span className="btn-icon"><FaSignOutAlt /></span>
               Logout
             </button>
           </div>
@@ -118,7 +127,7 @@ const RecruiterDashboard = () => {
       <div className="stats-section">
         <div className="stats-grid">
           <div className="stat-card" style={{animationDelay: '0.1s'}}>
-            <div className="stat-icon">📋</div>
+            <div className="stat-icon"><FaClipboardList /></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.totalJobs}</h3>
               <p className="stat-label">Total Jobs</p>
@@ -129,7 +138,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.2s'}}>
-            <div className="stat-icon">✅</div>
+            <div className="stat-icon"><FaCheck /></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.activeJobs}</h3>
               <p className="stat-label">Active Jobs</p>
@@ -140,7 +149,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.3s'}}>
-            <div className="stat-icon">📝</div>
+            <div className="stat-icon"><FaFileAlt /></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.totalApplications}</h3>
               <p className="stat-label">Total Applications</p>
@@ -151,7 +160,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.4s'}}>
-            <div className="stat-icon">⏳</div>
+            <div className="stat-icon"><FaClock /></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.pendingApplications}</h3>
               <p className="stat-label">Pending Reviews</p>
@@ -166,7 +175,7 @@ const RecruiterDashboard = () => {
       {/* Quick Actions */}
       <div className="actions-section">
         <h2 className="section-title">
-          <span className="title-icon">⚡</span>
+          <span className="title-icon"><FaBolt /></span>
           Quick Actions
         </h2>
         <div className="actions-grid">
@@ -185,7 +194,7 @@ const RecruiterDashboard = () => {
                 <h3 className="action-title">{action.title}</h3>
                 <p className="action-description">{action.description}</p>
               </div>
-              <div className="action-arrow">→</div>
+              <div className="action-arrow"><FaArrowRight /></div>
             </div>
           ))}
         </div>
@@ -194,7 +203,7 @@ const RecruiterDashboard = () => {
       {/* Recent Activity */}
       <div className="activity-section">
         <h2 className="section-title">
-          <span className="title-icon">📈</span>
+          <span className="title-icon"><FaChartBar /></span>
           Recent Activity
         </h2>
         <div className="activity-list">

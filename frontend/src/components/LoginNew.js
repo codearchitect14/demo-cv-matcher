@@ -105,92 +105,89 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
 
         <form className="login-new-form" onSubmit={handleSubmit}>
           <div className="form-group">
+            <label className="form-label">Email Address</label>
             <input
               type="email"
               name="email"
-              placeholder=" "
+              placeholder="Enter your email"
               value={formData.email}
               onChange={handleChange}
               className="form-input"
               autoComplete="email"
               required
             />
-            <label className="form-label">Email Address</label>
           </div>
 
           <div className="form-group">
-            <input
-              type={showPassword ? "text" : "password"}
-              name="password"
-              placeholder=" "
-              value={formData.password}
-              onChange={handleChange}
-              className="form-input"
-              autoComplete="current-password"
-              required
-            />
             <label className="form-label">Password</label>
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? "Show" : "Hide"}
-            </button>
+            <div className="password-input-container">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={handleChange}
+                className="form-input"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <i className="fas fa-eye-slash"></i> : <i className="fas fa-eye"></i>}
+              </button>
+            </div>
           </div>
 
-          <div className="forgot-password">
-            <button 
-              type="button" 
-              className="forgot-link"
-              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Forgot your password?
-            </button>
-          </div>
-
-          <button type="submit" className="login-new-btn" disabled={isLoading}>
-            {isLoading ? 'Signing in...' : 'Sign in'}
+          <button type="submit" className="login-submit-btn" disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <div className="spinner"></div>
+                Signing in...
+              </>
+            ) : (
+              'Sign in'
+            )}
           </button>
         </form>
 
-        <div className="divider">
-          <span className="divider-text">Or continue with</span>
-        </div>
-
-        <div className="social-login">
-          <button
-            className="social-btn google"
-            onClick={() => handleSocialLogin('Google')}
-          >
-            <span className="social-icon">G</span>
-          </button>
-          <button
-            className="social-btn facebook"
-            onClick={() => handleSocialLogin('Facebook')}
-          >
-            <span className="social-icon">f</span>
-          </button>
-          <button
-            className="social-btn apple"
-            onClick={() => handleSocialLogin('Apple')}
-          >
-            <span className="social-icon">A</span>
-          </button>
+        <div className="social-login-section">
+          <div className="social-login-title">Or continue with</div>
+          <div className="social-buttons">
+            <button
+              className="social-btn google"
+              onClick={() => handleSocialLogin('Google')}
+            >
+              <i className="fab fa-google"></i>
+              Google
+            </button>
+            <button
+              className="social-btn linkedin"
+              onClick={() => handleSocialLogin('LinkedIn')}
+            >
+              <i className="fab fa-linkedin"></i>
+              LinkedIn
+            </button>
+          </div>
         </div>
 
         <div className="login-new-footer">
-          <p className="footer-text">
+          <p>
             Don't have an account?{' '}
             <button 
               type="button" 
-              className="footer-link" 
+              className="signup-link" 
               onClick={() => navigate('/signup-new')}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
               Sign up
             </button>
           </p>
+          <a href="/" className="back-link">
+            <i className="fas fa-arrow-left"></i> Back to home
+          </a>
         </div>
       </div>
     </div>

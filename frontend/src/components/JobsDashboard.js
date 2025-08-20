@@ -1,4 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { 
+  FaBriefcase, 
+  FaExclamationTriangle, 
+  FaClipboardList, 
+  FaRocket, 
+  FaPlus, 
+  FaTimes, 
+  FaClock,
+  FaChartBar,
+  FaSearch
+} from 'react-icons/fa';
 import './JobsDashboard.css';
 
 const JobsDashboard = () => {
@@ -251,7 +262,7 @@ const JobsDashboard = () => {
       <div className="dashboard-header">
         <div className="header-content">
           <h1 className="header-title">
-            <span className="title-icon">💼</span>
+            <span className="title-icon"><FaBriefcase /></span>
             Jobs Dashboard
           </h1>
           <p className="header-subtitle">Manage and track your job postings</p>
@@ -262,7 +273,7 @@ const JobsDashboard = () => {
             aria-label="Post new job"
             onClick={() => setShowForm(true)}
           >
-            <span className="btn-icon">➕</span>
+            <span className="btn-icon"><FaPlus /></span>
             Post New Job
           </button>
         </div>
@@ -306,13 +317,13 @@ const JobsDashboard = () => {
         {/* Error Message */}
         {error && (
           <div className="error-banner" role="alert" aria-live="polite">
-            <span className="error-icon">⚠️</span>
+            <span className="error-icon"><FaExclamationTriangle /></span>
             {error}
             <button 
               className="error-close"
               onClick={() => setError('')}
             >
-              ✕
+              <FaTimes />
             </button>
           </div>
         )}
@@ -321,12 +332,12 @@ const JobsDashboard = () => {
         <div className="jobs-section">
           <h2 className="section-title">
             Jobs ({jobs.length})
-            {loading && <span className="loading-spinner">⏳</span>}
+            {loading && <span className="loading-spinner"><FaClock /></span>}
           </h2>
           
           {jobs.length === 0 && !loading ? (
             <div className="empty-state">
-              <div className="empty-icon">📋</div>
+              <div className="empty-icon"><FaClipboardList /></div>
               <h3>No jobs found</h3>
               <p>Start by posting your first job!</p>
               <button 
@@ -354,19 +365,19 @@ const JobsDashboard = () => {
                     <div className="card-content">
                       <div className="job-details">
                         <div className="detail-item">
-                          <span className="detail-icon">📍</span>
+                          <span className="detail-icon"><FaSearch /></span>
                           <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.location || 'No Location'}</span>
                         </div>
                         <div className="detail-item">
-                          <span className="detail-icon">🏢</span>
+                          <span className="detail-icon"><FaChartBar /></span>
                           <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.domain || 'No Domain'}</span>
                         </div>
                         <div className="detail-item">
-                          <span className="detail-icon">💰</span>
+                          <span className="detail-icon"><FaRocket /></span>
                           <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>${job.salary_min?.toLocaleString() || '0'} - ${job.salary_max?.toLocaleString() || '0'}</span>
                         </div>
                         <div className="detail-item">
-                          <span className="detail-icon">⏱️</span>
+                          <span className="detail-icon"><FaClock /></span>
                           <span style={{color: '#2c3e50', fontWeight: 'bold', fontSize: '14px'}}>{job.total_years_required || '0'} years experience</span>
                         </div>
                       </div>
@@ -613,12 +624,12 @@ const JobsDashboard = () => {
                 >
                   {loading ? (
                     <>
-                      <span className="loading-spinner">⏳</span>
+                      <span className="loading-spinner"><FaClock /></span>
                       Posting...
                     </>
                   ) : (
                     <>
-                      <span className="btn-icon">🚀</span>
+                      <span className="btn-icon"><FaRocket /></span>
                       {selectedJob ? 'Update Job' : 'Post Job'}
                     </>
                   )}

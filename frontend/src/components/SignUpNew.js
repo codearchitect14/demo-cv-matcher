@@ -99,52 +99,54 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
   const renderStep1 = () => (
     <div className="form-step">
       <div className="form-group">
+        <label className="form-label">Full Name</label>
         <input
           type="text"
           name="name"
-          placeholder=" "
+          placeholder="Enter your full name"
           value={formData.name}
           onChange={handleChange}
           className="form-input"
           autoComplete="name"
           required
         />
-        <label className="form-label">Full Name</label>
       </div>
 
       <div className="form-group">
+        <label className="form-label">Email Address</label>
         <input
           type="email"
           name="email"
-          placeholder=" "
+          placeholder="Enter your email address"
           value={formData.email}
           onChange={handleChange}
           className="form-input"
           autoComplete="email"
           required
         />
-        <label className="form-label">Email Address</label>
       </div>
 
       <div className="form-group">
-        <input
-          type={showPassword ? "text" : "password"}
-          name="password"
-          placeholder=" "
-          value={formData.password}
-          onChange={handleChange}
-          className="form-input"
-          autoComplete="new-password"
-          required
-        />
         <label className="form-label">Password</label>
-        <button
-          type="button"
-          className="password-toggle"
-          onClick={() => setShowPassword(!showPassword)}
-        >
-          {showPassword ? "Show" : "Hide"}
-        </button>
+        <div className="password-input-container">
+          <input
+            type={showPassword ? "text" : "password"}
+            name="password"
+            placeholder="Enter your password"
+            value={formData.password}
+            onChange={handleChange}
+            className="form-input"
+            autoComplete="new-password"
+            required
+          />
+                        <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <i className="fas fa-eye-slash"></i> : <i className="fas fa-eye"></i>}
+              </button>
+        </div>
       </div>
     </div>
   );
@@ -152,39 +154,40 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
   const renderStep2 = () => (
     <div className="form-step">
       <div className="form-group">
+        <label className="form-label">Location</label>
         <input
           type="text"
           name="location"
-          placeholder=" "
+          placeholder="Enter your location (e.g., New York, NY)"
           value={formData.location}
           onChange={handleChange}
           className="form-input"
           autoComplete="off"
           required
         />
-        <label className="form-label">Location</label>
       </div>
 
       <div className="form-group">
+        <label className="form-label">Professional Domain</label>
         <input
           type="text"
           name="domain"
-          placeholder=" "
+          placeholder="Enter your professional domain (e.g., Software Development)"
           value={formData.domain}
           onChange={handleChange}
           className="form-input"
           autoComplete="off"
           required
         />
-        <label className="form-label">Professional Domain</label>
       </div>
 
-      <div className="salary-group">
-        <div className="form-group salary-input">
+      <div className="salary-range">
+        <div className="form-group">
+          <label className="form-label">Minimum Salary</label>
           <input
             type="number"
             name="expected_salary_min"
-            placeholder=" "
+            placeholder="Enter minimum salary"
             value={formData.expected_salary_min}
             onChange={handleChange}
             className="form-input"
@@ -192,14 +195,14 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
             required
             min="0"
           />
-          <label className="form-label">Minimum Salary</label>
         </div>
 
-        <div className="form-group salary-input">
+        <div className="form-group">
+          <label className="form-label">Maximum Salary</label>
           <input
             type="number"
             name="expected_salary_max"
-            placeholder=" "
+            placeholder="Enter maximum salary"
             value={formData.expected_salary_max}
             onChange={handleChange}
             className="form-input"
@@ -207,7 +210,6 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
             required
             min="0"
           />
-          <label className="form-label">Maximum Salary</label>
         </div>
       </div>
     </div>
@@ -216,17 +218,17 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
   const renderStep3 = () => (
     <div className="form-step">
       <div className="form-group">
+        <label className="form-label">Professional Summary</label>
         <textarea
           name="summary"
-          placeholder=" "
+          placeholder="Tell us about your professional experience, skills, and career goals..."
           value={formData.summary}
           onChange={handleChange}
-          className="form-input form-textarea"
+          className="form-textarea"
           autoComplete="off"
           required
           rows="4"
         />
-        <label className="form-label">Professional Summary</label>
       </div>
     </div>
   );
@@ -241,21 +243,22 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
       
       <div className="signup-new-card">
         <div className="signup-new-header">
-          <h1 className="signup-new-title">Create your account and start your journey</h1>
+          <h1 className="signup-new-title">Create your account</h1>
+          <p className="signup-new-subtitle">Join thousands of professionals finding their dream jobs</p>
         </div>
 
-        <div className="progress-indicator">
-          <div className={`progress-step ${currentStep >= 1 ? 'active' : ''}`}>
-            <div className="step-number">1</div>
-            <div className="step-label">Basic Info</div>
+        <div className="progress-bar">
+          <div className={`progress-step ${currentStep >= 1 ? 'active' : ''} ${currentStep > 1 ? 'completed' : ''}`}>
+            <div className="progress-circle">{currentStep > 1 ? '✓' : '1'}</div>
+            <div className="progress-label">Basic Info</div>
           </div>
-          <div className={`progress-step ${currentStep >= 2 ? 'active' : ''}`}>
-            <div className="step-number">2</div>
-            <div className="step-label">Location & Domain</div>
+          <div className={`progress-step ${currentStep >= 2 ? 'active' : ''} ${currentStep > 2 ? 'completed' : ''}`}>
+            <div className="progress-circle">{currentStep > 2 ? '✓' : '2'}</div>
+            <div className="progress-label">Location & Domain</div>
           </div>
           <div className={`progress-step ${currentStep >= 3 ? 'active' : ''}`}>
-            <div className="step-number">3</div>
-            <div className="step-label">Summary</div>
+            <div className="progress-circle">3</div>
+            <div className="progress-label">Summary</div>
           </div>
         </div>
 
@@ -273,60 +276,65 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
 
           <div className="form-navigation">
             {currentStep > 1 && (
-              <button type="button" className="nav-btn prev-btn" onClick={prevStep}>
-                Previous
+              <button type="button" className="nav-btn nav-btn-secondary" onClick={prevStep}>
+                <i className="fas fa-arrow-left"></i> Previous
               </button>
             )}
             
             {currentStep < 3 ? (
-              <button type="button" className="nav-btn next-btn" onClick={nextStep}>
-                Next
+              <button type="button" className="nav-btn nav-btn-primary" onClick={nextStep}>
+                Next <i className="fas fa-arrow-right"></i>
               </button>
             ) : (
-              <button type="submit" className="nav-btn submit-btn" disabled={isLoading}>
-                {isLoading ? 'Creating Account...' : 'Create Account'}
+              <button type="submit" className="submit-btn" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <div className="spinner"></div>
+                    Creating Account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
               </button>
             )}
           </div>
         </form>
 
-        <div className="divider">
-          <span className="divider-text">Or continue with</span>
-        </div>
-
-        <div className="social-login">
-          <button
-            className="social-btn google"
-            onClick={() => handleSocialLogin('Google')}
-          >
-            <span className="social-icon">G</span>
-          </button>
-          <button
-            className="social-btn facebook"
-            onClick={() => handleSocialLogin('Facebook')}
-          >
-            <span className="social-icon">f</span>
-          </button>
-          <button
-            className="social-btn apple"
-            onClick={() => handleSocialLogin('Apple')}
-          >
-            <span className="social-icon">A</span>
-          </button>
+        <div className="social-signup-section">
+          <div className="social-signup-title">Or continue with</div>
+          <div className="social-buttons">
+            <button
+              className="social-btn google"
+              onClick={() => handleSocialLogin('Google')}
+            >
+              <i className="fab fa-google"></i>
+              Google
+            </button>
+            <button
+              className="social-btn linkedin"
+              onClick={() => handleSocialLogin('LinkedIn')}
+            >
+              <i className="fab fa-linkedin"></i>
+              LinkedIn
+            </button>
+          </div>
         </div>
 
         <div className="signup-new-footer">
-          <p className="footer-text">
+          <p>
             Already have an account?{' '}
             <button 
               type="button" 
-              className="footer-link" 
+              className="signin-link" 
               onClick={() => navigate('/login-new')}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
               Sign in
             </button>
           </p>
+          <a href="/" className="back-link">
+            <i className="fas fa-arrow-left"></i> Back to home
+          </a>
         </div>
       </div>
     </div>

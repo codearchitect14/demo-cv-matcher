@@ -43,13 +43,13 @@
   color: white;
 }
 
-.header-text { color: #1e293b; }
+.header-text { color: #64748b; }
 
 .header-title {
   font-size: 28px;
   font-weight: 600;
   margin: 0;
-  color: #1e293b !important;
+  color: #64748b !important;
   letter-spacing: -0.02em;
 }
 
@@ -170,9 +170,9 @@
 }
 
 .section-title {
-  color: #2D3748;
+  color: #1a202c;
   font-size: 1.8rem;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 25px 0;
   display: flex;
   align-items: center;

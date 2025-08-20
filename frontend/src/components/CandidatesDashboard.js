@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { 
+  FaUser, 
+  FaFileAlt, 
+  FaSearch, 
+  FaSignOutAlt, 
+  FaClipboardList, 
+  FaClock, 
+  FaCheck, 
+  FaBriefcase, 
+  FaArrowRight,
+  FaMapMarkerAlt,
+  FaMoneyBillWave,
+  FaBuilding
+} from 'react-icons/fa';
 import './CandidatesDashboard.css';
 
 const CandidatesDashboard = () => {
@@ -438,15 +452,15 @@ const CandidatesDashboard = () => {
           {/* Header Navigation */}
           <div className="header-navigation">
             <button className="nav-item" onClick={() => setShowProfileForm(true)}>
-              <span className="nav-icon">👤</span>
+              <span className="nav-icon"><FaUser /></span>
               <span>Update Profile</span>
             </button>
             <button className="nav-item" onClick={() => setShowCVUpload(true)}>
-              <span className="nav-icon">📄</span>
+              <span className="nav-icon"><FaFileAlt /></span>
               <span>Upload CV</span>
             </button>
             <button className="nav-item" onClick={() => navigate('/job-search')}>
-              <span className="nav-icon">🔍</span>
+              <span className="nav-icon"><FaSearch /></span>
               <span>Search Jobs</span>
             </button>
 
@@ -454,11 +468,11 @@ const CandidatesDashboard = () => {
           
           <div className="header-right">
             <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
-              <span className="btn-icon">👤</span>
+              <span className="btn-icon"><FaUser /></span>
               <span>Profile</span>
             </button>
             <button className="btn-logout" onClick={handleLogout}>
-              <span className="btn-icon">🚪</span>
+              <span className="btn-icon"><FaSignOutAlt /></span>
               <span>Logout</span>
             </button>
           </div>
@@ -471,7 +485,7 @@ const CandidatesDashboard = () => {
         <div className="summary-cards">
           <div className="summary-card">
             <div className="card-icon documents">
-              📋
+              <FaClipboardList />
             </div>
             <div className="card-content">
               <div className="card-count">{applications.length}</div>
@@ -480,7 +494,7 @@ const CandidatesDashboard = () => {
           </div>
           <div className="summary-card">
             <div className="card-icon pending">
-              ⏳
+              <FaClock />
             </div>
             <div className="card-content">
               <div className="card-count">{applications.filter(app => app.status === 'pending').length}</div>
@@ -489,7 +503,7 @@ const CandidatesDashboard = () => {
           </div>
           <div className="summary-card">
             <div className="card-icon accepted">
-              ✅
+              <FaCheck />
             </div>
             <div className="card-content">
               <div className="card-count">{applications.filter(app => app.status === 'accepted').length}</div>
@@ -498,7 +512,7 @@ const CandidatesDashboard = () => {
           </div>
           <div className="summary-card">
             <div className="card-icon recommendations">
-              💼
+              <FaBriefcase />
             </div>
             <div className="card-content">
               <div className="card-count">{jobRecommendations.length}</div>
@@ -513,38 +527,38 @@ const CandidatesDashboard = () => {
           <div className="actions-grid">
             <div className="action-card" onClick={() => setShowProfileForm(true)}>
               <div className="action-icon profile">
-                👤
+                <FaUser />
               </div>
               <div className="action-content">
                 <h3>Update Profile</h3>
                 <p>Fill out your personal information and preferences</p>
               </div>
               <div className="action-arrow">
-                →
+                <FaArrowRight />
               </div>
             </div>
             <div className="action-card" onClick={() => setShowCVUpload(true)}>
               <div className="action-icon cv">
-                📄
+                <FaFileAlt />
               </div>
               <div className="action-content">
                 <h3>Upload CV</h3>
                 <p>Upload or update your resume/CV</p>
               </div>
               <div className="action-arrow">
-                →
+                <FaArrowRight />
               </div>
             </div>
             <div className="action-card" onClick={() => navigate('/job-search')}>
               <div className="action-icon search">
-                🔍
+                <FaSearch />
               </div>
               <div className="action-content">
                 <h3>Search Jobs</h3>
                 <p>Find and apply to job opportunities</p>
               </div>
               <div className="action-arrow">
-                →
+                <FaArrowRight />
               </div>
             </div>
 
@@ -556,14 +570,14 @@ const CandidatesDashboard = () => {
           <h2 className="section-title">Recent Applications</h2>
           {applications.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-icon">📝</div>
+              <div className="empty-icon"><FaFileAlt /></div>
               <h3>No applications yet</h3>
               <p>Start applying to jobs to see your applications here!</p>
               <button 
                 className="cta-button" 
                 onClick={() => navigate('/job-search')}
               >
-                🔍 Search Jobs Now
+                <FaSearch /> Search Jobs Now
               </button>
             </div>
           ) : (
@@ -591,14 +605,14 @@ const CandidatesDashboard = () => {
           <h2 className="section-title">Recommended Jobs</h2>
           {jobRecommendations.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-icon">💼</div>
+              <div className="empty-icon"><FaBriefcase /></div>
               <h3>No recommended jobs yet</h3>
               <p>Complete your profile to get personalized job recommendations!</p>
               <button 
                 className="cta-button" 
                 onClick={() => setShowProfileForm(true)}
               >
-                👤 Complete Profile
+                <FaUser /> Complete Profile
               </button>
             </div>
           ) : (
@@ -607,7 +621,7 @@ const CandidatesDashboard = () => {
               <div key={index} className="job-card">
                 <div className="job-header">
                   <div className="job-logo">
-                    {job.company ? job.company.charAt(0).toUpperCase() : '🏢'}
+                    {job.company ? job.company.charAt(0).toUpperCase() : <FaBuilding />}
                   </div>
                   <div className="job-info">
                     <h3 className="job-title">{job.title}</h3>
@@ -616,9 +630,9 @@ const CandidatesDashboard = () => {
                 </div>
                 <div className="job-details">
                   <div className="job-meta">
-                    <span className="location">📍 {job.location}</span>
+                    <span className="location"><FaMapMarkerAlt /> {job.location}</span>
                     <span className="salary">
-                      💰 ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}
+                      <FaMoneyBillWave /> ${job.salary_min?.toLocaleString()} - ${job.salary_max?.toLocaleString()}
                     </span>
                   </div>
                   <div className="job-actions">

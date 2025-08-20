@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Navigation.css';
 
 const Navigation = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
     // Clear all stored data
@@ -32,40 +33,77 @@ const Navigation = () => {
     return null;
   };
 
-  // Don't show navigation on welcome page
-  if (location.pathname === '/') {
+  // Don't show navigation on welcome and auth pages
+  const hiddenNavPaths = [
+    '/',
+    '/login',
+    '/login-new',
+    '/signup',
+    '/signup-new',
+    '/recruiter/login',
+    '/recruiter/register'
+  ];
+  if (hiddenNavPaths.includes(location.pathname)) {
     return null;
   }
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
 
   return (
     <nav className="main-navigation">
       <div className="nav-container">
-        <div className="nav-brand">
-          <span className="brand-icon">💼</span>
+        <div className="nav-brand" onClick={() => navigate('/')}>
+          <span className="brand-icon">
+            <i className="fas fa-bullseye"></i>
+          </span>
           <span className="brand-text">CV Matcher</span>
         </div>
         
-        <div className="nav-links">
-          <button 
-            className="nav-link"
-            onClick={() => navigate('/')}
-          >
-            🏠 Home
-          </button>
+        <button 
+          className={`mobile-menu-toggle ${isMobileMenuOpen ? 'active' : ''}`}
+          onClick={toggleMobileMenu}
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        
+        <div className={`nav-links ${isMobileMenuOpen ? 'active' : ''}`}>
+                      <button 
+              className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+              onClick={() => {
+                navigate('/');
+                closeMobileMenu();
+              }}
+            >
+              <i className="fas fa-home"></i> Home
+            </button>
           
           {getUserType() === 'recruiter' && (
             <>
               <button 
-                className="nav-link"
-                onClick={() => navigate('/jobs-dashboard')}
+                className={`nav-link ${location.pathname === '/jobs-dashboard' ? 'active' : ''}`}
+                onClick={() => {
+                  navigate('/jobs-dashboard');
+                  closeMobileMenu();
+                }}
               >
-                📋 Jobs
+                <i className="fas fa-clipboard-list"></i> Jobs
               </button>
               <button 
-                className="nav-link"
-                onClick={() => navigate('/enhanced-recruiter-recommendations')}
+                className={`nav-link ${location.pathname === '/enhanced-recruiter-recommendations' ? 'active' : ''}`}
+                onClick={() => {
+                  navigate('/enhanced-recruiter-recommendations');
+                  closeMobileMenu();
+                }}
               >
-                👥 Find Candidates
+                <i className="fas fa-users"></i> Find Candidates
               </button>
             </>
           )}
@@ -73,16 +111,22 @@ const Navigation = () => {
           {getUserType() === 'candidate' && (
             <>
               <button 
-                className="nav-link"
-                onClick={() => navigate('/job-search')}
+                className={`nav-link ${location.pathname === '/job-search' ? 'active' : ''}`}
+                onClick={() => {
+                  navigate('/job-search');
+                  closeMobileMenu();
+                }}
               >
-                🔍 Search Jobs
+                <i className="fas fa-search"></i> Search Jobs
               </button>
               <button 
-                className="nav-link"
-                onClick={() => navigate('/enhanced-candidate-recommendations')}
+                className={`nav-link ${location.pathname === '/enhanced-candidate-recommendations' ? 'active' : ''}`}
+                onClick={() => {
+                  navigate('/enhanced-candidate-recommendations');
+                  closeMobileMenu();
+                }}
               >
-                🎯 My Recommendations
+                <i className="fas fa-bullseye"></i> My Recommendations
               </button>
             </>
           )}
@@ -91,14 +135,17 @@ const Navigation = () => {
         {isLoggedIn() && (
           <div className="nav-actions">
             <span className="user-type">
-              {getUserType() === 'recruiter' ? '👔 Recruiter' : 
-               getUserType() === 'candidate' ? '👤 Candidate' : '👤 User'}
+              {getUserType() === 'recruiter' ? <><i className="fas fa-user-tie"></i> Recruiter</> : 
+               getUserType() === 'candidate' ? <><i className="fas fa-user"></i> Candidate</> : <><i className="fas fa-user"></i> User</>}
             </span>
             <button 
               className="logout-btn"
-              onClick={handleLogout}
+              onClick={() => {
+                handleLogout();
+                closeMobileMenu();
+              }}
             >
-              🚪 Logout
+              <i className="fas fa-sign-out-alt"></i> Logout
             </button>
           </div>
         )}

@@ -21,14 +21,13 @@ import RecruiterRecommendations from './components/RecruiterRecommendations';
 import EnhancedCandidateRecommendations from './components/EnhancedCandidateRecommendations';
 import EnhancedRecruiterRecommendations from './components/EnhancedRecruiterRecommendations';
 import EnhancedTestPage from './components/EnhancedTestPage';
-// import Navigation from './components/Navigation';
+import Navigation from './components/Navigation';
 import './App.css';
 
 function App() {
   return (
     <Router>
       <div className="app">
-        {/* <Navigation /> */}
         <Routes>
           {/* Welcome and Auth Routes */}
           <Route path="/" element={<WelcomePage />} />
