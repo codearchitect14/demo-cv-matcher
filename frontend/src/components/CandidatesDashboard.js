@@ -647,12 +647,7 @@ const CandidatesDashboard = () => {
       {showProfileForm && (
         <div className="modal-overlay" onClick={() => setShowProfileForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Update Profile</h2>
-              <button className="modal-close" onClick={() => setShowProfileForm(false)}>
-                ✕
-              </button>
-            </div>
+            <div className="modal-header"></div>
             <form onSubmit={handleUpdateProfile}>
               <div className="form-row">
                 <div className="form-group">
@@ -779,9 +774,6 @@ const CandidatesDashboard = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Upload CV</h2>
-              <button className="modal-close" onClick={() => setShowCVUpload(false)}>
-                ✕
-              </button>
             </div>
             <form onSubmit={handleCVUpload}>
               <div className="form-group">

@@ -397,38 +397,60 @@ async def list_jobs(
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """List jobs with filters using raw SQL to avoid prepared statements"""
+    """List jobs with filters using raw SQL to avoid prepared statements
+
+    Note:
+    - The previous implementation applied LIMIT/OFFSET directly to a result set
+      that included a LEFT JOIN to `job_mandatory_skills`. Since each job can
+      have multiple mandatory skills, LIMIT was effectively capping joined rows
+      rather than distinct jobs, which could result in only a few unique jobs
+      being returned (e.g., 3 jobs when LIMIT was 10).
+    - This version first selects the latest job IDs using LIMIT/OFFSET, and then
+      joins skills for just those jobs. This ensures up to `limit` distinct jobs
+      are returned by default.
+    """
     try:
-        # Build raw SQL query to avoid prepared statements
-        query = """
-            SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id, 
+        # Common filter clause reused in both the ID preselect and the final fetch
+        filters_sql = ""
+        params = {}
+
+        if location:
+            filters_sql += " AND j.location = :location"
+            params["location"] = location
+
+        if domain:
+            filters_sql += " AND j.domain = :domain"
+            params["domain"] = domain
+
+        if salary_min is not None:
+            filters_sql += " AND j.salary_min >= :salary_min"
+            params["salary_min"] = salary_min
+
+        if salary_max is not None:
+            filters_sql += " AND j.salary_max <= :salary_max"
+            params["salary_max"] = salary_max
+
+        # Two-step query: first pick job IDs (distinct jobs) with limit/offset, then join skills
+        query = f"""
+            WITH job_ids AS (
+                SELECT j.id
+                FROM jobs j
+                WHERE 1=1
+                {filters_sql}
+                ORDER BY j.created_at DESC
+                LIMIT :limit OFFSET :offset
+            )
+            SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id,
                    jms.created_at as skill_created_at, jms.updated_at as skill_updated_at
             FROM jobs j
             LEFT JOIN job_mandatory_skills jms ON j.id = jms.job_id
-            WHERE 1=1
+            WHERE j.id IN (SELECT id FROM job_ids)
+            ORDER BY j.created_at DESC, jms.id
         """
-        params = {}
-        
-        if location:
-            query += " AND j.location = :location"
-            params["location"] = location
-        
-        if domain:
-            query += " AND j.domain = :domain"
-            params["domain"] = domain
-        
-        if salary_min is not None:
-            query += " AND j.salary_min >= :salary_min"
-            params["salary_min"] = salary_min
-        
-        if salary_max is not None:
-            query += " AND j.salary_max <= :salary_max"
-            params["salary_max"] = salary_max
-        
-        query += " ORDER BY j.created_at DESC LIMIT :limit OFFSET :offset"
+
         params["limit"] = limit
         params["offset"] = skip
-        
+
         # Execute raw SQL
         result = await db.execute(text(query), params)
         rows = result.fetchall()

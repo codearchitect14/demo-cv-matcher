@@ -145,7 +145,7 @@
   background: white;
   border-radius: 16px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
+  overflow: visible; /* allow multiple rows to extend */
 }
 
 .results-header {
@@ -175,9 +175,9 @@
 /* Job Cards Grid */
 .search-results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
-  gap: 2rem;
-  padding: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); /* allow more columns */
+  gap: 1.25rem;
+  padding: 1.25rem;
   width: 100%;
 }
 
