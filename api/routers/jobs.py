@@ -14,10 +14,35 @@ from api.routers.auth import get_current_user, get_current_recruiter
 from schemas.job import JobCreate, JobUpdate, JobResponse, JobResponseSimple, JobMandatorySkillCreate, JobSearchFilter
 from sqlalchemy import select, text
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Jobs"])
+from services.faiss_service import faiss_service
+
+def _skill_to_dict(skill_data):
+    """Normalize a mandatory skill to a plain dict regardless of input type."""
+    try:
+        if isinstance(skill_data, dict):
+            return skill_data
+        # Pydantic model
+        return skill_data.dict()
+    except Exception:
+        return {
+            "skill": getattr(skill_data, "skill", None),
+            "min_experience": getattr(skill_data, "min_experience", 1),
+        }
+
+async def _index_job_async(job_id: int):
+    # Open a fresh DB session for background indexing
+    async for session in get_db_session():
+        try:
+            # Use existing method name
+            await faiss_service.add_or_update_job(session, job_id)
+        except Exception as e:
+            logger.warning(f"Background FAISS indexing failed for job {job_id}: {e}")
+        break
 
 @router.post("/", response_model=JobResponse)
 async def create_job(
@@ -31,18 +56,33 @@ async def create_job(
         base_job_dict = job_data.dict(exclude={'mandatory_skills'})
         job = await job_crud.create(db, obj_in=base_job_dict)
         
-        # Add mandatory skills if provided
+        # Add mandatory skills if provided using raw SQL to avoid prepared statement issues
         if job_data.mandatory_skills:
             for skill_data in job_data.mandatory_skills:
-                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
+                sd = _skill_to_dict(skill_data)
+                # Use raw SQL to avoid prepared statement issues with PgBouncer
+                await db.execute(
+                    text("""
+                        INSERT INTO job_mandatory_skills (job_id, skill, min_experience, created_at, updated_at)
+                        VALUES (:job_id, :skill, :min_experience, NOW(), NOW())
+                    """),
+                    {
+                        "job_id": job.id,
+                        "skill": sd.get("skill"),
+                        "min_experience": sd.get("min_experience", 1)
+                    }
+                )
+            await db.commit()
         
         # Get the job with loaded relationships
         job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        # Schedule FAISS indexing in background to avoid blocking the request
+        asyncio.create_task(_index_job_async(job.id))
         return job_with_skills
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create job error: {e}")
+        logger.exception("Create job error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create job. Please try again later."
@@ -61,18 +101,33 @@ async def create_job_as_recruiter(
         job_dict["recruiter_id"] = current_recruiter.id
         job = await job_crud.create(db, obj_in=job_dict)
         
-        # Add mandatory skills if provided
+        # Add mandatory skills if provided using raw SQL to avoid prepared statement issues
         if job_data.mandatory_skills:
             for skill_data in job_data.mandatory_skills:
-                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
+                sd = _skill_to_dict(skill_data)
+                # Use raw SQL to avoid prepared statement issues with PgBouncer
+                await db.execute(
+                    text("""
+                        INSERT INTO job_mandatory_skills (job_id, skill, min_experience, created_at, updated_at)
+                        VALUES (:job_id, :skill, :min_experience, NOW(), NOW())
+                    """),
+                    {
+                        "job_id": job.id,
+                        "skill": sd.get("skill"),
+                        "min_experience": sd.get("min_experience", 1)
+                    }
+                )
+            await db.commit()
         
         # Get the job with loaded relationships
         job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        # Schedule FAISS indexing in background
+        asyncio.create_task(_index_job_async(job.id))
         return job_with_skills
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create job as recruiter error: {e}")
+        logger.exception("Create job as recruiter error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create job. Please try again later."
@@ -85,22 +140,78 @@ async def create_job_public(
 ):
     """Create a new job posting (public endpoint for testing)"""
     try:
-        # Create base job (no recruiter_id column in current model)
-        job_dict = job_data.dict(exclude={'mandatory_skills'})
-        job = await job_crud.create(db, obj_in=job_dict)
-        
-        # Add mandatory skills if provided
+        # Insert job via raw SQL with RETURNING to avoid extra round-trips
+        insert_sql = text(
+            """
+            INSERT INTO jobs (
+                title, company, location, salary_min, salary_max,
+                domain, total_years_required, job_description, created_at, updated_at
+            ) VALUES (
+                :title, :company, :location, :salary_min, :salary_max,
+                :domain, :total_years_required, :job_description, NOW(), NOW()
+            )
+            RETURNING id, title, company, location, salary_min, salary_max,
+                      domain, total_years_required, job_description, created_at, updated_at
+            """
+        )
+        params = {
+            "title": job_data.title,
+            "company": job_data.company,
+            "location": job_data.location,
+            "salary_min": job_data.salary_min,
+            "salary_max": job_data.salary_max,
+            "domain": job_data.domain,
+            "total_years_required": job_data.total_years_required,
+            "job_description": job_data.job_description,
+        }
+        result = await db.execute(insert_sql, params)
+        row = result.fetchone()
+        if not row:
+            raise RuntimeError("Failed to insert job")
+        job_id = row.id
+
+        # Add mandatory skills if provided using raw SQL to avoid prepared statement issues
         if job_data.mandatory_skills:
             for skill_data in job_data.mandatory_skills:
-                await job_crud.add_mandatory_skill(db, job_id=job.id, skill_data=skill_data.dict())
-        
-        # Get the job with loaded relationships
-        job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
-        return job_with_skills
+                sd = _skill_to_dict(skill_data)
+                await db.execute(
+                    text(
+                        """
+                        INSERT INTO job_mandatory_skills (job_id, skill, min_experience, created_at, updated_at)
+                        VALUES (:job_id, :skill, :min_experience, NOW(), NOW())
+                        """
+                    ),
+                    {
+                        "job_id": job_id,
+                        "skill": sd.get("skill"),
+                        "min_experience": sd.get("min_experience", 1),
+                    },
+                )
+        await db.commit()
+
+        # Schedule FAISS indexing in background
+        asyncio.create_task(_index_job_async(job_id))
+
+        # Build response matching JobResponse
+        response = {
+            "id": row.id,
+            "title": row.title,
+            "company": row.company,
+            "location": row.location,
+            "salary_min": row.salary_min,
+            "salary_max": row.salary_max,
+            "domain": row.domain,
+            "total_years_required": row.total_years_required,
+            "job_description": row.job_description,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+            "mandatory_skills": [],
+        }
+        return response
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create job public error: {e}")
+        logger.exception("Create job public error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create job. Please try again later."

@@ -153,17 +153,17 @@ const EnhancedRecruiterRecommendations = () => {
   return (
     <div className="enhanced-recruiter-recommendations">
       {/* Header with Logout */}
-      <div className="page-header">
+      <div className="unified-header">
         <div className="header-content">
-          <h1 className="page-title" aria-label="Candidate Recommendations">
+          <h1 className="header-title" aria-label="Candidate Recommendations">
             <span className="title-icon" aria-hidden="true">🎯</span>
             Candidate Recommendations
           </h1>
-          <p className="page-subtitle">
-            Find the best candidates for your job based on skill-specific experience matching
-          </p>
         </div>
         <div className="header-actions">
+          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>
+            ← Back to Dashboard
+          </button>
           <button 
             className="btn-logout"
             onClick={() => {

@@ -27,23 +27,25 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return result.scalars().all()
 
     async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> ModelType:
-        """Create new record"""
+        """Create new record without refresh to avoid prepared statements"""
         obj_data = obj_in.dict() if hasattr(obj_in, 'dict') else obj_in
         db_obj = self.model(**obj_data)
         db.add(db_obj)
+        # Flush to assign primary key without issuing a SELECT
+        await db.flush()
         await db.commit()
-        await db.refresh(db_obj)
+        # Do NOT refresh to avoid prepared SELECT; caller can re-query if needed
         return db_obj
 
     async def update(
         self, db: AsyncSession, db_obj: ModelType, obj_in: UpdateSchemaType
     ) -> ModelType:
-        """Update existing record"""
+        """Update existing record without refresh"""
         update_data = obj_in.dict(exclude_unset=True) if hasattr(obj_in, 'dict') else obj_in
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         await db.commit()
-        await db.refresh(db_obj)
+        # Avoid refresh to prevent prepared statements
         return db_obj
 
     async def delete(self, db: AsyncSession, id: int) -> Optional[ModelType]:

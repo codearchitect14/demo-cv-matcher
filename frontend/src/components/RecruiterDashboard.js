@@ -17,7 +17,7 @@ const RecruiterDashboard = () => {
       type: 'job_posted',
       title: 'New job posted: Senior Python Developer',
       time: '2 hours ago',
-      icon: '📋',
+      iconClass: 'fa-clipboard-list',
       color: '#667eea'
     },
     {
@@ -25,7 +25,7 @@ const RecruiterDashboard = () => {
       type: 'applications',
       title: '5 new applications for React Developer position',
       time: '4 hours ago',
-      icon: '👥',
+      iconClass: 'fa-users',
       color: '#e74c3c'
     },
     {
@@ -33,7 +33,7 @@ const RecruiterDashboard = () => {
       type: 'reviewed',
       title: 'Application reviewed: John Doe for Frontend Developer',
       time: '1 day ago',
-      icon: '✅',
+      iconClass: 'fa-circle-check',
       color: '#28a745'
     }
   ]);
@@ -90,11 +90,11 @@ const RecruiterDashboard = () => {
   return (
     <div className="modern-recruiter-dashboard">
       {/* Animated Header */}
-      <div className="dashboard-header">
+      <div className="recruiter-dashboard-header">
         <div className="header-content">
           <div className="header-left">
             <div className="header-icon">
-              <span className="icon-bg">🏢</span>
+              <i className="fa-solid fa-building"></i>
             </div>
             <div className="header-text">
               <h1 className="header-title">Recruiter Dashboard</h1>
@@ -103,11 +103,11 @@ const RecruiterDashboard = () => {
           </div>
           <div className="header-actions">
             <button className="btn-profile" onClick={() => alert('Profile settings coming soon!')}>
-              <span className="btn-icon">👤</span>
+              <span className="btn-icon"><i className="fa-solid fa-user"></i></span>
               Profile
             </button>
             <button className="btn-logout" onClick={handleLogout}>
-              <span className="btn-icon">🚪</span>
+              <span className="btn-icon"><i className="fa-solid fa-right-from-bracket"></i></span>
               Logout
             </button>
           </div>
@@ -118,7 +118,7 @@ const RecruiterDashboard = () => {
       <div className="stats-section">
         <div className="stats-grid">
           <div className="stat-card" style={{animationDelay: '0.1s'}}>
-            <div className="stat-icon">📋</div>
+            <div className="stat-icon"><i className="fa-solid fa-clipboard-list"></i></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.totalJobs}</h3>
               <p className="stat-label">Total Jobs</p>
@@ -129,7 +129,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.2s'}}>
-            <div className="stat-icon">✅</div>
+            <div className="stat-icon"><i className="fa-solid fa-circle-check"></i></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.activeJobs}</h3>
               <p className="stat-label">Active Jobs</p>
@@ -140,7 +140,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.3s'}}>
-            <div className="stat-icon">📝</div>
+            <div className="stat-icon"><i className="fa-solid fa-file-lines"></i></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.totalApplications}</h3>
               <p className="stat-label">Total Applications</p>
@@ -151,7 +151,7 @@ const RecruiterDashboard = () => {
           </div>
           
           <div className="stat-card" style={{animationDelay: '0.4s'}}>
-            <div className="stat-icon">⏳</div>
+            <div className="stat-icon"><i className="fa-solid fa-clock"></i></div>
             <div className="stat-content">
               <h3 className="stat-number">{stats.pendingApplications}</h3>
               <p className="stat-label">Pending Reviews</p>
@@ -166,7 +166,9 @@ const RecruiterDashboard = () => {
       {/* Quick Actions */}
       <div className="actions-section">
         <h2 className="section-title">
-          <span className="title-icon">⚡</span>
+          <span className="title-icon">
+            <i className="fa-solid fa-bolt"></i>
+          </span>
           Quick Actions
         </h2>
         <div className="actions-grid">
@@ -180,12 +182,12 @@ const RecruiterDashboard = () => {
               }}
               onClick={action.action}
             >
-              <div className="action-icon">{action.icon}</div>
+              <div className="action-icon">{action.icon || '⚙️'}</div>
               <div className="action-content">
                 <h3 className="action-title">{action.title}</h3>
                 <p className="action-description">{action.description}</p>
               </div>
-              <div className="action-arrow">→</div>
+              <div className="action-arrow"><i className="fa-solid fa-arrow-right"></i></div>
             </div>
           ))}
         </div>
@@ -194,7 +196,7 @@ const RecruiterDashboard = () => {
       {/* Recent Activity */}
       <div className="activity-section">
         <h2 className="section-title">
-          <span className="title-icon">📈</span>
+          <span className="title-icon"><i className="fa-solid fa-chart-line"></i></span>
           Recent Activity
         </h2>
         <div className="activity-list">
@@ -205,7 +207,7 @@ const RecruiterDashboard = () => {
               style={{animationDelay: `${0.9 + index * 0.1}s`}}
             >
               <div className="activity-icon" style={{backgroundColor: activity.color}}>
-                {activity.icon}
+                <i className={`fa-solid ${activity.iconClass}`}></i>
               </div>
               <div className="activity-content">
                 <h4 className="activity-title">{activity.title}</h4>

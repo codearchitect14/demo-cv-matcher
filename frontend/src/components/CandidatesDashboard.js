@@ -425,11 +425,10 @@ const CandidatesDashboard = () => {
   return (
     <div className="candidates-dashboard">
       {/* Professional Header */}
-      <div className="dashboard-header">
+      <div className="unified-header">
         <div className="header-content">
           <div className="header-left">
-            <h1 className="dashboard-title">Candidate Dashboard</h1>
-            <p className="header-subtitle">Candidate Portal</p>
+            <h1 className="header-title"><span className="title-icon">👤</span> Candidate Dashboard</h1>
             {userProfile && (
               <p className="welcome-text">Welcome back, {userProfile.name || 'Candidate'}!</p>
             )}
@@ -453,11 +452,12 @@ const CandidatesDashboard = () => {
           </div>
           
           <div className="header-right">
+            <button className="btn-back" onClick={() => navigate('/')}>← Back</button>
             <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
               <span className="btn-icon">👤</span>
               <span>Profile</span>
             </button>
-            <button className="btn-logout" onClick={handleLogout}>
+            <button className="btn-logout soft" onClick={handleLogout}>
               <span className="btn-icon">🚪</span>
               <span>Logout</span>
             </button>

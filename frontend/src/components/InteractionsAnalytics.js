@@ -259,14 +259,19 @@ const InteractionsAnalytics = () => {
 
   return (
     <div className="interactions-analytics">
-      <div className="dashboard-header">
-        <h1>Interactions Analytics</h1>
-        <button 
-          className="btn-primary"
-          onClick={() => setShowLogForm(true)}
-        >
-          Log Interaction
-        </button>
+      <div className="unified-header">
+        <div className="header-content">
+          <h1 className="header-title"><span className="title-icon">📊</span> Interactions Analytics</h1>
+        </div>
+        <div className="header-actions">
+          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>← Back to Dashboard</button>
+          <button 
+            className="btn-primary"
+            onClick={() => setShowLogForm(true)}
+          >
+            Log Interaction
+          </button>
+        </div>
       </div>
 
       {error && (

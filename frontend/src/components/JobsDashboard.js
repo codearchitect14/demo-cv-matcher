@@ -248,15 +248,17 @@ const JobsDashboard = () => {
   return (
     <div className="modern-jobs-dashboard">
       {/* Header Section */}
-      <div className="dashboard-header">
+      <div className="unified-header">
         <div className="header-content">
           <h1 className="header-title">
             <span className="title-icon">💼</span>
             Jobs Dashboard
           </h1>
-          <p className="header-subtitle">Manage and track your job postings</p>
         </div>
         <div className="header-actions">
+          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>
+            ← Back to Dashboard
+          </button>
           <button 
             className="btn-post-job"
             aria-label="Post new job"

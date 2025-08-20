@@ -257,7 +257,7 @@ const ApplicationsManagement = () => {
   return (
     <div className="applications-dashboard">
       {/* Professional Header */}
-      <div className="dashboard-header">
+      <div className="unified-header">
         <div className="header-content">
           <div className="header-left">
             <div className="header-icon">
@@ -265,18 +265,18 @@ const ApplicationsManagement = () => {
             </div>
             <div className="header-text">
               <h1 className="header-title">Applications Management</h1>
-              <p className="header-subtitle">Manage and track all job applications</p>
             </div>
           </div>
-          <div className="header-actions">
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowForm(true)}
-            >
-              <i className="fas fa-plus"></i>
-              Create Application
-            </button>
-          </div>
+        </div>
+        <div className="header-actions">
+          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>← Back to Dashboard</button>
+          <button 
+            className="btn btn-primary"
+            onClick={() => setShowForm(true)}
+          >
+            <i className="fas fa-plus"></i>
+            Create Application
+          </button>
         </div>
       </div>
 

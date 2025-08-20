@@ -14,6 +14,7 @@ from embeddings.embedder import OptimizedEmbeddingService
 from services.adaptive_weighting_service import adaptive_weighting_service
 from services.cold_start_handler import cold_start_handler
 from services.cache_service import cache_service
+from services.faiss_service import faiss_service
 
 logger = logging.getLogger(__name__)
 
@@ -59,26 +60,27 @@ class SemanticSearchService:
             # Check if user has any interactions (placeholder - Interaction model not available)
             interaction_count = 0
             
-            # For testing purposes, always use cold start handler
-            if True:  # Always use cold start for testing
-                logger.info(f"[INFO] Using cold start handler for candidate {candidate_id}")
-                from services.cold_start_handler import cold_start_handler
-                cold_start_recs = await cold_start_handler.handle_new_user_recommendations(
-                    db, candidate_id, k
+            # Preferred path: FAISS recall -> filters -> (optional) ML ranking
+            faiss_results = await faiss_service.search_jobs_for_candidate(db, candidate_id, k=max(k * 5, 50))
+            candidate_faiss_job_ids = [int(r['vector_id'].split(':', 1)[1]) for r in faiss_results if 'vector_id' in r and r['vector_id'].startswith('job:')]
+
+            if candidate_faiss_job_ids:
+                # Fetch these jobs and score with existing logic
+                jobs_result = await db.execute(
+                    select(Job).where(Job.id.in_(candidate_faiss_job_ids), Job.is_active == True)
                 )
-                
-                # Convert cold start recommendations to standard format
-                recommendations = []
-                for rec in cold_start_recs:
-                    recommendations.append({
-                        'job_id': rec['job_id'],
-                        'job': rec['job'],
-                        'combined_score': rec['score'],
-                        'method': rec['method'],
-                        'weights_used': {'cold_start': 1.0}
-                    })
-                
-                # Cache the results
+                jobs = jobs_result.scalars().all()
+            else:
+                # Fallback to cold start if FAISS returns nothing
+                logger.info(f"[INFO] FAISS returned no results; using cold start for candidate {candidate_id}")
+                cold_start_recs = await cold_start_handler.handle_new_user_recommendations(db, candidate_id, k)
+                recommendations = [{
+                    'job_id': rec['job_id'],
+                    'job': rec['job'],
+                    'combined_score': rec['score'],
+                    'method': rec['method'],
+                    'weights_used': {'cold_start': 1.0}
+                } for rec in cold_start_recs]
                 try:
                     await self.cache_service.set("recommendation", cache_key, recommendations, ttl=300)
                 except Exception as e:
@@ -109,14 +111,6 @@ class SemanticSearchService:
             if candidate_embedding is None:
                 logger.warning(f"[WARNING] Failed to generate embedding for candidate {candidate_id}")
                 return []
-            
-            # Get jobs with skills (bulk operation to avoid N+1)
-            jobs_result = await db.execute(
-                select(Job)
-                .where(Job.is_active == True)
-                .limit(100)  # Limit for performance
-            )
-            jobs = jobs_result.scalars().all()
             
             if not jobs:
                 return []

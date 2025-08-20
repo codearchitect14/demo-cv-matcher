@@ -13,16 +13,17 @@
 }
 
 /* Professional Header - Clean White */
-.dashboard-header {
-  background: linear-gradient(135deg, #1F2937 0%, #0F172A 100%) !important;
+.unified-header {
+  background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%) !important;
   color: #FFFFFF !important;
-  padding: 16px 20px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 6px 12px; /* reduced height */
+  border-radius: 10px;
+  margin: 0 12px 12px; /* slightly narrower margins */
+  border: 1px solid #1E40AF;
+  box-shadow: 0 6px 18px rgba(30,58,138,0.25);
 }
+.unified-header .header-content { padding: 6px 8px !important; gap: 12px; }
+.unified-header .header-left { gap: 4px; }
 
 .header-content {
   max-width: 100%;
@@ -42,13 +43,8 @@
   flex-shrink: 0;
 }
 
-.dashboard-title {
-  font-size: 30px;
-  font-weight: 700;
-  margin: 0;
-  color: #ffffff !important;
-  letter-spacing: -0.02em;
-}
+.header-title { font-size: 1.35rem; font-weight: 600; margin: 0; color:#fff !important; display:flex; align-items:center; gap:10px; }
+.title-icon { font-size: 1.2rem; }
 
 .header-subtitle {
   font-size: 0.95rem;
@@ -141,8 +137,18 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.btn-logout { background: #dc2626; color: #fff; border: none; }
-.btn-logout:hover { background: #b91c1c; }
+.btn-logout.soft { background: #f87171; color:#fff; border:none; }
+.btn-logout.soft:hover { background:#ef4444; }
+.btn-back { background:#f1f5f9; color:#1e293b; border:1px solid #e2e8f0; padding:8px 14px; border-radius:8px; font-size:0.9rem; font-weight:600; }
+.btn-back:hover{ background:#e2e8f0; }
+
+/* Make header buttons white like Back button */
+.btn-profile { background:#f1f5f9 !important; color:#1e293b !important; border:1px solid #e2e8f0 !important; }
+.btn-profile:hover { background:#e2e8f0 !important; color:#1e293b !important; }
+
+/* Make header nav chips white */
+.header-navigation .nav-item { background:#f1f5f9 !important; color:#1e293b !important; border:1px solid #e2e8f0 !important; }
+.header-navigation .nav-item:hover { background:#e2e8f0 !important; color:#1e293b !important; }
 
 .btn-icon {
   font-size: 1rem;

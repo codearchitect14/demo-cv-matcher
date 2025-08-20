@@ -162,7 +162,8 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         )
         db.add(skill)
         await db.commit()
-        await db.refresh(skill)
+        # Remove the refresh call to avoid prepared statement issues with PgBouncer
+        # await db.refresh(skill)  # This was causing the DuplicatePreparedStatementError
         return skill
 
     async def bulk_add_skills(
@@ -204,7 +205,8 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
             db.add(skill)
         
         await db.commit()
-        await db.refresh(job)
+        # Remove the refresh call to avoid prepared statement issues with PgBouncer
+        # await db.refresh(job)  # This could cause DuplicatePreparedStatementError
         return job
 
     async def get_active_jobs(self, db: AsyncSession, limit: int = 50) -> List[Job]:

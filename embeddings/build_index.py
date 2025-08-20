@@ -136,7 +136,7 @@ class PersistentFAISSIndexManager:
             with open(metadata_path, 'w') as f:
                 json.dump(asdict(self.metadata), f, default=str)
             
-            # Update current index symlink
+            # Update current index pointers (use symlink where supported; copy on Windows)
             current_index_path = self._get_index_path()
             current_metadata_path = self._get_metadata_path()
             
@@ -145,8 +145,16 @@ class PersistentFAISSIndexManager:
             if current_metadata_path.exists():
                 current_metadata_path.unlink()
             
-            os.symlink(index_path, current_index_path)
-            os.symlink(metadata_path, current_metadata_path)
+            try:
+                # On most UNIX-like systems, prefer symlinks
+                os.symlink(index_path, current_index_path)
+                os.symlink(metadata_path, current_metadata_path)
+            except (AttributeError, NotImplementedError, OSError):
+                # Fallback for platforms/filesystems that do not support symlinks (e.g., Windows without privileges)
+                import shutil as _shutil
+                _shutil.copy2(index_path, current_index_path)
+                with open(metadata_path, 'r') as _src, open(current_metadata_path, 'w') as _dst:
+                    _dst.write(_src.read())
             
             # Update Redis with current version
             await self.redis_client.set("faiss:current_version", self.metadata.version)

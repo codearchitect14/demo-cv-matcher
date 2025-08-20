@@ -244,12 +244,12 @@ const JobSearch = () => {
   return (
     <div className="job-search">
       {/* Professional Header */}
-      <div className="search-header">
+      <div className="unified-header">
         <div className="header-content">
-          <div className="header-text">
-            <h1>Find Your Perfect Job</h1>
-            <p>AI-powered job matching for developers</p>
-          </div>
+          <h1 className="header-title"><span className="title-icon">🔍</span> Job Search</h1>
+        </div>
+        <div className="header-actions">
+          <button className="btn-back" onClick={() => window.history.back()}>← Back</button>
         </div>
       </div>
 
