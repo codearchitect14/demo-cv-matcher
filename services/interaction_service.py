@@ -139,6 +139,8 @@ class InteractionService:
             List of candidate interactions
         """
         try:
+            logger.info(f"Getting interactions for candidate {candidate_id}, days_back: {days_back}")
+            
             query = select(InteractionLog).where(
                 InteractionLog.user_id == candidate_id,  # Changed from candidate_id to user_id
                 InteractionLog.created_at >= datetime.utcnow() - timedelta(days=days_back)
@@ -146,6 +148,7 @@ class InteractionService:
             
             if interaction_types:
                 query = query.where(InteractionLog.interaction_type.in_(interaction_types))
+                logger.info(f"Filtering by interaction types: {interaction_types}")
             
             query = query.order_by(InteractionLog.created_at.desc())
             

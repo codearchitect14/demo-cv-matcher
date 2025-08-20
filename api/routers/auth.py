@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import secrets
@@ -123,6 +123,86 @@ async def get_current_recruiter(
         
     except Exception as e:
         logger.error(f"Recruiter authentication error: {str(e)}")
+        raise credentials_exception
+
+async def get_current_user_or_recruiter(
+    token: str = Depends(oauth2_scheme), 
+    db: AsyncSession = Depends(get_db_session)
+) -> Union[Candidate, Recruiter]:
+    """Get current authenticated user (candidate or recruiter)"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Verify token
+        token_data = verify_token(token)
+        if token_data is None:
+            logger.error("Token verification failed")
+            raise credentials_exception
+        
+        logger.info(f"Token verified for email: {token_data.email}")
+        
+        # Try to get candidate first
+        user = await candidate_crud.get_by_email(db, email=token_data.email)
+        if user is not None:
+            logger.info(f"Found candidate user: {user.id} - {user.email} with role: {getattr(user, 'role', 'N/A')}")
+            return user
+        
+        # Try to get recruiter
+        recruiter = await recruiter_crud.get_by_email(db, email=token_data.email)
+        if recruiter is not None:
+            logger.info(f"Found recruiter user: {recruiter.id} - {recruiter.email} with role: {getattr(recruiter, 'role', 'N/A')}")
+            return recruiter
+        
+        # Neither found
+        logger.error(f"No user found for email: {token_data.email}")
+        raise credentials_exception
+        
+    except Exception as e:
+        logger.error(f"Unified authentication error: {str(e)}")
+        raise credentials_exception
+
+async def get_current_recruiter_or_user(
+    token: str = Depends(oauth2_scheme), 
+    db: AsyncSession = Depends(get_db_session)
+) -> Union[Candidate, Recruiter]:
+    """Get current authenticated user (prioritizes recruiters over candidates)"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Verify token
+        token_data = verify_token(token)
+        if token_data is None:
+            logger.error("Token verification failed")
+            raise credentials_exception
+        
+        logger.info(f"Token verified for email: {token_data.email}")
+        
+        # Try to get recruiter FIRST (prioritize recruiters)
+        recruiter = await recruiter_crud.get_by_email(db, email=token_data.email)
+        if recruiter is not None:
+            logger.info(f"Found recruiter user: {recruiter.id} - {recruiter.email} with role: {getattr(recruiter, 'role', 'N/A')}")
+            return recruiter
+        
+        # Try to get candidate as fallback
+        user = await candidate_crud.get_by_email(db, email=token_data.email)
+        if user is not None:
+            logger.info(f"Found candidate user: {user.id} - {user.email} with role: {getattr(user, 'role', 'N/A')}")
+            return user
+        
+        # Neither found
+        logger.error(f"No user found for email: {token_data.email}")
+        raise credentials_exception
+        
+    except Exception as e:
+        logger.error(f"Recruiter-priority authentication error: {str(e)}")
         raise credentials_exception
 
 async def get_current_active_user(

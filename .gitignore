@@ -51,3 +51,8 @@ Thumbs.db
 embeddings/faiss_index/ 
 "venv/" 
 "embeddings/faiss_index/" 
+
+venv/
+*.pyc
+__pycache__/
+embeddings/faiss_index
