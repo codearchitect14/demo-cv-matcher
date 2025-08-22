@@ -26,6 +26,72 @@ async def health_check():
         "service": "cv-matcher-api"
     }
 
+@router.get("/performance/login")
+async def test_login_performance(db: AsyncSession = Depends(get_db_session)):
+    """Test login system performance without authentication"""
+    try:
+        start_time = time.time()
+        
+        # Test database connection speed
+        db_start = time.time()
+        await db.execute("SELECT 1")
+        db_time = time.time() - db_start
+        
+        # Test password hashing speed
+        from config.security import get_password_hash, verify_password
+        hash_start = time.time()
+        test_hash = get_password_hash("test_password_123")
+        hash_time = time.time() - hash_start
+        
+        # Test password verification speed
+        verify_start = time.time()
+        verify_password("test_password_123", test_hash)
+        verify_time = time.time() - verify_start
+        
+        total_time = time.time() - start_time
+        
+        # Performance thresholds for login components
+        thresholds = {
+            "db_connection": 0.1,  # 100ms
+            "password_hash": 0.2,  # 200ms
+            "password_verify": 0.2,  # 200ms
+            "total_acceptable": 1.0  # 1 second total
+        }
+        
+        performance_status = "excellent"
+        if total_time > thresholds["total_acceptable"]:
+            performance_status = "poor"
+        elif db_time > thresholds["db_connection"] or verify_time > thresholds["password_verify"]:
+            performance_status = "degraded"
+        
+        return {
+            "performance_status": performance_status,
+            "timings": {
+                "database_connection_ms": round(db_time * 1000, 2),
+                "password_hashing_ms": round(hash_time * 1000, 2),
+                "password_verification_ms": round(verify_time * 1000, 2),
+                "total_test_time_ms": round(total_time * 1000, 2)
+            },
+            "thresholds": {
+                "db_connection_acceptable_ms": thresholds["db_connection"] * 1000,
+                "password_operations_acceptable_ms": thresholds["password_verify"] * 1000,
+                "total_login_target_ms": thresholds["total_acceptable"] * 1000
+            },
+            "recommendations": [
+                "Database connection should be < 100ms" if db_time > thresholds["db_connection"] else None,
+                "Password verification should be < 200ms" if verify_time > thresholds["password_verify"] else None,
+                "Consider reducing bcrypt rounds if password operations are slow" if verify_time > 0.3 else None,
+                "Check database connection pooling if DB connection is slow" if db_time > 0.2 else None
+            ],
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Login performance test failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Performance test failed: {str(e)}"
+        )
+
 @router.get("/health/detailed")
 async def detailed_health_check(db: AsyncSession = Depends(get_db_session)):
     """Detailed health check with database and cache status"""

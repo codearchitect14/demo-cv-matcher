@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 class InteractionType:
     """Interaction types for tracking user behavior"""
-    VIEW = "viewed"
-    APPLIED = "applied"
-    REJECTED = "rejected"
-    ACCEPT = "accepted"
-    SAVE = "saved"
-    SHARE = "shared"
+    VIEW = "VIEWED"
+    APPLIED = "APPLIED"
+    REJECTED = "REJECTED"
+    ACCEPT = "ACCEPTED"
+    SAVE = "SAVED"
+    SHARE = "SHARED"
 
 class InteractionService:
     """Service for tracking and analyzing user interactions for personalization"""
@@ -75,7 +75,7 @@ class InteractionService:
         db: AsyncSession,
         candidate_id: int,
         job_id: int,
-        status: str = "applied",
+        status: str = "APPLIED",
         metadata: Optional[Dict[str, Any]] = None
     ) -> Application:
         """
@@ -125,7 +125,7 @@ class InteractionService:
         candidate_id: int,
         days_back: int = 30,
         interaction_types: Optional[List[str]] = None
-    ) -> List[InteractionLog]:
+    ) -> List[Dict[str, Any]]:
         """
         Get candidate interactions for personalization analysis
         
@@ -136,24 +136,71 @@ class InteractionService:
             interaction_types: Filter by specific interaction types
             
         Returns:
-            List of candidate interactions
+            List of candidate interactions with job details
         """
         try:
+            from sqlalchemy.sql import text
+            
             logger.info(f"Getting interactions for candidate {candidate_id}, days_back: {days_back}")
             
-            query = select(InteractionLog).where(
-                InteractionLog.user_id == candidate_id,  # Changed from candidate_id to user_id
-                InteractionLog.created_at >= datetime.utcnow() - timedelta(days=days_back)
-            )
+            # Debug: Check if there are any interactions at all
+            debug_result = await db.execute(text("SELECT COUNT(*) FROM interaction_log WHERE user_type = 'candidate'"))
+            total_interactions = debug_result.scalar()
+            logger.info(f"Total candidate interactions in database: {total_interactions}")
+            
+            debug_result = await db.execute(text("SELECT COUNT(*) FROM interaction_log WHERE user_id = :candidate_id AND user_type = 'candidate'"), {"candidate_id": candidate_id})
+            candidate_interactions = debug_result.scalar()
+            logger.info(f"Interactions for candidate {candidate_id}: {candidate_interactions}")
+            
+            # Use raw SQL to join with jobs table to get job titles
+            
+            sql = text("""
+                SELECT 
+                    i.id,
+                    i.user_id as candidate_id,
+                    i.job_id,
+                    i.interaction_type,
+                    i.timestamp,
+                    j.title as job_title,
+                    j.company
+                FROM interaction_log i
+                LEFT JOIN jobs j ON i.job_id = j.id
+                WHERE i.user_id = :candidate_id
+                AND i.user_type = 'candidate'
+                AND i.timestamp >= NOW() - INTERVAL '1 day' * :days_back
+            """)
+            
+            params = {
+                "candidate_id": candidate_id,
+                "days_back": days_back
+            }
             
             if interaction_types:
-                query = query.where(InteractionLog.interaction_type.in_(interaction_types))
+                # Add interaction type filter
+                placeholders = ','.join([f"'{it}'" for it in interaction_types])
+                sql = text(str(sql).replace(
+                    "WHERE i.user_id = :candidate_id",
+                    f"WHERE i.user_id = :candidate_id AND i.interaction_type IN ({placeholders})"
+                ))
                 logger.info(f"Filtering by interaction types: {interaction_types}")
             
-            query = query.order_by(InteractionLog.created_at.desc())
+            sql = text(str(sql) + " ORDER BY i.timestamp DESC")
             
-            result = await db.execute(query)
-            interactions = result.scalars().all()
+            result = await db.execute(sql, params)
+            rows = result.fetchall()
+            
+            interactions = []
+            for row in rows:
+                interaction = {
+                    "id": row.id,
+                    "candidate_id": row.candidate_id,
+                    "job_id": row.job_id,
+                    "interaction_type": row.interaction_type,
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                    "job_title": row.job_title or f"Job #{row.job_id}",
+                    "company": row.company or ""
+                }
+                interactions.append(interaction)
             
             logger.info(f"Retrieved {len(interactions)} interactions for candidate {candidate_id}")
             return interactions
@@ -196,7 +243,7 @@ class InteractionService:
                 }
             
             # Filter applications
-            applications = [i for i in interactions if i.interaction_type == "applied"]
+            applications = [i for i in interactions if i["interaction_type"] == "APPLIED"]
             
             # Calculate application rate
             application_rate = len(applications) / len(interactions) if interactions else 0
@@ -204,22 +251,26 @@ class InteractionService:
             # Get most recent application
             most_recent_application = None
             if applications:
-                most_recent_application = max(applications, key=lambda x: x.created_at)
+                most_recent_application = max(applications, key=lambda x: x["timestamp"])
             
             # Calculate average time between view and apply
             view_apply_times = []
             for interaction in interactions:
-                if interaction.interaction_type == "applied":
+                if interaction["interaction_type"] == "APPLIED":
                     # Find corresponding view
                     view_interaction = next(
                         (i for i in interactions 
-                         if i.interaction_type == "viewed" 
-                         and i.job_id == interaction.job_id
-                         and i.created_at < interaction.created_at), 
+                         if i["interaction_type"] == "VIEWED" 
+                         and i["job_id"] == interaction["job_id"]
+                         and i["timestamp"] < interaction["timestamp"]), 
                         None
                     )
                     if view_interaction:
-                        time_diff = (interaction.created_at - view_interaction.created_at).total_seconds() / 3600  # hours
+                        # Parse timestamps and calculate time difference
+                        from datetime import datetime
+                        apply_time = datetime.fromisoformat(interaction["timestamp"].replace('Z', '+00:00'))
+                        view_time = datetime.fromisoformat(view_interaction["timestamp"].replace('Z', '+00:00'))
+                        time_diff = (apply_time - view_time).total_seconds() / 3600  # hours
                         view_apply_times.append(time_diff)
             
             avg_view_to_apply_hours = sum(view_apply_times) / len(view_apply_times) if view_apply_times else 0
@@ -227,10 +278,10 @@ class InteractionService:
             # Count interaction types
             interaction_types = {}
             for interaction in interactions:
-                interaction_types[interaction.interaction_type] = interaction_types.get(interaction.interaction_type, 0) + 1
+                interaction_types[interaction["interaction_type"]] = interaction_types.get(interaction["interaction_type"], 0) + 1
             
             # Get job details for domain/location analysis
-            job_ids = list(set([i.job_id for i in interactions]))
+            job_ids = list(set([i["job_id"] for i in interactions]))
             domains = {}
             locations = {}
             salaries = []
@@ -246,24 +297,24 @@ class InteractionService:
                 job_lookup = {job.id: job for job in jobs}
                 
                 for interaction in interactions:
-                    job = job_lookup.get(interaction.job_id)
+                    job = job_lookup.get(interaction["job_id"])
                     if job:
                         # Domain analysis
                         domains[job.domain] = domains.get(job.domain, 0) + 1
                         locations[job.location] = locations.get(job.location, 0) + 1
                         
                         # Salary analysis (for applications only)
-                        if interaction.interaction_type == "applied":
+                        if interaction["interaction_type"] == "APPLIED":
                             avg_salary = (job.salary_min + job.salary_max) / 2
                             salaries.append(avg_salary)
             
             # Calculate engagement score
             # Weight different interaction types
             weights = {
-                "viewed": 1, "applied": 5, "saved": 3, "shared": 2, "rejected": -1
+                "VIEWED": 1, "APPLIED": 5, "SAVED": 3, "SHARED": 2, "REJECTED": -1
             }
             engagement_score = sum(
-                weights.get(interaction.interaction_type, 0) 
+                weights.get(interaction["interaction_type"], 0) 
                 for interaction in interactions
             )
             
@@ -274,7 +325,7 @@ class InteractionService:
                 "total_interactions": len(interactions),
                 "total_applications": len(applications),
                 "application_rate": application_rate,
-                "most_recent_application": most_recent_application.created_at.isoformat() if most_recent_application else None,
+                "most_recent_application": most_recent_application["timestamp"] if most_recent_application else None,
                 "avg_view_to_apply_hours": avg_view_to_apply_hours,
                 "engagement_score": engagement_score,
                 "preferred_domains": domains,
@@ -420,6 +471,74 @@ class InteractionService:
         except Exception as e:
             logger.error(f"Failed to calculate behavior similarity: {e}")
             return 0.0
+
+    async def get_recent_interactions(
+        self,
+        db: AsyncSession,
+        limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent interactions across all candidates for dashboard view
+        
+        Args:
+            db: Database session
+            limit: Number of recent interactions to return
+            
+        Returns:
+            List of recent interactions with candidate and job details
+        """
+        try:
+            from sqlalchemy.sql import text
+            
+            # Debug: Check if there are any interactions at all
+            debug_result = await db.execute(text("SELECT COUNT(*) FROM interaction_log WHERE user_type = 'candidate'"))
+            total_interactions = debug_result.scalar()
+            logger.info(f"Total candidate interactions in database: {total_interactions}")
+            
+            # Use raw SQL to join with candidates and jobs tables
+            
+            sql = text("""
+                SELECT 
+                    i.id,
+                    i.user_id as candidate_id,
+                    i.job_id,
+                    i.interaction_type,
+                    i.timestamp,
+                    c.name as candidate_name,
+                    c.email as candidate_email,
+                    j.title as job_title,
+                    j.company
+                FROM interaction_log i
+                LEFT JOIN candidates c ON i.user_id = c.id
+                LEFT JOIN jobs j ON i.job_id = j.id
+                WHERE i.user_type = 'candidate'
+                ORDER BY i.timestamp DESC
+                LIMIT :limit
+            """)
+            
+            result = await db.execute(sql, {"limit": limit})
+            rows = result.fetchall()
+            
+            interactions = []
+            for row in rows:
+                interaction = {
+                    "id": row.id,
+                    "candidate_id": row.candidate_id,
+                    "job_id": row.job_id,
+                    "interaction_type": row.interaction_type,
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                    "candidate_name": row.candidate_name or "Unknown",
+                    "candidate_email": row.candidate_email or "",
+                    "job_title": row.job_title or f"Job #{row.job_id}",
+                    "company": row.company or ""
+                }
+                interactions.append(interaction)
+            
+            return interactions
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent interactions: {e}")
+            return []
 
 # Global instance
 interaction_service = InteractionService() 

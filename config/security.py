@@ -54,8 +54,12 @@ class SecurityConfig:
         "UPDATE", "EXEC", "EXECUTE", "UNION", "SELECT", "SCRIPT"
     ]
 
-# Password Hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password Hashing - Optimized for performance
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__rounds=12  # Balanced security vs performance (default is 12, reduce to 10-11 for better performance)
+)
 
 # In-memory storage for development (replaces Redis)
 _refresh_tokens = {}

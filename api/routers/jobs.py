@@ -232,11 +232,11 @@ async def list_jobs_public(
         # Use a simpler query without loading relationships to avoid prepared statement issues
         query = select(Job)
         
-        # Apply filters
+        # Apply filters with case-insensitive partial matching
         if location:
-            query = query.where(Job.location == location)
+            query = query.where(Job.location.ilike(f"%{location}%"))
         if domain:
-            query = query.where(Job.domain == domain)
+            query = query.where(Job.domain.ilike(f"%{domain}%"))
         if salary_min is not None:
             query = query.where(Job.salary_min >= salary_min)
         if salary_max is not None:
@@ -391,101 +391,86 @@ async def add_mandatory_skill(
 async def list_jobs(
     location: Optional[str] = Query(None, description="Filter by location"),
     domain: Optional[str] = Query(None, description="Filter by domain"),
+    title: Optional[str] = Query(None, description="Filter by job title"),
+    company: Optional[str] = Query(None, description="Filter by company name"),
+    search: Optional[str] = Query(None, description="Search across location, title, domain, and company"),
     salary_min: Optional[int] = Query(None, ge=0, description="Minimum salary"),
     salary_max: Optional[int] = Query(None, ge=0, description="Maximum salary"),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """List jobs with filters using raw SQL to avoid prepared statements
-
-    Note:
-    - The previous implementation applied LIMIT/OFFSET directly to a result set
-      that included a LEFT JOIN to `job_mandatory_skills`. Since each job can
-      have multiple mandatory skills, LIMIT was effectively capping joined rows
-      rather than distinct jobs, which could result in only a few unique jobs
-      being returned (e.g., 3 jobs when LIMIT was 10).
-    - This version first selects the latest job IDs using LIMIT/OFFSET, and then
-      joins skills for just those jobs. This ensures up to `limit` distinct jobs
-      are returned by default.
-    """
+    """List jobs with enhanced filters - NO prepared statements"""
     try:
-        # Common filter clause reused in both the ID preselect and the final fetch
-        filters_sql = ""
-        params = {}
-
+        # Build filter dictionary for ORM query
+        filters = {}
+        
+        # Individual filters
         if location:
-            filters_sql += " AND j.location = :location"
-            params["location"] = location
-
+            filters["location"] = location
         if domain:
-            filters_sql += " AND j.domain = :domain"
-            params["domain"] = domain
-
+            filters["domain"] = domain
+        if title:
+            filters["title"] = title
+        if company:
+            filters["company"] = company
         if salary_min is not None:
-            filters_sql += " AND j.salary_min >= :salary_min"
-            params["salary_min"] = salary_min
-
+            filters["salary_min"] = salary_min
         if salary_max is not None:
-            filters_sql += " AND j.salary_max <= :salary_max"
-            params["salary_max"] = salary_max
-
-        # Two-step query: first pick job IDs (distinct jobs) with limit/offset, then join skills
-        query = f"""
-            WITH job_ids AS (
-                SELECT j.id
-                FROM jobs j
-                WHERE 1=1
-                {filters_sql}
-                ORDER BY j.created_at DESC
-                LIMIT :limit OFFSET :offset
-            )
-            SELECT j.*, jms.skill, jms.min_experience, jms.id as skill_id,
-                   jms.created_at as skill_created_at, jms.updated_at as skill_updated_at
-            FROM jobs j
-            LEFT JOIN job_mandatory_skills jms ON j.id = jms.job_id
-            WHERE j.id IN (SELECT id FROM job_ids)
-            ORDER BY j.created_at DESC, jms.id
-        """
-
-        params["limit"] = limit
-        params["offset"] = skip
-
-        # Execute raw SQL
-        result = await db.execute(text(query), params)
-        rows = result.fetchall()
-        
-        # Group by job
-        jobs = {}
-        for row in rows:
-            job_id = row.id
-            if job_id not in jobs:
-                jobs[job_id] = {
-                    "id": row.id,
-                    "title": row.title,
-                    "company": row.company,
-                    "location": row.location,
-                    "salary_min": row.salary_min,
-                    "salary_max": row.salary_max,
-                    "domain": row.domain,
-                    "total_years_required": row.total_years_required,
-                    "job_description": row.job_description,
-                    "created_at": row.created_at,
-                    "updated_at": row.updated_at,
-                    "mandatory_skills": []
-                }
+            filters["salary_max"] = salary_max
             
-            if row.skill:
-                jobs[job_id]["mandatory_skills"].append({
-                    "id": row.skill_id,
-                    "skill": row.skill,
-                    "min_experience": row.min_experience,
-                    "job_id": job_id,
-                    "created_at": row.skill_created_at,
-                    "updated_at": row.skill_updated_at
-                })
+        # Use enhanced search method
+        if search:
+            # Search across multiple fields
+            jobs = await job_crud.search_jobs_enhanced(
+                db=db,
+                search_query=search,
+                filters=filters,
+                skip=skip,
+                limit=limit
+            )
+        else:
+            # Use regular filters
+            jobs = await job_crud.get_multi_with_filters_enhanced(
+                db=db,
+                filters=filters,
+                skip=skip,
+                limit=limit
+            )
         
-        return list(jobs.values())
+        # Convert to response format
+        job_responses = []
+        for job in jobs:
+            job_response = {
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "salary_min": job.salary_min,
+                "salary_max": job.salary_max,
+                "domain": job.domain,
+                "total_years_required": job.total_years_required,
+                "job_description": job.job_description,
+                "created_at": job.created_at,
+                "updated_at": job.updated_at,
+                "mandatory_skills": []
+            }
+            
+            # Add mandatory skills if they exist
+            if hasattr(job, 'mandatory_skills') and job.mandatory_skills:
+                for skill in job.mandatory_skills:
+                    job_response["mandatory_skills"].append({
+                        "id": skill.id,
+                        "skill": skill.skill,
+                        "min_experience": skill.min_experience,
+                        "job_id": job.id,
+                        "created_at": skill.created_at,
+                        "updated_at": skill.updated_at
+                    })
+            
+            job_responses.append(job_response)
+        
+        return job_responses
         
     except Exception as e:
         logger.error(f"Error listing jobs: {e}")
@@ -537,6 +522,157 @@ async def get_recruiter_jobs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve recruiter jobs. Please try again later."
         )
+
+@router.get("/autocomplete/locations")
+async def get_location_suggestions(
+    q: str = Query(..., min_length=1, description="Location query string"),
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get location autocomplete suggestions"""
+    try:
+        suggestions = await job_crud.get_location_suggestions(db, q, limit)
+        return {
+            "suggestions": suggestions,
+            "query": q,
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.error(f"Error getting location suggestions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get location suggestions"
+        )
+
+@router.get("/autocomplete/domains")
+async def get_domain_suggestions(
+    q: str = Query(..., min_length=1, description="Domain query string"),
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get domain autocomplete suggestions"""
+    try:
+        suggestions = await job_crud.get_domain_suggestions(db, q, limit)
+        return {
+            "suggestions": suggestions,
+            "query": q,
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.error(f"Error getting domain suggestions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get domain suggestions"
+        )
+
+@router.get("/autocomplete/titles")
+async def get_title_suggestions(
+    q: str = Query(..., min_length=1, description="Job title query string"),
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get job title autocomplete suggestions"""
+    try:
+        suggestions = await job_crud.get_title_suggestions(db, q, limit)
+        return {
+            "suggestions": suggestions,
+            "query": q,
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.error(f"Error getting title suggestions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get title suggestions"
+        )
+
+@router.get("/autocomplete/companies")
+async def get_company_suggestions(
+    q: str = Query(..., min_length=1, description="Company name query string"),
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get company name autocomplete suggestions"""
+    try:
+        suggestions = await job_crud.get_company_suggestions(db, q, limit)
+        return {
+            "suggestions": suggestions,
+            "query": q,
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.error(f"Error getting company suggestions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get company suggestions"
+        )
+
+@router.get("/search/help")
+async def get_search_help():
+    """Get help documentation for job search features"""
+    return {
+        "search_filters": {
+            "individual_filters": {
+                "location": {
+                    "description": "Filter by job location (case-insensitive partial match)",
+                    "example": "?location=USA",
+                    "note": "Finds 'USA', 'Usa', 'United States', etc."
+                },
+                "domain": {
+                    "description": "Filter by job domain (case-insensitive partial match)", 
+                    "example": "?domain=Tech",
+                    "note": "Finds 'Technology', 'Technical', 'Fintech', etc."
+                },
+                "title": {
+                    "description": "Filter by job title (case-insensitive partial match)",
+                    "example": "?title=Engineer", 
+                    "note": "Finds 'Software Engineer', 'Data Engineer', etc."
+                },
+                "company": {
+                    "description": "Filter by company name (case-insensitive partial match)",
+                    "example": "?company=Google",
+                    "note": "Finds 'Google', 'Google Inc', etc."
+                },
+                "salary_min": {
+                    "description": "Minimum salary filter",
+                    "example": "?salary_min=50000"
+                },
+                "salary_max": {
+                    "description": "Maximum salary filter", 
+                    "example": "?salary_max=100000"
+                }
+            },
+            "combined_search": {
+                "search": {
+                    "description": "Search across location, title, domain, company, and description",
+                    "example": "?search=Python",
+                    "note": "Searches all fields with OR logic - finds jobs with 'Python' in any field"
+                }
+            },
+            "combination_examples": [
+                "?location=USA&domain=Tech&salary_min=70000",
+                "?search=Python&salary_min=80000",
+                "?title=Engineer&company=Google&location=California"
+            ]
+        },
+        "autocomplete_endpoints": {
+            "locations": "/api/v1/jobs/autocomplete/locations?q=New&limit=5",
+            "domains": "/api/v1/jobs/autocomplete/domains?q=Tech&limit=5", 
+            "titles": "/api/v1/jobs/autocomplete/titles?q=Engineer&limit=5",
+            "companies": "/api/v1/jobs/autocomplete/companies?q=Google&limit=5"
+        },
+        "pagination": {
+            "skip": "Number of records to skip (default: 0)",
+            "limit": "Maximum records to return (default: 10, max: 100)"
+        },
+        "notes": [
+            "All text searches are case-insensitive and support partial matching",
+            "Combine multiple filters with AND logic", 
+            "Use 'search' parameter for OR logic across multiple fields",
+            "Autocomplete suggestions are limited to 5-10 results",
+            "All endpoints return jobs ordered by creation date (newest first)"
+        ]
+    }
 
 @router.get("/recommendations", response_model=List[JobResponseSimple])
 async def get_job_recommendations(

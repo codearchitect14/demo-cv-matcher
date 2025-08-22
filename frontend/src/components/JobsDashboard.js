@@ -11,9 +11,17 @@ const JobsDashboard = () => {
   const [showSkillsForm, setShowSkillsForm] = useState(false);
   const [filters, setFilters] = useState({
     location: '',
+    title: '',
+    company: '',
     skip: 0,
     limit: 10
   });
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [titleSuggestions, setTitleSuggestions] = useState([]);
+  const [companySuggestions, setCompanySuggestions] = useState([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     company: '',
@@ -78,19 +86,20 @@ const JobsDashboard = () => {
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      console.log('Fetching jobs...');
+      console.log('Fetching jobs with filters:', filters);
       
       const queryParams = new URLSearchParams({
         skip: filters.skip,
         limit: filters.limit,
-        ...(filters.location && { location: filters.location })
+        ...(filters.location && { location: filters.location }),
+        ...(filters.title && { title: filters.title }),
+        ...(filters.company && { company: filters.company })
       });
       
       const url = `http://localhost:8000/api/v1/jobs/?${queryParams}`;
       console.log('Fetching from URL:', url);
       
       const response = await fetch(url);
-      
       console.log('Response status:', response.status);
       
       if (response.ok) {
@@ -98,6 +107,7 @@ const JobsDashboard = () => {
         console.log('Jobs data received:', data);
         console.log('Number of jobs:', data.length);
         setJobs(data);
+        setError(''); // Clear any previous errors
       } else {
         const errorData = await response.json();
         console.error('Error response:', errorData);
@@ -112,6 +122,65 @@ const JobsDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Autocomplete functions
+  const fetchLocationSuggestions = async (query) => {
+    if (query.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/jobs/autocomplete/locations?q=${encodeURIComponent(query)}&limit=5`);
+      if (response.ok) {
+        const data = await response.json();
+        setLocationSuggestions(data.suggestions || []);
+      }
+    } catch (err) {
+      console.error('Error fetching location suggestions:', err);
+    }
+  };
+
+  const fetchTitleSuggestions = async (query) => {
+    if (query.length < 2) {
+      setTitleSuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/jobs/autocomplete/titles?q=${encodeURIComponent(query)}&limit=5`);
+      if (response.ok) {
+        const data = await response.json();
+        setTitleSuggestions(data.suggestions || []);
+      }
+    } catch (err) {
+      console.error('Error fetching title suggestions:', err);
+    }
+  };
+
+  const fetchCompanySuggestions = async (query) => {
+    if (query.length < 2) {
+      setCompanySuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/jobs/autocomplete/companies?q=${encodeURIComponent(query)}&limit=5`);
+      if (response.ok) {
+        const data = await response.json();
+        setCompanySuggestions(data.suggestions || []);
+      }
+    } catch (err) {
+      console.error('Error fetching company suggestions:', err);
+    }
+  };
+
+  const clearAllFilters = () => {
+    setFilters({
+      location: '',
+      title: '',
+      company: '',
+      skip: 0,
+      limit: 10
+    });
   };
 
   const handleCreateJob = async (e) => {
@@ -270,73 +339,185 @@ const JobsDashboard = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="dashboard-content">
-        {/* Filters Bar */}
-        <div className="filters-bar">
-          <div className="filters-section">
-            <div className="filter-group">
+      {/* Main Content - Sidebar Layout */}
+      <div className="dashboard-layout">
+        {/* Left Sidebar - Search Filters */}
+        <div className="filters-sidebar">
+          <div className="sidebar-header">
+            <h3 className="sidebar-title">Search & Filter Jobs</h3>
+            <button 
+              className="btn-clear-filters"
+              onClick={clearAllFilters}
+              title="Clear all filters"
+            >
+              Clear All
+            </button>
+          </div>
+
+          {/* Job Filters */}
+          <div className="filter-section">
+            
+            {/* Location Filter with Autocomplete */}
+            <div className="filter-group autocomplete-group">
               <label htmlFor="filter-location">Location</label>
-              <input
-                id="filter-location"
-                aria-label="Filter jobs by location"
-                type="text"
-                placeholder="Filter by location"
-                value={filters.location}
-                onChange={(e) => setFilters({...filters, location: e.target.value})}
-                className="filter-input"
-              />
+              <div className="autocomplete-wrapper">
+                <input
+                  id="filter-location"
+                  type="text"
+                  placeholder="e.g., New York, USA"
+                  value={filters.location}
+                  onChange={(e) => {
+                    setFilters({...filters, location: e.target.value});
+                    fetchLocationSuggestions(e.target.value);
+                    setShowLocationSuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                  className="filter-input"
+                />
+                {showLocationSuggestions && locationSuggestions.length > 0 && (
+                  <div className="autocomplete-dropdown">
+                    {locationSuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="autocomplete-item"
+                        onClick={() => {
+                          setFilters({...filters, location: suggestion});
+                          setShowLocationSuggestions(false);
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="filter-group">
-              <label htmlFor="filter-limit">Limit</label>
-              <select
-                id="filter-limit"
-                aria-label="Number of jobs to display"
-                value={filters.limit}
-                onChange={(e) => setFilters({...filters, limit: parseInt(e.target.value)})}
-                className="filter-select"
-              >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
+
+            {/* Job Title Filter with Autocomplete */}
+            <div className="filter-group autocomplete-group">
+              <label htmlFor="filter-title">Job Title</label>
+              <div className="autocomplete-wrapper">
+                <input
+                  id="filter-title"
+                  type="text"
+                  placeholder="e.g., Software Engineer"
+                  value={filters.title}
+                  onChange={(e) => {
+                    setFilters({...filters, title: e.target.value});
+                    fetchTitleSuggestions(e.target.value);
+                    setShowTitleSuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
+                  className="filter-input"
+                />
+                {showTitleSuggestions && titleSuggestions.length > 0 && (
+                  <div className="autocomplete-dropdown">
+                    {titleSuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="autocomplete-item"
+                        onClick={() => {
+                          setFilters({...filters, title: suggestion});
+                          setShowTitleSuggestions(false);
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Company Filter with Autocomplete */}
+            <div className="filter-group autocomplete-group">
+              <label htmlFor="filter-company">Company</label>
+              <div className="autocomplete-wrapper">
+                <input
+                  id="filter-company"
+                  type="text"
+                  placeholder="e.g., Google, Microsoft"
+                  value={filters.company}
+                  onChange={(e) => {
+                    setFilters({...filters, company: e.target.value});
+                    fetchCompanySuggestions(e.target.value);
+                    setShowCompanySuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)}
+                  className="filter-input"
+                />
+                {showCompanySuggestions && companySuggestions.length > 0 && (
+                  <div className="autocomplete-dropdown">
+                    {companySuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="autocomplete-item"
+                        onClick={() => {
+                          setFilters({...filters, company: suggestion});
+                          setShowCompanySuggestions(false);
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="error-banner" role="alert" aria-live="polite">
-            <span className="error-icon">⚠️</span>
-            {error}
-            <button 
-              className="error-close"
-              onClick={() => setError('')}
-            >
-              ✕
-            </button>
-          </div>
-        )}
+        {/* Right Side - Job Results */}
+        <div className="jobs-content">
+          {/* Error Message */}
+          {error && (
+            <div className="error-banner" role="alert" aria-live="polite">
+              <span className="error-icon">⚠️</span>
+              {error}
+              <button 
+                className="error-close"
+                onClick={() => setError('')}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
-        {/* Jobs Grid */}
-        <div className="jobs-section">
-          <h2 className="section-title">
-            Jobs ({jobs.length})
-            {loading && <span className="loading-spinner">⏳</span>}
-          </h2>
+          {/* Results Header */}
+          <div className="results-header">
+            <h2 className="results-title">
+              Job Results ({jobs.length})
+              {loading && <span className="loading-spinner">⏳</span>}
+            </h2>
+            <div className="results-info">
+              {Object.values(filters).some(value => value && value !== 0 && value !== 10) && (
+                <span className="filters-active">Filters Active</span>
+              )}
+            </div>
+          </div>
           
           {jobs.length === 0 && !loading ? (
             <div className="empty-state">
               <div className="empty-icon">📋</div>
               <h3>No jobs found</h3>
-              <p>Start by posting your first job!</p>
-              <button 
-                className="btn-primary"
-                onClick={() => setShowForm(true)}
-              >
-                Post Your First Job
-              </button>
+              <p>Try adjusting your search filters or post your first job!</p>
+              <div className="empty-actions">
+                <button 
+                  className="btn-primary"
+                  onClick={() => setShowForm(true)}
+                >
+                  <span className="btn-icon">➕</span>
+                  Post New Job
+                </button>
+                <button 
+                  className="btn-secondary"
+                  onClick={clearAllFilters}
+                >
+                  <span className="btn-icon">🗑️</span>
+                  Clear Filters
+                </button>
+              </div>
             </div>
           ) : (
             <div className="jobs-grid">

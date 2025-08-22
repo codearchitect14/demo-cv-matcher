@@ -56,11 +56,11 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         return result.scalars().all()
 
     async def get_by_location(self, db: AsyncSession, location: str) -> List[Job]:
-        """Get jobs by location with eager loading"""
+        """Get jobs by location with case-insensitive partial matching"""
         result = await db.execute(
             select(self.model)
             .options(selectinload(self.model.mandatory_skills))
-            .where(self.model.location == location)
+            .where(self.model.location.ilike(f"%{location}%"))
         )
         return result.scalars().all()
 
@@ -97,9 +97,9 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         if filters:
             conditions = []
             if filters.get("location"):
-                conditions.append(self.model.location == filters["location"])
+                conditions.append(self.model.location.ilike(f"%{filters['location']}%"))
             if filters.get("domain"):
-                conditions.append(self.model.domain == filters["domain"])
+                conditions.append(self.model.domain.ilike(f"%{filters['domain']}%"))
             if filters.get("salary_min") is not None:
                 conditions.append(self.model.salary_min >= filters["salary_min"])
             if filters.get("salary_max") is not None:
@@ -299,6 +299,242 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
             .where(self.model.created_at >= start_date)
         )
         return result.scalar()
+
+    async def get_location_suggestions(self, db: AsyncSession, query: str, limit: int = 5) -> List[str]:
+        """Get location suggestions for autocomplete"""
+        try:
+            # Use raw SQL with :param format to avoid prepared statement issues
+            result = await db.execute(text("""
+                SELECT DISTINCT location
+                FROM jobs
+                WHERE location ILIKE :query_param
+                ORDER BY location
+                LIMIT :limit_param
+            """), {"query_param": f"%{query}%", "limit_param": limit})
+            
+            rows = result.fetchall()
+            return [row[0] for row in rows if row[0]]  # Filter out None values
+            
+        except Exception as e:
+            logger.error(f"Error getting location suggestions: {e}")
+            return []
+
+    async def get_domain_suggestions(self, db: AsyncSession, query: str, limit: int = 5) -> List[str]:
+        """Get domain suggestions for autocomplete"""
+        try:
+            # Use raw SQL with :param format to avoid prepared statement issues
+            result = await db.execute(text("""
+                SELECT DISTINCT domain
+                FROM jobs
+                WHERE domain ILIKE :query_param
+                ORDER BY domain
+                LIMIT :limit_param
+            """), {"query_param": f"%{query}%", "limit_param": limit})
+            
+            rows = result.fetchall()
+            return [row[0] for row in rows if row[0]]  # Filter out None values
+            
+        except Exception as e:
+            logger.error(f"Error getting domain suggestions: {e}")
+            return []
+
+    async def get_title_suggestions(self, db: AsyncSession, query: str, limit: int = 5) -> List[str]:
+        """Get job title suggestions for autocomplete"""
+        try:
+            result = await db.execute(text("""
+                SELECT DISTINCT title
+                FROM jobs
+                WHERE title ILIKE :query_param
+                ORDER BY title
+                LIMIT :limit_param
+            """), {"query_param": f"%{query}%", "limit_param": limit})
+            
+            rows = result.fetchall()
+            return [row[0] for row in rows if row[0]]
+            
+        except Exception as e:
+            logger.error(f"Error getting title suggestions: {e}")
+            return []
+
+    async def get_company_suggestions(self, db: AsyncSession, query: str, limit: int = 5) -> List[str]:
+        """Get company name suggestions for autocomplete"""
+        try:
+            result = await db.execute(text("""
+                SELECT DISTINCT company
+                FROM jobs
+                WHERE company ILIKE :query_param
+                ORDER BY company
+                LIMIT :limit_param
+            """), {"query_param": f"%{query}%", "limit_param": limit})
+            
+            rows = result.fetchall()
+            return [row[0] for row in rows if row[0]]
+            
+        except Exception as e:
+            logger.error(f"Error getting company suggestions: {e}")
+            return []
+
+    async def get_multi_with_filters_enhanced(
+        self, db: AsyncSession, filters: dict = None, skip: int = 0, limit: int = 100
+    ) -> List[Job]:
+        """Enhanced job filtering using raw SQL - pgbouncer compatible"""
+        try:
+            logger.info(f"get_multi_with_filters_enhanced called with filters: {filters}, skip: {skip}, limit: {limit}")
+            
+            # Build the WHERE clause dynamically
+            where_conditions = []
+            params = {}
+            
+            if filters:
+                if filters.get("location"):
+                    where_conditions.append("location ILIKE :location_param")
+                    params["location_param"] = f"%{filters['location']}%"
+                    
+                if filters.get("title"):
+                    where_conditions.append("title ILIKE :title_param")
+                    params["title_param"] = f"%{filters['title']}%"
+                    
+                if filters.get("company"):
+                    where_conditions.append("company ILIKE :company_param")
+                    params["company_param"] = f"%{filters['company']}%"
+                    
+                if filters.get("domain"):
+                    where_conditions.append("domain ILIKE :domain_param")
+                    params["domain_param"] = f"%{filters['domain']}%"
+                    
+                if filters.get("salary_min") is not None:
+                    where_conditions.append("salary_min >= :salary_min_param")
+                    params["salary_min_param"] = filters["salary_min"]
+                    
+                if filters.get("salary_max") is not None:
+                    where_conditions.append("salary_max <= :salary_max_param")
+                    params["salary_max_param"] = filters["salary_max"]
+            
+            # Build the complete query
+            base_query = """
+                SELECT id, title, company, location, salary_min, salary_max, 
+                       domain, total_years_required, job_description, created_at, updated_at
+                FROM jobs
+            """
+            
+            if where_conditions:
+                base_query += " WHERE " + " AND ".join(where_conditions)
+            
+            base_query += " ORDER BY created_at DESC LIMIT :limit_param OFFSET :skip_param"
+            
+            # Add limit and skip params
+            params["limit_param"] = limit
+            params["skip_param"] = skip
+            
+            logger.info(f"Executing query: {base_query}")
+            logger.info(f"With parameters: {params}")
+            
+            result = await db.execute(text(base_query), params)
+            rows = result.fetchall()
+            
+            logger.info(f"Query returned {len(rows)} rows")
+            
+            # Convert rows to Job objects
+            jobs = []
+            for row in rows:
+                job = Job(
+                    id=row.id,
+                    title=row.title,
+                    company=row.company,
+                    location=row.location,
+                    salary_min=row.salary_min,
+                    salary_max=row.salary_max,
+                    domain=row.domain,
+                    total_years_required=row.total_years_required,
+                    job_description=row.job_description,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at
+                )
+                # Set empty mandatory_skills for now to avoid additional queries
+                job.mandatory_skills = []
+                jobs.append(job)
+            
+            logger.info(f"Returning {len(jobs)} jobs")
+            return jobs
+            
+        except Exception as e:
+            logger.error(f"Error in get_multi_with_filters_enhanced: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+
+    async def search_jobs_enhanced(
+        self, db: AsyncSession, search_query: str, filters: dict = None, skip: int = 0, limit: int = 100
+    ) -> List[Job]:
+        """Enhanced search across multiple fields using raw SQL - pgbouncer compatible"""
+        try:
+            # Build the search query with OR conditions
+            params = {
+                "search_param": f"%{search_query}%",
+                "limit_param": limit,
+                "skip_param": skip
+            }
+            
+            search_conditions = [
+                "location ILIKE :search_param",
+                "domain ILIKE :search_param", 
+                "title ILIKE :search_param",
+                "company ILIKE :search_param",
+                "job_description ILIKE :search_param"
+            ]
+            
+            # Build the complete query
+            base_query = """
+                SELECT id, title, company, location, salary_min, salary_max, 
+                       domain, total_years_required, job_description, created_at, updated_at
+                FROM jobs
+                WHERE ({})
+            """.format(" OR ".join(search_conditions))
+            
+            # Apply additional filters if provided
+            if filters:
+                additional_conditions = []
+                
+                if filters.get("salary_min") is not None:
+                    additional_conditions.append("salary_min >= :salary_min_param")
+                    params["salary_min_param"] = filters["salary_min"]
+                if filters.get("salary_max") is not None:
+                    additional_conditions.append("salary_max <= :salary_max_param")
+                    params["salary_max_param"] = filters["salary_max"]
+                
+                if additional_conditions:
+                    base_query += " AND " + " AND ".join(additional_conditions)
+            
+            base_query += " ORDER BY created_at DESC LIMIT :limit_param OFFSET :skip_param"
+            
+            result = await db.execute(text(base_query), params)
+            rows = result.fetchall()
+            
+            # Convert rows to Job objects
+            jobs = []
+            for row in rows:
+                job = Job(
+                    id=row.id,
+                    title=row.title,
+                    company=row.company,
+                    location=row.location,
+                    salary_min=row.salary_min,
+                    salary_max=row.salary_max,
+                    domain=row.domain,
+                    total_years_required=row.total_years_required,
+                    job_description=row.job_description,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at
+                )
+                # Set empty mandatory_skills for now to avoid additional queries
+                job.mandatory_skills = []
+                jobs.append(job)
+            
+            return jobs
+            
+        except Exception as e:
+            logger.error(f"Error in search_jobs_enhanced: {e}")
+            return []
 
     async def get_with_skills_raw_sql(self, db: AsyncSession, id: int) -> Optional[Dict]:
         """Get job with mandatory skills using raw SQL to avoid prepared statements"""

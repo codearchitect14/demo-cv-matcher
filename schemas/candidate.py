@@ -73,7 +73,7 @@ class CandidateBase(BaseModel):
     domain: str = Field(..., min_length=1, max_length=50)
     expected_salary_min: Optional[int] = Field(None, ge=0, le=1000000)
     expected_salary_max: Optional[int] = Field(None, ge=0, le=1000000)
-    summary: str = Field(..., min_length=1, max_length=2000)
+    summary: Optional[str] = Field(None, min_length=1, max_length=2000)
     role: str = Field("user", max_length=20)
 
     @validator('name')
@@ -94,7 +94,9 @@ class CandidateBase(BaseModel):
 
     @validator('summary')
     def validate_summary(cls, v):
-        return DescriptionValidation(description=v).description
+        if v is not None:
+            return DescriptionValidation(description=v).description
+        return v
 
     @validator('expected_salary_min', 'expected_salary_max')
     def validate_salary(cls, v):

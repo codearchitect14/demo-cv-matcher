@@ -14,6 +14,14 @@ const InteractionsAnalytics = () => {
   const [perPage, setPerPage] = useState(10);
   const [showLogForm, setShowLogForm] = useState(false);
   
+  // New smart search states
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [candidateSuggestions, setCandidateSuggestions] = useState([]);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recentInteractions, setRecentInteractions] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  
   // Interaction history params
   const [interactionParams, setInteractionParams] = useState({
     candidate_id: '',
@@ -37,12 +45,81 @@ const InteractionsAnalytics = () => {
   const [logFormData, setLogFormData] = useState({
     user_id: '',
     job_id: '',
-    interaction_type: 'viewed'
+    interaction_type: 'VIEWED'
   });
 
-  const fetchInteractionHistory = async () => {
-    if (!interactionParams.candidate_id) {
-      setError('Please enter a candidate ID');
+    // Search candidates function with debouncing and performance optimizations
+  const searchCandidates = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setCandidateSuggestions([]);
+      setShowSuggestions(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      // Try to search candidates with error handling and timeout
+      const response = await fetch(
+        `http://localhost:8000/api/v1/candidates/?search=${encodeURIComponent(searchTerm)}&limit=10`, 
+        { 
+          headers,
+          signal: controller.signal
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCandidateSuggestions(data || []);
+        setShowSuggestions(true);
+      } else {
+        // If API fails, show empty suggestions
+        console.warn('Candidate search API failed');
+        setCandidateSuggestions([]);
+        setShowSuggestions(false);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.warn('Search request timed out');
+      } else {
+        console.error('Search error:', err);
+      }
+      // Fallback to empty suggestions on network error
+      setCandidateSuggestions([]);
+      setShowSuggestions(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Debounced search function with better performance
+  const debouncedSearch = React.useCallback(
+    React.useMemo(() => {
+      let timeoutId;
+      return (searchTerm) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          searchCandidates(searchTerm);
+        }, 500); // Increased to 500ms for better performance
+      };
+    }, []),
+    []
+  );
+
+  const fetchInteractionHistory = async (candidateId = null) => {
+    const targetCandidateId = candidateId || selectedCandidate?.id;
+    
+    if (!targetCandidateId) {
+      setError('Please select a candidate');
       return;
     }
 
@@ -59,8 +136,8 @@ const InteractionsAnalytics = () => {
 
       // Use public (no-auth) endpoint if no token is present
       const basePath = token
-        ? `http://localhost:8000/api/v1/interactions/candidates/${interactionParams.candidate_id}/interactions`
-        : `http://localhost:8000/api/v1/interactions/public/candidates/${interactionParams.candidate_id}/interactions`;
+        ? `http://localhost:8000/api/v1/interactions/candidates/${targetCandidateId}/interactions`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${targetCandidateId}/interactions`;
 
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
@@ -79,6 +156,34 @@ const InteractionsAnalytics = () => {
     } catch (err) {
       setError('Network error');
     } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch recent interactions for default view
+  const fetchRecentInteractions = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      // Fetch recent interactions across all candidates
+      const response = await fetch(`http://localhost:8000/api/v1/interactions/recent/?limit=20`, { headers });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setRecentInteractions(data);
+             } else {
+         // Show empty interactions if API fails
+         console.warn('Recent interactions API failed');
+         setRecentInteractions([]);
+       }
+         } catch (err) {
+       console.error('Network error:', err);
+       // Fallback to empty interactions
+       setRecentInteractions([]);
+     } finally {
       setLoading(false);
     }
   };
@@ -128,8 +233,8 @@ const InteractionsAnalytics = () => {
   };
 
   const fetchBehaviorPatterns = async () => {
-    if (!behaviorParams.candidate_id) {
-      setError('Please enter a candidate ID');
+    if (!selectedCandidate) {
+      setError('Please select a candidate');
       return;
     }
 
@@ -142,8 +247,8 @@ const InteractionsAnalytics = () => {
       });
 
       const basePath = token
-        ? `http://localhost:8000/api/v1/interactions/candidates/${behaviorParams.candidate_id}/behavior-patterns`
-        : `http://localhost:8000/api/v1/interactions/public/candidates/${behaviorParams.candidate_id}/behavior-patterns`;
+        ? `http://localhost:8000/api/v1/interactions/candidates/${selectedCandidate.id}/behavior-patterns`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${selectedCandidate.id}/behavior-patterns`;
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       const response = await fetch(`${basePath}?${queryParams}`, { headers });
       
@@ -165,8 +270,8 @@ const InteractionsAnalytics = () => {
   };
 
   const fetchSimilarUsers = async () => {
-    if (!similarUsersParams.candidate_id) {
-      setError('Please enter a candidate ID');
+    if (!selectedCandidate) {
+      setError('Please select a candidate');
       return;
     }
 
@@ -179,8 +284,8 @@ const InteractionsAnalytics = () => {
       });
 
       const basePath = token
-        ? `http://localhost:8000/api/v1/interactions/candidates/${similarUsersParams.candidate_id}/similar-users`
-        : `http://localhost:8000/api/v1/interactions/public/candidates/${similarUsersParams.candidate_id}/similar-users`;
+        ? `http://localhost:8000/api/v1/interactions/candidates/${selectedCandidate.id}/similar-users`
+        : `http://localhost:8000/api/v1/interactions/public/candidates/${selectedCandidate.id}/similar-users`;
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       const response = await fetch(`${basePath}?${queryParams}`, { headers });
       
@@ -221,7 +326,7 @@ const InteractionsAnalytics = () => {
         setLogFormData({
           user_id: '',
           job_id: '',
-          interaction_type: 'viewed'
+          interaction_type: 'VIEWED'
         });
       } else {
         const errorData = await response.json();
@@ -239,11 +344,11 @@ const InteractionsAnalytics = () => {
 
   const getInteractionTypeColor = (type) => {
     switch (type) {
-      case 'viewed':
+      case 'VIEWED':
         return '#17a2b8';
-      case 'applied':
+      case 'APPLIED':
         return '#28a745';
-      case 'rejected':
+      case 'REJECTED':
         return '#dc3545';
       default:
         return '#6c757d';
@@ -257,6 +362,57 @@ const InteractionsAnalytics = () => {
     return '#dc3545';
   };
 
+  // Handler functions for smart search
+  const handleCandidateSearchChange = (e) => {
+    const value = e.target.value;
+    setCandidateSearch(value);
+    debouncedSearch(value);
+  };
+
+  const handleCandidateSelect = (candidate) => {
+    setSelectedCandidate(candidate);
+    setCandidateSearch(`${candidate.name} — ${candidate.email}`);
+    setShowSuggestions(false);
+    // Automatically fetch interactions for selected candidate
+    fetchInteractionHistory(candidate.id);
+    // Also fetch behavior patterns if we're on the behavior tab
+    if (activeTab === 'behavior') {
+      fetchBehaviorPatterns();
+    }
+    // Also fetch similar users if we're on the similar tab
+    if (activeTab === 'similar') {
+      fetchSimilarUsers();
+    }
+  };
+
+  const clearCandidateSelection = () => {
+    setSelectedCandidate(null);
+    setCandidateSearch('');
+    setInteractions([]);
+    setBehaviorPatterns({});
+    setSimilarUsers([]);
+    setShowSuggestions(false);
+  };
+
+  // Load recent interactions on component mount
+  useEffect(() => {
+    fetchRecentInteractions();
+  }, []);
+
+  // Auto-fetch behavior patterns when switching to behavior tab if candidate is selected
+  useEffect(() => {
+    if (activeTab === 'behavior' && selectedCandidate && Object.keys(behaviorPatterns).length === 0) {
+      fetchBehaviorPatterns();
+    }
+  }, [activeTab, selectedCandidate]);
+
+  // Auto-fetch similar users when switching to similar tab if candidate is selected
+  useEffect(() => {
+    if (activeTab === 'similar' && selectedCandidate && similarUsers.length === 0) {
+      fetchSimilarUsers();
+    }
+  }, [activeTab, selectedCandidate]);
+
   return (
     <div className="interactions-analytics">
       <div className="unified-header">
@@ -264,12 +420,16 @@ const InteractionsAnalytics = () => {
           <h1 className="header-title"><span className="title-icon">📊</span> Interactions Analytics</h1>
         </div>
         <div className="header-actions">
-          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>← Back to Dashboard</button>
+          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>Back</button>
           <button 
             className="btn-primary"
-            onClick={() => setShowLogForm(true)}
+            onClick={() => {
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('refresh_token');
+              window.location.href = '/';
+            }}
           >
-            Log Interaction
+            Logout
           </button>
         </div>
       </div>
@@ -306,139 +466,266 @@ const InteractionsAnalytics = () => {
         {activeTab === 'interactions' && (
           <div className="analytics-section">
             <h2>Interaction History</h2>
-            <div className="params-section">
-              <div className="param-group">
-                <label>Candidate ID:</label>
-                <input
-                  type="number"
-                  value={interactionParams.candidate_id}
-                  onChange={(e) => setInteractionParams({...interactionParams, candidate_id: e.target.value})}
-                  placeholder="Enter candidate ID"
-                />
-              </div>
-              <div className="param-group">
-                <label>Days Back:</label>
-                <select
-                  value={interactionParams.days_back}
-                  onChange={(e) => setInteractionParams({...interactionParams, days_back: parseInt(e.target.value)})}
-                >
-                  <option value={7}>7 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                  <option value={365}>365 days</option>
-                </select>
-              </div>
-              <div className="param-group">
-                <label>Interaction Types:</label>
-                <div className="checkbox-group">
-                  {['viewed', 'applied', 'rejected'].map(type => (
-                    <label key={type}>
-                      <input
-                        type="checkbox"
-                        checked={interactionParams.interaction_types.includes(type)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setInteractionParams({
-                              ...interactionParams,
-                              interaction_types: [...interactionParams.interaction_types, type]
-                            });
-                          } else {
-                            setInteractionParams({
-                              ...interactionParams,
-                              interaction_types: interactionParams.interaction_types.filter(t => t !== type)
-                            });
-                          }
-                        }}
-                      />
-                      {type}
-                    </label>
-                  ))}
+            
+            {/* Dashboard Layout with Sidebar */}
+            <div className="dashboard-layout">
+              {/* Filters Sidebar */}
+              <div className="filters-sidebar">
+                <div className="sidebar-header">
+                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
                 </div>
-              </div>
-              <button 
-                className="btn-primary"
-                onClick={fetchInteractionHistory}
-                disabled={loading}
-              >
-                {loading ? 'Loading...' : 'Get Interaction History'}
-              </button>
-            </div>
 
-            <div className="results-section">
-              <div className="table-controls">
-                <input className="search-input" placeholder="Search interactions..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-                <div className="quick-filters">
-                  {['viewed', 'applied', 'rejected'].map(t => (
-                    <button key={t} className={`quick-filter ${interactionParams.interaction_types.includes(t) ? 'active' : ''}`}
-                      onClick={() => {
-                        const exists = interactionParams.interaction_types.includes(t);
-                        const next = exists ? interactionParams.interaction_types.filter(x => x !== t) : [...interactionParams.interaction_types, t];
-                        setInteractionParams({ ...interactionParams, interaction_types: next });
-                      }}>
-                      {t}
+                {/* Smart Search Section */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Search Candidate</div>
+                  <div className="search-input-wrapper">
+                    <input
+                      type="text"
+                      value={candidateSearch}
+                      onChange={handleCandidateSearchChange}
+                      placeholder="Search candidate by name or email..."
+                      className="filter-input"
+                    />
+                    {selectedCandidate && (
+                      <button 
+                        className="clear-search-btn"
+                        onClick={clearCandidateSelection}
+                        title="Clear selection"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && candidateSuggestions.length > 0 && (
+                      <div className="suggestions-dropdown">
+                        {candidateSuggestions.map((candidate) => (
+                          <div
+                            key={candidate.id}
+                            className="suggestion-item"
+                            onClick={() => handleCandidateSelect(candidate)}
+                          >
+                            <div className="suggestion-main">
+                              <strong>{candidate.name}</strong>
+                              <span className="suggestion-email">— {candidate.email}</span>
+                            </div>
+                            <div className="suggestion-sub">
+                              {candidate.location && <span>Location: {candidate.location}</span>}
+                              {candidate.domain && <span>Domain: {candidate.domain}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Selected Candidate Profile */}
+                {selectedCandidate && (
+                  <div className="filter-section">
+                    <div className="filter-section-title">Selected Candidate</div>
+                    <div className="job-info-compact">
+                      <div className="job-detail-item">
+                        <strong>Name:</strong> {selectedCandidate.name}
+                      </div>
+                      <div className="job-detail-item">
+                        <strong>Email:</strong> {selectedCandidate.email}
+                      </div>
+                      {selectedCandidate.location && (
+                        <div className="job-detail-item">
+                          <strong>Location:</strong> {selectedCandidate.location}
+                        </div>
+                      )}
+                      {selectedCandidate.domain && (
+                        <div className="job-detail-item">
+                          <strong>Domain:</strong> {selectedCandidate.domain}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter Controls */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Time Period</div>
+                  <select
+                    className="filter-input"
+                    value={interactionParams.days_back}
+                    onChange={(e) => {
+                      setInteractionParams({...interactionParams, days_back: parseInt(e.target.value)});
+                      if (selectedCandidate) {
+                        fetchInteractionHistory();
+                      }
+                    }}
+                  >
+                    <option value={7}>Last 7 days</option>
+                    <option value={30}>Last 30 days</option>
+                    <option value={90}>Last 90 days</option>
+                  </select>
+                </div>
+                
+                <div className="filter-section">
+                  <div className="filter-section-title">Interaction Types</div>
+                  <div className="filter-group">
+                    {['VIEWED', 'APPLIED', 'REJECTED'].map(type => (
+                      <label key={type} className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={interactionParams.interaction_types.includes(type)}
+                          onChange={(e) => {
+                            const newTypes = e.target.checked
+                              ? [...interactionParams.interaction_types, type]
+                              : interactionParams.interaction_types.filter(t => t !== type);
+                            setInteractionParams({
+                              ...interactionParams,
+                              interaction_types: newTypes
+                            });
+                            if (selectedCandidate) {
+                              fetchInteractionHistory();
+                            }
+                          }}
+                        />
+                        <span className="checkbox-text">{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedCandidate && (
+                  <div className="filter-actions">
+                    <button 
+                      className="btn-clear" 
+                      onClick={clearCandidateSelection}
+                    >
+                      Clear Selection
                     </button>
-                  ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Results Content */}
+              <div className="candidates-content">
+                <div className="results-header">
+                  <h3 className="results-title">
+                    {selectedCandidate 
+                      ? `Interactions for ${selectedCandidate.name}` 
+                      : 'Recent Interactions'
+                    }
+                  </h3>
                 </div>
-              </div>
 
-              <div className="summary-cards">
-                <div className="summary-card"><span className="count">{interactions.length}</span><span className="label">Total</span></div>
-                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='applied').length}</span><span className="label">Applications</span></div>
-                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='viewed').length}</span><span className="label">Views</span></div>
-                <div className="summary-card"><span className="count">{interactions.filter(i=>i.interaction_type==='rejected').length}</span><span className="label">Rejections</span></div>
-              </div>
+              {/* Summary Cards */}
+              {selectedCandidate && (
+                <div className="summary-cards">
+                  <div className="summary-card">
+                    <span className="count">{interactions.length}</span>
+                    <span className="label">Total</span>
+                  </div>
+                  <div className="summary-card">
+                    <span className="count">{interactions.filter(i=>i.interaction_type==='APPLIED').length}</span>
+                    <span className="label">Applications</span>
+                  </div>
+                  <div className="summary-card">
+                    <span className="count">{interactions.filter(i=>i.interaction_type==='VIEWED').length}</span>
+                    <span className="label">Views</span>
+                  </div>
+                  <div className="summary-card">
+                    <span className="count">{interactions.filter(i=>i.interaction_type==='REJECTED').length}</span>
+                    <span className="label">Rejections</span>
+                  </div>
+                </div>
+              )}
 
-              {totalResults() > 0 ? (
+              {/* Interactions Table */}
+              {(selectedCandidate ? interactions.length > 0 : recentInteractions.length > 0) ? (
                 <div className="table-wrapper">
                   <table className="interactions-table" role="table" aria-label="Interaction history">
                     <thead>
                       <tr>
-                        <th onClick={() => toggleSort('timestamp')} className="sortable-header">Date <span className="sort-indicator">{sortBy.key==='timestamp' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
-                        <th onClick={() => toggleSort('interaction_type')} className="sortable-header">Interaction <span className="sort-indicator">{sortBy.key==='interaction_type' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
-                        <th onClick={() => toggleSort('user_id')} className="sortable-header">Candidate ID <span className="sort-indicator">{sortBy.key==='user_id' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
-                        <th onClick={() => toggleSort('job_id')} className="sortable-header">Job ID <span className="sort-indicator">{sortBy.key==='job_id' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span></th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th onClick={() => toggleSort('timestamp')} className="sortable-header">
+                          Date <span className="sort-indicator">{sortBy.key==='timestamp' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                        </th>
+                        <th onClick={() => toggleSort('interaction_type')} className="sortable-header">
+                          Type <span className="sort-indicator">{sortBy.key==='interaction_type' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                        </th>
+                        {!selectedCandidate && (
+                          <th onClick={() => toggleSort('candidate_name')} className="sortable-header">
+                            Candidate <span className="sort-indicator">{sortBy.key==='candidate_name' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                          </th>
+                        )}
+                        <th onClick={() => toggleSort('job_title')} className="sortable-header">
+                          Job Title <span className="sort-indicator">{sortBy.key==='job_title' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {paginated().map((row, idx) => (
+                      {(selectedCandidate ? filteredSorted() : recentInteractions).slice((page-1)*perPage, page*perPage).map((row, idx) => (
                         <tr key={row.id || idx}>
                           <td>{new Date(row.timestamp).toLocaleDateString()}</td>
                           <td>
-                            <span className={`status-badge ${row.interaction_type==='applied'?'status-applied': row.interaction_type==='rejected'?'status-rejected':'status-viewed'}`}>
+                            <span className={`status-badge ${row.interaction_type==='APPLIED'?'status-APPLIED': row.interaction_type==='REJECTED'?'status-REJECTED':'status-VIEWED'}`}>
                               {row.interaction_type}
                             </span>
                           </td>
-                          <td>{row.user_id}</td>
-                          <td>{row.job_id}</td>
-                          <td>
-                            <button className="page-btn" onClick={() => alert(`View job ${row.job_id}`)}>View</button>
-                          </td>
-                          <td>
-                            <button className="page-btn" onClick={() => alert(`Details for interaction ${row.id || idx}`)}>Details</button>
-                          </td>
+                          {!selectedCandidate && (
+                            <td>
+                              <div className="candidate-info">
+                                <strong>{row.candidate_name || 'Unknown'}</strong>
+                                <small>{row.candidate_email || ''}</small>
+                              </div>
+                            </td>
+                          )}
+                                                     <td>
+                             <div className="job-info">
+                               <strong>{row.job_title || `Job #${row.job_id}`}</strong>
+                               <small>{row.company || ''}</small>
+                             </div>
+                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="no-results">No interactions found</p>
+                <div className="no-results">
+                  {selectedCandidate 
+                    ? "No interactions found for this candidate in the selected time period."
+                    : "No recent interactions found."
+                  }
+                </div>
               )}
 
+              {/* Pagination */}
               <div className="table-footer">
-                <div>
-                  Showing {(page-1)*perPage + Math.min(perPage, paginated().length)} of {totalResults()} results
+                <div className="results-count">
+                  Showing {((page-1)*perPage + 1)} to {Math.min(page*perPage, selectedCandidate ? interactions.length : recentInteractions.length)} 
+                  of {selectedCandidate ? interactions.length : recentInteractions.length} results
                 </div>
                 <div className="pagination">
-                  <button className={`page-btn ${page===1?'active':''}`} onClick={()=>setPage(1)}>First</button>
-                  <button className="page-btn" onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
-                  <button className="page-btn" onClick={()=>setPage(p=>p+1)}>Next</button>
+                  <button 
+                    className="page-btn" 
+                    onClick={() => setPage(p => Math.max(1, p-1))}
+                    disabled={page === 1}
+                  >
+                    Previous
+                  </button>
+                  <span className="page-info">Page {page}</span>
+                  <button 
+                    className="page-btn" 
+                    onClick={() => setPage(p => p+1)}
+                    disabled={page * perPage >= (selectedCandidate ? interactions.length : recentInteractions.length)}
+                  >
+                    Next
+                  </button>
                 </div>
-                <select className="per-page" value={perPage} onChange={(e)=>{setPerPage(parseInt(e.target.value)); setPage(1);}}>
-                  {[10,25,50,100].map(n=> <option key={n} value={n}>{n}/page</option>)}
+                <select 
+                  className="per-page" 
+                  value={perPage} 
+                  onChange={(e) => {setPerPage(parseInt(e.target.value)); setPage(1);}}
+                >
+                  {[10,25,50].map(n => <option key={n} value={n}>{n}/page</option>)}
                 </select>
+                </div>
               </div>
             </div>
           </div>
@@ -447,105 +734,261 @@ const InteractionsAnalytics = () => {
         {activeTab === 'behavior' && (
           <div className="analytics-section">
             <h2>Behavior Patterns</h2>
-            <div className="params-section">
-              <div className="param-group">
-                <label>Candidate ID:</label>
-                <input
-                  type="number"
-                  value={behaviorParams.candidate_id}
-                  onChange={(e) => setBehaviorParams({...behaviorParams, candidate_id: e.target.value})}
-                  placeholder="Enter candidate ID"
-                />
-              </div>
-              <div className="param-group">
-                <label>Days to Analyze:</label>
-                <select
-                  value={behaviorParams.days_back}
-                  onChange={(e) => setBehaviorParams({...behaviorParams, days_back: parseInt(e.target.value)})}
-                >
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                  <option value={180}>180 days</option>
-                  <option value={365}>365 days</option>
-                </select>
-              </div>
-              <button 
-                className="btn-primary"
-                onClick={fetchBehaviorPatterns}
-                disabled={loading}
-              >
-                {loading ? 'Analyzing...' : 'Analyze Behavior Patterns'}
-              </button>
-            </div>
+            
+            {/* Dashboard Layout with Sidebar */}
+            <div className="dashboard-layout">
+              {/* Filters Sidebar */}
+              <div className="filters-sidebar">
+                <div className="sidebar-header">
+                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
+                </div>
 
-            <div className="results-section">
-              <h3>Behavior Analysis</h3>
-              {Object.keys(behaviorPatterns).length > 0 ? (
-                <div className="behavior-patterns">
-                  <div className="pattern-card">
-                    <h4>Interaction Summary</h4>
-                    <p><strong>Total Interactions:</strong> {behaviorPatterns.total_interactions || 0}</p>
-                    <p><strong>Total Applications:</strong> {behaviorPatterns.total_applications || 0}</p>
-                    <p><strong>Application Rate:</strong> {((behaviorPatterns.application_rate || 0) * 100).toFixed(1)}%</p>
-                    <p><strong>Engagement Score:</strong> {behaviorPatterns.engagement_score || 0}</p>
-                  </div>
-                  
-                  <div className="pattern-card">
-                    <h4>Preferred Domains</h4>
-                    {behaviorPatterns.preferred_domains && Object.keys(behaviorPatterns.preferred_domains).length > 0 ? (
-                      Object.entries(behaviorPatterns.preferred_domains).map(([domain, count]) => (
-                        <div key={domain} className="pattern-item">
-                          <span className="category">{domain}</span>
-                          <span className="count">({count} interactions)</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p>No domain preferences found</p>
+                {/* Smart Search Section */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Search Candidate</div>
+                  <div className="search-input-wrapper">
+                    <input
+                      type="text"
+                      value={candidateSearch}
+                      onChange={handleCandidateSearchChange}
+                      placeholder="Search candidate by name or email..."
+                      className="filter-input"
+                    />
+                    {selectedCandidate && (
+                      <button 
+                        className="clear-search-btn"
+                        onClick={clearCandidateSelection}
+                        title="Clear selection"
+                      >
+                        ✕
+                      </button>
                     )}
-                  </div>
-                  
-                  <div className="pattern-card">
-                    <h4>Preferred Locations</h4>
-                    {behaviorPatterns.preferred_locations && Object.keys(behaviorPatterns.preferred_locations).length > 0 ? (
-                      Object.entries(behaviorPatterns.preferred_locations).map(([location, count]) => (
-                        <div key={location} className="pattern-item">
-                          <span className="category">{location}</span>
-                          <span className="count">({count} interactions)</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p>No location preferences found</p>
-                    )}
-                  </div>
-                  
-                  <div className="pattern-card">
-                    <h4>Salary Preferences</h4>
-                    <p><strong>Average Salary:</strong> ${behaviorPatterns.salary_preferences?.avg?.toLocaleString() || 'N/A'}</p>
-                    {behaviorPatterns.most_recent_application && (
-                      <p><strong>Last Application:</strong> {new Date(behaviorPatterns.most_recent_application).toLocaleDateString()}</p>
-                    )}
-                    {behaviorPatterns.avg_view_to_apply_hours !== undefined && (
-                      <p><strong>Avg Hours to Apply:</strong> {behaviorPatterns.avg_view_to_apply_hours} hours</p>
-                    )}
-                  </div>
-                  
-                  <div className="pattern-card">
-                    <h4>Interaction Types</h4>
-                    {behaviorPatterns.interaction_types && Object.keys(behaviorPatterns.interaction_types).length > 0 ? (
-                      Object.entries(behaviorPatterns.interaction_types).map(([type, count]) => (
-                        <div key={type} className="pattern-item">
-                          <span className="category">{type}</span>
-                          <span className="count">({count} times)</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p>No interaction type data</p>
+                    
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && candidateSuggestions.length > 0 && (
+                      <div className="suggestions-dropdown">
+                        {candidateSuggestions.map((candidate) => (
+                          <div
+                            key={candidate.id}
+                            className="suggestion-item"
+                            onClick={() => handleCandidateSelect(candidate)}
+                          >
+                            <div className="suggestion-main">
+                              <strong>{candidate.name}</strong>
+                              <span className="suggestion-email">— {candidate.email}</span>
+                            </div>
+                            <div className="suggestion-sub">
+                              {candidate.location && <span>Location: {candidate.location}</span>}
+                              {candidate.domain && <span>Domain: {candidate.domain}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
-              ) : (
-                <p className="no-results">No behavior patterns found</p>
-              )}
+
+                {/* Selected Candidate Profile */}
+                {selectedCandidate && (
+                  <div className="filter-section">
+                    <div className="filter-section-title">Selected Candidate</div>
+                    <div className="job-info-compact">
+                      <div className="job-detail-item">
+                        <strong>Name:</strong> {selectedCandidate.name}
+                      </div>
+                      <div className="job-detail-item">
+                        <strong>Email:</strong> {selectedCandidate.email}
+                      </div>
+                      {selectedCandidate.location && (
+                        <div className="job-detail-item">
+                          <strong>Location:</strong> {selectedCandidate.location}
+                        </div>
+                      )}
+                      {selectedCandidate.domain && (
+                        <div className="job-detail-item">
+                          <strong>Domain:</strong> {selectedCandidate.domain}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter Controls */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Time Period</div>
+                  <select
+                    className="filter-input"
+                    value={behaviorParams.days_back}
+                    onChange={(e) => {
+                      setBehaviorParams({...behaviorParams, days_back: parseInt(e.target.value)});
+                      if (selectedCandidate) {
+                        fetchBehaviorPatterns();
+                      }
+                    }}
+                  >
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                    <option value={180}>180 days</option>
+                    <option value={365}>365 days</option>
+                  </select>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="filter-section">
+                  <button 
+                    className="btn-primary"
+                    onClick={fetchBehaviorPatterns}
+                    disabled={!selectedCandidate || loading}
+                  >
+                    {loading ? 'Loading...' : 'Analyze Behavior'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Results Section */}
+              <div className="results-section">
+                <div className="results-header">
+                  <h3 className="results-title">
+                    Behavior Analysis Results
+                    {selectedCandidate && ` for ${selectedCandidate.name}`}
+                  </h3>
+                </div>
+
+                {error && (
+                  <div className="error-message">
+                    {error}
+                  </div>
+                )}
+
+                {Object.keys(behaviorPatterns).length > 0 ? (
+                  <div className="behavior-results">
+                    {/* Summary Cards */}
+                    <div className="summary-cards">
+                      <div className="summary-card">
+                        <div className="card-title">Total Interactions</div>
+                        <div className="card-value">{behaviorPatterns.total_interactions || 0}</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="card-title">Applications</div>
+                        <div className="card-value">{behaviorPatterns.total_applications || 0}</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="card-title">Application Rate</div>
+                        <div className="card-value">
+                          {behaviorPatterns.application_rate 
+                            ? `${(behaviorPatterns.application_rate * 100).toFixed(1)}%`
+                            : '0%'
+                          }
+                        </div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="card-title">Engagement Score</div>
+                        <div className="card-value">{behaviorPatterns.engagement_score || 0}</div>
+                      </div>
+                    </div>
+
+                    {/* Detailed Analysis */}
+                    <div className="behavior-details">
+                      {/* Preferred Domains */}
+                      {behaviorPatterns.preferred_domains && Object.keys(behaviorPatterns.preferred_domains).length > 0 && (
+                        <div className="behavior-section">
+                          <h4>Preferred Domains</h4>
+                          <div className="behavior-list">
+                            {Object.entries(behaviorPatterns.preferred_domains)
+                              .sort(([,a], [,b]) => b - a)
+                              .map(([domain, count]) => (
+                                <div key={domain} className="behavior-item">
+                                  <span className="behavior-label">{domain}</span>
+                                  <span className="behavior-count">{count} interactions</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Preferred Locations */}
+                      {behaviorPatterns.preferred_locations && Object.keys(behaviorPatterns.preferred_locations).length > 0 && (
+                        <div className="behavior-section">
+                          <h4>Preferred Locations</h4>
+                          <div className="behavior-list">
+                            {Object.entries(behaviorPatterns.preferred_locations)
+                              .sort(([,a], [,b]) => b - a)
+                              .map(([location, count]) => (
+                                <div key={location} className="behavior-item">
+                                  <span className="behavior-label">{location}</span>
+                                  <span className="behavior-count">{count} interactions</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Interaction Types */}
+                      {behaviorPatterns.interaction_types && Object.keys(behaviorPatterns.interaction_types).length > 0 && (
+                        <div className="behavior-section">
+                          <h4>Interaction Types</h4>
+                          <div className="behavior-list">
+                            {Object.entries(behaviorPatterns.interaction_types)
+                              .sort(([,a], [,b]) => b - a)
+                              .map(([type, count]) => (
+                                <div key={type} className="behavior-item">
+                                  <span className="behavior-label">{type}</span>
+                                  <span className="behavior-count">{count} times</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Salary Preferences */}
+                      {behaviorPatterns.salary_preferences && behaviorPatterns.salary_preferences.avg > 0 && (
+                        <div className="behavior-section">
+                          <h4>Salary Preferences</h4>
+                          <div className="behavior-item">
+                            <span className="behavior-label">Average Salary</span>
+                            <span className="behavior-count">
+                              ${behaviorPatterns.salary_preferences.avg.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recent Activity */}
+                      {behaviorPatterns.most_recent_application && (
+                        <div className="behavior-section">
+                          <h4>Recent Activity</h4>
+                          <div className="behavior-item">
+                            <span className="behavior-label">Last Application</span>
+                            <span className="behavior-count">
+                              {new Date(behaviorPatterns.most_recent_application).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* View to Apply Time */}
+                      {behaviorPatterns.avg_view_to_apply_hours > 0 && (
+                        <div className="behavior-section">
+                          <h4>Engagement Speed</h4>
+                          <div className="behavior-item">
+                            <span className="behavior-label">Avg. Time to Apply</span>
+                            <span className="behavior-count">
+                              {behaviorPatterns.avg_view_to_apply_hours.toFixed(1)} hours
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="no-results">
+                    {selectedCandidate 
+                      ? "No behavior patterns found for this candidate in the selected time period."
+                      : "Please select a candidate to analyze their behavior patterns."
+                    }
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -553,126 +996,167 @@ const InteractionsAnalytics = () => {
         {activeTab === 'similar' && (
           <div className="analytics-section">
             <h2>Similar Users</h2>
-            <div className="params-section">
-              <div className="param-group">
-                <label>Candidate ID:</label>
-                <input
-                  type="number"
-                  value={similarUsersParams.candidate_id}
-                  onChange={(e) => setSimilarUsersParams({...similarUsersParams, candidate_id: e.target.value})}
-                  placeholder="Enter candidate ID"
-                />
-              </div>
-              <div className="param-group">
-                <label>Number of Similar Users:</label>
-                <select
-                  value={similarUsersParams.limit}
-                  onChange={(e) => setSimilarUsersParams({...similarUsersParams, limit: parseInt(e.target.value)})}
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                </select>
-              </div>
-              <button 
-                className="btn-primary"
-                onClick={fetchSimilarUsers}
-                disabled={loading}
-              >
-                {loading ? 'Finding...' : 'Find Similar Users'}
-              </button>
-            </div>
-
-            <div className="results-section">
-              <h3>Similar Users ({similarUsers.length})</h3>
-              {similarUsers.length > 0 ? (
-                <div className="similar-users-grid">
-                  {similarUsers.map((user, index) => (
-                    <div key={user.id || index} className="similar-user-card">
-                      <div className="user-header">
-                        <h4>{user.name}</h4>
-                        <span 
-                          className="similarity-score"
-                          style={{ backgroundColor: getSimilarityColor(user.similarity) }}
-                        >
-                          {user.similarity?.toFixed(3) || 'N/A'}
-                        </span>
-                      </div>
-                      <p><strong>Email:</strong> {user.email}</p>
-                      <p><strong>Location:</strong> {user.location}</p>
-                      <p><strong>Domain:</strong> {user.domain}</p>
-                      <p><strong>Expected Salary:</strong> ${user.expected_salary_min} - ${user.expected_salary_max}</p>
-                    </div>
-                  ))}
+            
+            {/* Dashboard Layout with Sidebar */}
+            <div className="dashboard-layout">
+              {/* Filters Sidebar */}
+              <div className="filters-sidebar">
+                <div className="sidebar-header">
+                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
                 </div>
-              ) : (
-                <p className="no-results">No similar users found</p>
-              )}
+
+                {/* Smart Search Section */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Search Candidate</div>
+                  <div className="search-input-wrapper">
+                    <input
+                      type="text"
+                      value={candidateSearch}
+                      onChange={handleCandidateSearchChange}
+                      placeholder="Search candidate by name or email..."
+                      className="filter-input"
+                    />
+                    {selectedCandidate && (
+                      <button 
+                        className="clear-search-btn"
+                        onClick={clearCandidateSelection}
+                        title="Clear selection"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && candidateSuggestions.length > 0 && (
+                      <div className="suggestions-dropdown">
+                        {candidateSuggestions.map((candidate) => (
+                          <div
+                            key={candidate.id}
+                            className="suggestion-item"
+                            onClick={() => handleCandidateSelect(candidate)}
+                          >
+                            <div className="suggestion-main">
+                              <strong>{candidate.name}</strong>
+                              <span className="suggestion-email">— {candidate.email}</span>
+                            </div>
+                            <div className="suggestion-sub">
+                              {candidate.location && <span>Location: {candidate.location}</span>}
+                              {candidate.domain && <span>Domain: {candidate.domain}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Selected Candidate Profile */}
+                {selectedCandidate && (
+                  <div className="filter-section">
+                    <div className="filter-section-title">Selected Candidate</div>
+                    <div className="job-info-compact">
+                      <div className="job-detail-item">
+                        <strong>Name:</strong> {selectedCandidate.name}
+                      </div>
+                      <div className="job-detail-item">
+                        <strong>Email:</strong> {selectedCandidate.email}
+                      </div>
+                      {selectedCandidate.location && (
+                        <div className="job-detail-item">
+                          <strong>Location:</strong> {selectedCandidate.location}
+                        </div>
+                      )}
+                      {selectedCandidate.domain && (
+                        <div className="job-detail-item">
+                          <strong>Domain:</strong> {selectedCandidate.domain}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter Controls */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Number of Similar Users</div>
+                  <select
+                    className="filter-input"
+                    value={similarUsersParams.limit}
+                    onChange={(e) => {
+                      setSimilarUsersParams({...similarUsersParams, limit: parseInt(e.target.value)});
+                      if (selectedCandidate) {
+                        fetchSimilarUsers();
+                      }
+                    }}
+                  >
+                    <option value={5}>5 users</option>
+                    <option value={10}>10 users</option>
+                    <option value={20}>20 users</option>
+                    <option value={50}>50 users</option>
+                  </select>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="filter-section">
+                  <button 
+                    className="btn-primary"
+                    onClick={fetchSimilarUsers}
+                    disabled={!selectedCandidate || loading}
+                  >
+                    {loading ? 'Loading...' : 'Find Similar Users'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Results Section */}
+              <div className="results-section">
+                <div className="results-header">
+                  <h3 className="results-title">
+                    Similar Users Results
+                    {selectedCandidate && ` for ${selectedCandidate.name}`}
+                  </h3>
+                </div>
+
+                {error && (
+                  <div className="error-message">
+                    {error}
+                  </div>
+                )}
+
+                {similarUsers.length > 0 ? (
+                  <div className="similar-users-grid">
+                    {similarUsers.map((user, index) => (
+                      <div key={user.id || index} className="similar-user-card">
+                        <div className="user-header">
+                          <h4>{user.name}</h4>
+                          <span 
+                            className="similarity-score"
+                            style={{ backgroundColor: getSimilarityColor(user.similarity) }}
+                          >
+                            {user.similarity?.toFixed(3) || 'N/A'}
+                          </span>
+                        </div>
+                        <p><strong>Email:</strong> {user.email}</p>
+                        <p><strong>Location:</strong> {user.location}</p>
+                        <p><strong>Domain:</strong> {user.domain}</p>
+                        <p><strong>Expected Salary:</strong> ${user.expected_salary_min} - ${user.expected_salary_max}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="no-results">
+                    {selectedCandidate 
+                      ? "No similar users found for this candidate."
+                      : "Please select a candidate to find similar users."
+                    }
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Log Interaction Form */}
-      {showLogForm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2>Log New Interaction</h2>
-            <form onSubmit={logInteraction}>
-              <div className="form-group">
-                <label>User ID:</label>
-                <input
-                  type="number"
-                  value={logFormData.user_id}
-                  onChange={(e) => setLogFormData({...logFormData, user_id: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Job ID:</label>
-                <input
-                  type="number"
-                  value={logFormData.job_id}
-                  onChange={(e) => setLogFormData({...logFormData, job_id: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Interaction Type:</label>
-                <select
-                  value={logFormData.interaction_type}
-                  onChange={(e) => setLogFormData({...logFormData, interaction_type: e.target.value})}
-                  required
-                >
-                  <option value="viewed">Viewed</option>
-                  <option value="applied">Applied</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-              <div className="form-actions">
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? 'Logging...' : 'Log Interaction'}
-                </button>
-                <button 
-                  type="button" 
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowLogForm(false);
-                    setLogFormData({
-                      user_id: '',
-                      job_id: '',
-                      interaction_type: 'viewed'
-                    });
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

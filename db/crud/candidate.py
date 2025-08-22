@@ -45,8 +45,54 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
     async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Candidate]:
         """Get candidate by email with optimized query"""
         query = select(Candidate).where(Candidate.email == email)
-        result = await db.execute(query)
-        return result.scalar_one_or_none()
+        
+    async def search_by_name_or_email(self, db: AsyncSession, search_term: str, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """Search candidates by name or email using fuzzy search - returns dict to avoid relationship issues"""
+        try:
+            # Use raw SQL with :param style to avoid pgbouncer prepared statement issues
+            sql = text("""
+                SELECT id, name, email, location, domain, expected_salary_min, expected_salary_max, 
+                       summary, consent_given, created_at, updated_at
+                FROM candidates
+                WHERE name ILIKE :search_term OR email ILIKE :search_term
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :skip
+            """)
+            
+            # Use :param style for pgbouncer compatibility
+            result = await db.execute(sql, {
+                "search_term": f"%{search_term}%",
+                "limit": limit,
+                "skip": skip
+            })
+            
+            rows = result.fetchall()
+            
+            # Convert to dict format
+            candidate_dicts = []
+            for row in rows:
+                candidate_dict = {
+                    "id": row.id,
+                    "name": row.name,
+                    "email": row.email,
+                    "location": row.location,
+                    "domain": row.domain,
+                    "expected_salary_min": row.expected_salary_min,
+                    "expected_salary_max": row.expected_salary_max,
+                    "summary": row.summary,
+                    "consent_given": row.consent_given,
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                    "experiences": []  # Empty list to satisfy schema
+                }
+                candidate_dicts.append(candidate_dict)
+            
+            logger.info(f"Found {len(candidate_dicts)} candidates for search term: {search_term}")
+            return candidate_dicts
+            
+        except Exception as e:
+            logger.error(f"Error in search_by_name_or_email: {e}")
+            return []
     
     async def get_multi_with_experiences(
         self, 

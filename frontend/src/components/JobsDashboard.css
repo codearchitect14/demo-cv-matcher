@@ -73,9 +73,316 @@
   font-size: 1.2rem;
 }
 
-/* Main Content */
-.dashboard-content {
+/* Main Content - Sidebar Layout */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
   animation: fadeIn 0.8s ease-out;
+  min-height: calc(100vh - 120px);
+}
+
+/* Left Sidebar - Filters */
+.filters-sidebar {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  height: fit-content;
+  min-height: 600px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+  width: 100%;
+}
+
+.sidebar-header {
+  background: linear-gradient(135deg, #10B981 0%, #14B8A6 100%);
+  padding: 20px 24px;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-title {
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-icon {
+  font-size: 1.2rem;
+}
+
+.btn-clear-filters {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-clear-filters:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Filter Sections */
+.filter-section {
+  padding: 32px 24px;
+  min-height: 200px;
+}
+
+.filter-section:last-child {
+  border-bottom: none;
+}
+
+.filter-section-title {
+  color: #1f2937;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group {
+  margin-bottom: 32px;
+}
+
+.filter-group:last-child {
+  margin-bottom: 0;
+}
+
+.filter-group label {
+  color: #374151;
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.filter-hint {
+  color: #6b7280;
+  font-size: 0.8rem;
+  margin-top: 4px;
+  display: block;
+  font-style: italic;
+}
+
+/* Autocomplete */
+.autocomplete-group {
+  position: relative;
+}
+
+.autocomplete-wrapper {
+  position: relative;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.autocomplete-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-item:hover {
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+/* Salary Range Group */
+.salary-range-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Right Side - Job Results */
+.jobs-content {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 28px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  min-height: 600px;
+  position: relative;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  padding-bottom: 18px;
+  border-bottom: 3px solid #10B981;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 20px;
+  border-radius: 12px;
+  margin: -8px -8px 24px -8px;
+}
+
+.results-title {
+  color: #1f2937 !important;
+  font-size: 1.8rem !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.results-icon {
+  font-size: 1.4rem;
+}
+
+.results-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filters-active {
+  background: linear-gradient(135deg, #10B981 0%, #14B8A6 100%);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Enhanced Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 20px;
+  border: 2px dashed #cbd5e1;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #64748b;
+  border: 2px solid #e2e8f0;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .dashboard-layout {
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 992px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .filters-sidebar {
+    position: static;
+    max-height: none;
+    order: 2;
+  }
+  
+  .jobs-content {
+    order: 1;
+  }
+  
+  .salary-range-group {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .modern-jobs-dashboard {
+    padding: 12px;
+  }
+  
+  .dashboard-layout {
+    gap: 12px;
+  }
+  
+  .filters-sidebar,
+  .jobs-content {
+    padding: 16px;
+    border-radius: 12px;
+  }
+  
+  .sidebar-header {
+    padding: 16px 20px;
+  }
+  
+  .filter-section {
+    padding: 16px 20px;
+  }
+  
+  .empty-actions {
+    flex-direction: column;
+    align-items: center;
+  }
 }
 
 /* Filters Bar */
@@ -124,13 +431,13 @@
 
 .filter-input,
 .filter-select {
-  height: 44px;
-  padding: 10px 14px;
+  height: 56px;
+  padding: 16px 20px;
   border: 2px solid #C7D2FE; /* light indigo border */
   border-radius: 10px;
   background: #ffffff;
   color: #111827;
-  font-size: 1rem;
+  font-size: 1.1rem;
   transition: all 0.2s ease;
 }
 

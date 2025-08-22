@@ -62,13 +62,37 @@ async def create_candidate(
 async def get_all_candidates(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    search: Optional[str] = Query(None, description="Search candidates by name or email"),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get all candidates with pagination"""
+    """Get all candidates with pagination and optional search"""
     try:
-        # Use simple get_multi to avoid prepared statement conflicts
-        candidates = await candidate_crud.get_multi(db, skip=skip, limit=limit)
-        return candidates
+        if search:
+            # Use fuzzy search for name and email - returns dict format
+            candidates = await candidate_crud.search_by_name_or_email(db, search, skip=skip, limit=limit)
+            return candidates  # Already in correct format
+        else:
+            # Use simple get_multi to avoid prepared statement conflicts
+            candidates = await candidate_crud.get_multi(db, skip=skip, limit=limit)
+            # Convert to dict format to avoid relationship issues
+            candidate_dicts = []
+            for candidate in candidates:
+                candidate_dict = {
+                    "id": candidate.id,
+                    "name": candidate.name,
+                    "email": candidate.email,
+                    "location": candidate.location,
+                    "domain": candidate.domain,
+                    "expected_salary_min": candidate.expected_salary_min,
+                    "expected_salary_max": candidate.expected_salary_max,
+                    "summary": candidate.summary,
+                    "consent_given": candidate.consent_given,
+                    "created_at": candidate.created_at,
+                    "updated_at": candidate.updated_at,
+                    "experiences": []  # Empty list to satisfy schema
+                }
+                candidate_dicts.append(candidate_dict)
+            return candidate_dicts
     except Exception as e:
         print(f"Get all candidates error: {e}")
         raise HTTPException(

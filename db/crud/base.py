@@ -4,6 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, delete
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -27,15 +30,29 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return result.scalars().all()
 
     async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> ModelType:
-        """Create new record without refresh to avoid prepared statements"""
-        obj_data = obj_in.dict() if hasattr(obj_in, 'dict') else obj_in
-        db_obj = self.model(**obj_data)
-        db.add(db_obj)
-        # Flush to assign primary key without issuing a SELECT
-        await db.flush()
-        await db.commit()
-        # Do NOT refresh to avoid prepared SELECT; caller can re-query if needed
-        return db_obj
+        """Create new record with optimized performance"""
+        import time
+        start_time = time.time()
+        
+        try:
+            obj_data = obj_in.dict() if hasattr(obj_in, 'dict') else obj_in
+            db_obj = self.model(**obj_data)
+            db.add(db_obj)
+            # Flush to assign primary key without issuing a SELECT
+            await db.flush()
+            await db.commit()
+            
+            elapsed = time.time() - start_time
+            if elapsed > 0.5:  # Log slow creates
+                logger.warning(f"Slow database create operation: {elapsed:.3f}s for {self.model.__name__}")
+            
+            # Do NOT refresh to avoid prepared SELECT; caller can re-query if needed
+            return db_obj
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Database create failed after {elapsed:.3f}s: {e}")
+            await db.rollback()
+            raise
 
     async def update(
         self, db: AsyncSession, db_obj: ModelType, obj_in: UpdateSchemaType

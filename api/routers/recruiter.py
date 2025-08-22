@@ -71,36 +71,48 @@ async def login_recruiter(
     login_data: RecruiterLogin,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Login recruiter"""
+    """Login recruiter - Optimized for performance"""
+    import time
+    start_time = time.time()
+    
     try:
-        # Get recruiter by email
+        # Get recruiter by email - single optimized query
         recruiter_obj = await recruiter.get_by_email(db, login_data.email)
         if not recruiter_obj:
+            # Use consistent timing to prevent username enumeration
+            verify_password("dummy", "$2b$12$dummy_hash_to_prevent_timing_attacks")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Verify password
+        # Verify password - this is the most expensive operation
         if not verify_password(login_data.password, recruiter_obj.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Check if recruiter is active
+        # Check if recruiter is active (no additional DB query needed)
         if not recruiter_obj.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Account is deactivated"
             )
         
-        # Create access token
+        # Create access token with proper email (not ID) as subject
         access_token = create_access_token(
-            data={"sub": str(recruiter_obj.id), "role": recruiter_obj.role, "type": "recruiter"}
+            data={
+                "sub": recruiter_obj.email,  # Use email as subject for consistency
+                "user_id": recruiter_obj.id,
+                "role": recruiter_obj.role, 
+                "type": "recruiter"
+            }
         )
         
-        logger.info(f"Recruiter logged in: {recruiter_obj.email}")
+        elapsed_time = time.time() - start_time
+        logger.info(f"Recruiter logged in: {recruiter_obj.email} (took {elapsed_time:.3f}s)")
+        
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -116,7 +128,8 @@ async def login_recruiter(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error logging in recruiter: {e}")
+        elapsed_time = time.time() - start_time
+        logger.error(f"Error logging in recruiter: {e} (took {elapsed_time:.3f}s)")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to login"
