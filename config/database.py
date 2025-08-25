@@ -59,7 +59,6 @@ if "pooler" in DATABASE_URL:
             },
             "command_timeout": 5,  # Reduced timeout
             "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
             "ssl": ssl_context,
         },
         future=True,
@@ -103,7 +102,6 @@ if "pooler" in DIRECT_DATABASE_URL:
             },
             "command_timeout": 10,
             "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
             "ssl": ssl_context,
         },
         future=True,
@@ -126,7 +124,6 @@ else:
             },
             "command_timeout": 10,
             "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
             "ssl": ssl_context,
         },
         future=True,
@@ -195,24 +192,24 @@ async def get_db_session() -> AsyncSession:
     import time
     start_time = time.time()
     
-    async with SessionLocal() as session:
+    session = AsyncSession(engine)
+    try:
+        # Quick connection health check for critical operations
+        connection_time = time.time() - start_time
+        if connection_time > 1.0:  # Warn if connection takes > 1 second
+            logger.warning(f"Database connection took {connection_time:.3f}s")
+        
+        yield session
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"Database session error after {elapsed:.3f}s: {e}")
+        await session.rollback()
+        raise
+    finally:
         try:
-            # Quick connection health check for critical operations
-            connection_time = time.time() - start_time
-            if connection_time > 1.0:  # Warn if connection takes > 1 second
-                logger.warning(f"Database connection took {connection_time:.3f}s")
-            
-            yield session
+            await session.close()
         except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"Database session error after {elapsed:.3f}s: {e}")
-            await session.rollback()
-            raise
-        finally:
-            try:
-                await session.close()
-            except Exception as e:
-                logger.error(f"Error closing database session: {e}")
+            logger.error(f"Error closing database session: {e}")
 
 async def check_database_connection():
     try:

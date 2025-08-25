@@ -87,6 +87,7 @@ async def get_recruiter_candidate_recommendations(
         return [
             {
                 'candidate_id': rec.candidate_id,
+                'candidate_name': rec.candidate_name if hasattr(rec, 'candidate_name') else f"Candidate #{rec.candidate_id}",
                 'job_id': rec.job_id,
                 'match_score': rec.overall_match_score,
                 'explanation': rec.explanation,

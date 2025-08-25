@@ -8,46 +8,89 @@ const ApplicationsManagement = () => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
   
-  // New state for dropdowns and search
+  // Enhanced state for advanced filtering
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [searchCandidate, setSearchCandidate] = useState('');
-  const [searchJob, setSearchJob] = useState('');
-  const [filteredCandidates, setFilteredCandidates] = useState([]);
-  const [filteredJobs, setFilteredJobs] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [jobSearch, setJobSearch] = useState('');
+  const [candidateSuggestions, setCandidateSuggestions] = useState([]);
+  const [jobSuggestions, setJobSuggestions] = useState([]);
+  const [showCandidateSuggestions, setShowCandidateSuggestions] = useState(false);
+  const [showJobSuggestions, setShowJobSuggestions] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  
+  // Main search suggestions state
+  const [mainSearchSuggestions, setMainSearchSuggestions] = useState([]);
+  const [showMainSearchSuggestions, setShowMainSearchSuggestions] = useState(false);
+  const [mainSearchLoading, setMainSearchLoading] = useState(false);
   
   const [filters, setFilters] = useState({
     job_id: '',
     candidate_id: '',
-    status: ''
+    status: '',
+    experience_range: '',
+    location: ''
   });
+  
   const [formData, setFormData] = useState({
     candidate_id: '',
     job_id: '',
     status: 'applied'
   });
 
+  // Experience ranges for filtering
+  const experienceRanges = [
+    { value: '', label: 'All Experience Levels' },
+    { value: '0-2', label: '0-2 years' },
+    { value: '3-5', label: '3-5 years' },
+    { value: '6-8', label: '6-8 years' },
+    { value: '9+', label: '9+ years' }
+  ];
+
+  // Enhanced status workflow
+  const statusOptions = [
+    { value: 'applied', label: 'Applied', color: '#6b7280' },
+    { value: 'reviewed', label: 'Reviewed', color: '#10b981' },
+    { value: 'interview_scheduled', label: 'Interview Scheduled', color: '#10b981' },
+    { value: 'hired', label: 'Hired', color: '#3b82f6' },
+    { value: 'rejected', label: 'Rejected', color: '#ef4444' }
+  ];
+
   // Fetch candidates and jobs for dropdowns
   useEffect(() => {
     fetchCandidates();
     fetchJobs();
+    fetchAllApplications();
+  }, []);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.search-input-wrapper')) {
+        setShowMainSearchSuggestions(false);
+        setShowCandidateSuggestions(false);
+        setShowJobSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const fetchCandidates = async () => {
     try {
-      // Try public endpoint first
       let response = await fetch('http://localhost:8000/api/v1/candidates/public?limit=100');
       if (!response.ok) {
-        // Fallback to non-public listing (no auth required)
         response = await fetch('http://localhost:8000/api/v1/candidates?skip=0&limit=100');
       }
       if (response && response.ok) {
         const data = await response.json();
         setCandidates(data);
-        setFilteredCandidates(data);
-      } else {
-        console.error('Failed to fetch candidates (public and fallback).');
       }
     } catch (err) {
       console.error('Failed to fetch candidates:', err);
@@ -56,108 +99,337 @@ const ApplicationsManagement = () => {
 
   const fetchJobs = async () => {
     try {
-      // Try public endpoint first
       let response = await fetch('http://localhost:8000/api/v1/jobs/public?limit=100');
       if (!response.ok) {
-        // Fallback to non-public listing (no auth required)
         response = await fetch('http://localhost:8000/api/v1/jobs?skip=0&limit=100');
       }
       if (response && response.ok) {
         const data = await response.json();
         setJobs(data);
-        setFilteredJobs(data);
-      } else {
-        console.error('Failed to fetch jobs (public and fallback).');
       }
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
     }
   };
 
-  // Search functionality for candidates
-  useEffect(() => {
-    if (searchCandidate.trim() === '') {
-      setFilteredCandidates(candidates);
-    } else {
-      const filtered = candidates.filter(candidate =>
-        candidate.name?.toLowerCase().includes(searchCandidate.toLowerCase()) ||
-        candidate.email?.toLowerCase().includes(searchCandidate.toLowerCase()) ||
-        candidate.location?.toLowerCase().includes(searchCandidate.toLowerCase())
-      );
-      setFilteredCandidates(filtered);
-    }
-  }, [searchCandidate, candidates]);
-
-  // Search functionality for jobs
-  useEffect(() => {
-    if (searchJob.trim() === '') {
-      setFilteredJobs(jobs);
-    } else {
-      const filtered = jobs.filter(job =>
-        job.title?.toLowerCase().includes(searchJob.toLowerCase()) ||
-        job.company?.toLowerCase().includes(searchJob.toLowerCase()) ||
-        job.location?.toLowerCase().includes(searchJob.toLowerCase())
-      );
-      setFilteredJobs(filtered);
-    }
-  }, [searchJob, jobs]);
-
-  const fetchApplicationDetails = async (applicationId) => {
+  const fetchAllApplications = async () => {
+    setLoading(true);
     try {
-      // Use public endpoint for testing
-      const response = await fetch(`http://localhost:8000/api/v1/applications/public/${applicationId}`);
+      const response = await fetch('http://localhost:8000/api/v1/applications/public?limit=100');
       if (response.ok) {
         const data = await response.json();
-        setSelectedApplication(data);
+        console.log('Fetched applications:', data);
+        setApplications(data);
       } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch application details: ${errorMessage}`);
+        setError('Failed to fetch applications');
       }
     } catch (err) {
-      setError('Failed to fetch application details');
+      setError('Failed to fetch applications');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchJobApplications = async (jobId) => {
+  // Smart search for candidates
+  const searchCandidates = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setCandidateSuggestions([]);
+      setShowCandidateSuggestions(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
     try {
-      // Use public endpoint for testing
-      // Use existing job applications route (no public suffix needed)
-      const response = await fetch(`http://localhost:8000/api/v1/applications/job/${jobId}/applications`);
+      const response = await fetch(
+        `http://localhost:8000/api/v1/candidates/?search=${encodeURIComponent(searchTerm)}&limit=10`
+      );
+      
       if (response.ok) {
         const data = await response.json();
-        setApplications(data);
+        setCandidateSuggestions(data || []);
+        setShowCandidateSuggestions(true);
       } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch job applications: ${errorMessage}`);
+        setCandidateSuggestions([]);
+        setShowCandidateSuggestions(false);
       }
     } catch (err) {
-      setError('Failed to fetch job applications');
+      console.error('Search error:', err);
+      setCandidateSuggestions([]);
+      setShowCandidateSuggestions(false);
+    } finally {
+      setSearchLoading(false);
     }
   };
 
-  const fetchCandidateApplications = async (candidateId) => {
+  // Smart search for jobs
+  const searchJobs = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setJobSuggestions([]);
+      setShowJobSuggestions(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
     try {
-      // Use public endpoint for testing
-      // Use correct public route path
-      const response = await fetch(`http://localhost:8000/api/v1/applications/candidate/${candidateId}/applications/public`);
+      const response = await fetch(
+        `http://localhost:8000/api/v1/jobs/?search=${encodeURIComponent(searchTerm)}&limit=10`
+      );
+      
       if (response.ok) {
         const data = await response.json();
-        setApplications(data);
+        setJobSuggestions(data || []);
+        setShowJobSuggestions(true);
       } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to fetch candidate applications: ${errorMessage}`);
+        setJobSuggestions([]);
+        setShowJobSuggestions(false);
       }
     } catch (err) {
-      setError('Failed to fetch candidate applications');
+      console.error('Search error:', err);
+      setJobSuggestions([]);
+      setShowJobSuggestions(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Main search functionality with suggestions
+  const searchApplications = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setMainSearchSuggestions([]);
+      setShowMainSearchSuggestions(false);
+      setMainSearchLoading(false);
+      return;
+    }
+
+    setMainSearchLoading(true);
+    try {
+      console.log('Searching candidates and jobs for:', searchTerm);
+      
+      // Search candidates
+      const candidateResponse = await fetch(
+        `http://localhost:8000/api/v1/candidates/?search=${encodeURIComponent(searchTerm)}&limit=5`
+      );
+      
+      // Search jobs
+      const jobResponse = await fetch(
+        `http://localhost:8000/api/v1/jobs/?search=${encodeURIComponent(searchTerm)}&limit=5`
+      );
+      
+      const suggestions = [];
+      
+      if (candidateResponse.ok) {
+        const candidateData = await candidateResponse.json();
+        console.log('Candidate search results:', candidateData);
+        candidateData.forEach(candidate => {
+          suggestions.push({
+            type: 'candidate',
+            id: candidate.id,
+            name: candidate.name,
+            email: candidate.email,
+            location: candidate.location,
+            displayText: `${candidate.name} (${candidate.email})`
+          });
+        });
+      }
+      
+      if (jobResponse.ok) {
+        const jobData = await jobResponse.json();
+        console.log('Job search results:', jobData);
+        jobData.forEach(job => {
+          suggestions.push({
+            type: 'job',
+            id: job.id,
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            displayText: `${job.title} at ${job.company}`
+          });
+        });
+      }
+      
+      console.log('Total suggestions:', suggestions.length);
+      setMainSearchSuggestions(suggestions);
+      setShowMainSearchSuggestions(true);
+    } catch (err) {
+      console.error('Main search error:', err);
+      setMainSearchSuggestions([]);
+      setShowMainSearchSuggestions(false);
+    } finally {
+      setMainSearchLoading(false);
+    }
+  };
+
+  const selectMainSearchSuggestion = (suggestion) => {
+    if (suggestion.type === 'candidate') {
+      setSearchTerm(suggestion.name);
+    } else if (suggestion.type === 'job') {
+      setSearchTerm(suggestion.title);
+    }
+    setShowMainSearchSuggestions(false);
+  };
+
+  // Debounced search handlers
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (candidateSearch) {
+        searchCandidates(candidateSearch);
+      } else {
+        setCandidateSuggestions([]);
+        setShowCandidateSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [candidateSearch]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (jobSearch) {
+        searchJobs(jobSearch);
+      } else {
+        setJobSuggestions([]);
+        setShowJobSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [jobSearch]);
+
+  // Debounced main search handler
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchTerm) {
+        console.log('Searching for:', searchTerm);
+        searchApplications(searchTerm);
+      } else {
+        setMainSearchSuggestions([]);
+        setShowMainSearchSuggestions(false);
+        // Refresh applications when search is cleared
+        fetchAllApplications();
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
+
+  // No need for auto-apply since filtering is done client-side
+
+  const handleCandidateSearchChange = (e) => {
+    setCandidateSearch(e.target.value);
+  };
+
+  const handleJobSearchChange = (e) => {
+    setJobSearch(e.target.value);
+  };
+
+  const selectCandidate = (candidate) => {
+    setFormData({ ...formData, candidate_id: candidate.id });
+    setCandidateSearch(candidate.name);
+    setShowCandidateSuggestions(false);
+  };
+
+  const selectJob = (job) => {
+    setFormData({ ...formData, job_id: job.id });
+    setJobSearch(job.title);
+    setShowJobSuggestions(false);
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      job_id: '',
+      candidate_id: '',
+      status: '',
+      experience_range: '',
+      location: ''
+    });
+    setSearchTerm('');
+    setMainSearchSuggestions([]);
+    setShowMainSearchSuggestions(false);
+    fetchAllApplications();
+  };
+
+  const applyFilters = () => {
+    // Filters are applied client-side, so we just need to refresh the data
+    fetchAllApplications();
+  };
+
+  const getStatusColor = (status) => {
+    const statusOption = statusOptions.find(option => option.value === status);
+    return statusOption ? statusOption.color : '#6b7280';
+  };
+
+  const getExperienceRange = (years) => {
+    if (years <= 2) return '0-2';
+    if (years <= 5) return '3-5';
+    if (years <= 8) return '6-8';
+    return '9+';
+  };
+
+  // Apply client-side filtering since backend filtering has connection issues
+  const filteredApplications = applications.filter(app => {
+    // Search filter
+    const matchesSearch = !searchTerm || 
+      (app.candidate?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       app.candidate?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       app.job?.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       app.job?.company?.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    // Status filter
+    const matchesStatus = !filters.status || filters.status === '' || app.status === filters.status;
+    
+    // Location filter
+    const matchesLocation = !filters.location || filters.location === '' || 
+      (app.candidate?.location?.toLowerCase().includes(filters.location.toLowerCase()) ||
+       app.job?.location?.toLowerCase().includes(filters.location.toLowerCase()));
+    
+    // Experience range filter
+    let matchesExperience = true;
+    if (filters.experience_range && filters.experience_range !== '' && app.candidate?.total_years_experience !== undefined) {
+      const experience = app.candidate.total_years_experience;
+      switch (filters.experience_range) {
+        case '0-2':
+          matchesExperience = experience >= 0 && experience <= 2;
+          break;
+        case '3-5':
+          matchesExperience = experience >= 3 && experience <= 5;
+          break;
+        case '6-8':
+          matchesExperience = experience >= 6 && experience <= 8;
+          break;
+        case '9+':
+          matchesExperience = experience >= 9;
+          break;
+        default:
+          matchesExperience = true;
+      }
+    }
+    
+    return matchesSearch && matchesStatus && matchesLocation && matchesExperience;
+  });
+
+  const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/status/public`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      
+      if (response.ok) {
+        setMessage('Application status updated successfully');
+        fetchAllApplications();
+        if (selectedApplication?.id === applicationId) {
+          setSelectedApplication({ ...selectedApplication, status: newStatus });
+        }
+      } else {
+        setError('Failed to update application status');
+      }
+    } catch (err) {
+      setError('Failed to update application status');
     }
   };
 
@@ -165,7 +437,6 @@ const ApplicationsManagement = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Use public endpoint for testing
       const response = await fetch('http://localhost:8000/api/v1/applications/public', {
         method: 'POST',
         headers: {
@@ -178,7 +449,6 @@ const ApplicationsManagement = () => {
         })
       });
       if (response.ok) {
-        const data = await response.json();
         setMessage('Application created successfully');
         setFormData({
           candidate_id: '',
@@ -186,12 +456,12 @@ const ApplicationsManagement = () => {
           status: 'applied'
         });
         setShowForm(false);
+        setCandidateSearch('');
+        setJobSearch('');
+        fetchAllApplications();
       } else {
         const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to create application: ${errorMessage}`);
+        setError(`Failed to create application: ${errorData.detail}`);
       }
     } catch (err) {
       setError('Failed to create application');
@@ -200,204 +470,148 @@ const ApplicationsManagement = () => {
     }
   };
 
-  const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
-    setLoading(true);
-    try {
-      // Use public endpoint for testing
-      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedApplication(data);
-        setMessage('Application status updated successfully');
-        // Update the application in the list
-        setApplications(prev => prev.map(app => 
-          app.id === applicationId ? { ...app, status: newStatus } : app
-        ));
-      } else {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail);
-        setError(`Failed to update application status: ${errorMessage}`);
-      }
-    } catch (err) {
-      setError('Failed to update application status');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFilterApplications = () => {
-    if (filters.job_id) {
-      fetchJobApplications(filters.job_id);
-    } else if (filters.candidate_id) {
-      fetchCandidateApplications(filters.candidate_id);
-    } else {
-      setError('Please select either a Job or Candidate to filter applications');
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'applied': return '#ff9800';
-      case 'reviewing': return '#2196f3';
-      case 'interviewed': return '#9c27b0';
-      case 'accepted': return '#4caf50';
-      case 'rejected': return '#f44336';
-      default: return '#757575';
-    }
-  };
-
   return (
     <div className="applications-dashboard">
-      {/* Professional Header */}
-      <div className="unified-header">
+      {/* Header */}
+      <div className="dashboard-header">
         <div className="header-content">
           <div className="header-left">
-            <div className="header-icon">
-              <i className="fas fa-briefcase"></i>
-            </div>
             <div className="header-text">
               <h1 className="header-title">Applications Management</h1>
+              <p className="header-subtitle">Manage and track job applications</p>
             </div>
           </div>
-        </div>
-        <div className="header-actions">
-          <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>← Back to Dashboard</button>
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowForm(true)}
-          >
-            <i className="fas fa-plus"></i>
-            Create Application
-          </button>
+          <div className="header-actions">
+            <button className="btn btn-secondary" onClick={() => window.location.href = '/recruiter/dashboard'}>
+              Dashboard
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+              Create Application
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Messages */}
-      {error && (
-        <div className="error-message">
-          <span>{typeof error === 'string' ? error : JSON.stringify(error)}</span>
-          <button onClick={() => setError('')}>×</button>
-        </div>
-      )}
-
-      {message && (
-        <div className="success-message">
-          {message}
-          <button onClick={() => setMessage('')}>×</button>
-        </div>
-      )}
-
       {/* Main Content */}
-      <div className="dashboard-content">
-        {/* Filter Section */}
-        <div className="content-section">
-          <div className="section-header">
-            <h2 className="section-title">
-              <i className="fas fa-filter"></i>
-              Filter Applications
-            </h2>
-            <p className="section-description">
-              Search and filter applications by job, candidate, or status
-            </p>
+      <div className="dashboard-layout">
+        {/* Filters Sidebar */}
+        <div className="filters-sidebar">
+          <div className="sidebar-header">
+            <h3 className="sidebar-title">Search & Filter Applications</h3>
           </div>
-          
-          <div className="filters-container">
-            <div className="filters-grid">
-              <div className="filter-group">
-                <label className="filter-label">Select Job</label>
-                <div className="search-dropdown">
-                  <input
-                    type="text"
-                    placeholder="Search jobs by title, company, or location..."
-                    value={searchJob}
-                    onChange={(e) => setSearchJob(e.target.value)}
-                    className="search-input"
-                  />
-                  <select
-                    value={filters.job_id}
-                    onChange={(e) => setFilters({...filters, job_id: e.target.value, candidate_id: ''})}
-                    className="dropdown-select"
-                  >
-                    <option value="">Select a job...</option>
-                    {filteredJobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.title} - {job.company} ({job.location})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
-              <div className="filter-group">
-                <label className="filter-label">Select Candidate</label>
-                <div className="search-dropdown">
-                  <input
-                    type="text"
-                    placeholder="Search candidates by name, email, or location..."
-                    value={searchCandidate}
-                    onChange={(e) => setSearchCandidate(e.target.value)}
-                    className="search-input"
-                  />
-                  <select
-                    value={filters.candidate_id}
-                    onChange={(e) => setFilters({...filters, candidate_id: e.target.value, job_id: ''})}
-                    className="dropdown-select"
-                  >
-                    <option value="">Select a candidate...</option>
-                    {filteredCandidates.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.name} - {candidate.email} ({candidate.location})
-                      </option>
-                    ))}
-                  </select>
+          <div className="filter-section">
+            <div className="filter-section-title">Search Applications</div>
+            <div className="search-input-wrapper" style={{position: 'relative'}}>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by candidate name, email, job title, company..."
+                className="filter-input"
+              />
+              {mainSearchLoading && (
+                <div className="search-loading">Searching...</div>
+              )}
+              {showMainSearchSuggestions && mainSearchSuggestions.length > 0 && (
+                <div className="suggestions-dropdown" style={{zIndex: 1000, position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', maxHeight: '300px', overflowY: 'auto'}}>
+                  {mainSearchSuggestions.map((suggestion, index) => (
+                    <div 
+                      key={`${suggestion.type}-${suggestion.id}-${index}`}
+                      className="suggestion-item"
+                      onClick={() => selectMainSearchSuggestion(suggestion)}
+                      style={{padding: '12px', cursor: 'pointer', borderBottom: '1px solid #eee', display: 'flex', flexDirection: 'column', gap: '4px'}}
+                    >
+                      <div className="suggestion-main">
+                        <strong>{suggestion.displayText}</strong>
+                      </div>
+                      <div className="suggestion-sub">
+                        <span className="suggestion-type">{suggestion.type === 'candidate' ? '👤 Candidate' : '💼 Job'}</span>
+                        {suggestion.location && <span>{suggestion.location}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-
-              <div className="filter-group">
-                <label className="filter-label">Status</label>
-                <select
-                  value={filters.status}
-                  onChange={(e) => setFilters({...filters, status: e.target.value})}
-                  className="status-select"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="applied">Applied</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
+              )}
             </div>
+          </div>
 
-            <div className="filter-actions">
+          <div className="filter-section">
+            <div className="filter-section-title">Status Filter</div>
+            <select
+              value={filters.status}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              className="filter-input"
+            >
+              <option value="">All Statuses</option>
+              {statusOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-section">
+            <div className="filter-section-title">Experience Range</div>
+            <select
+              value={filters.experience_range}
+              onChange={(e) => setFilters({ ...filters, experience_range: e.target.value })}
+              className="filter-input"
+            >
+              {experienceRanges.map(range => (
+                <option key={range.value} value={range.value}>
+                  {range.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-section">
+            <div className="filter-section-title">Location Filter</div>
+            <input
+              type="text"
+              value={filters.location}
+              onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+              placeholder="Filter by location..."
+              className="filter-input"
+            />
+          </div>
+
+          <div className="filter-actions">
+            <button className="btn btn-primary btn-find" onClick={applyFilters}>
+              Apply Filters
+            </button>
+            <button className="btn btn-clear" onClick={clearFilters}>
+              Clear All
+            </button>
+          </div>
+
+          {error && <div className="error-message">{error}</div>}
+          {message && <div className="success-message">{message}</div>}
+        </div>
+
+        {/* Applications Content */}
+        <div className="applications-content">
+          <div className="results-header">
+            <h2 className="results-title">
+              Applications ({filteredApplications.length})
+              {loading && <span className="loading-spinner">Loading...</span>}
+            </h2>
+            <div className="view-controls">
               <button 
-                className="btn btn-secondary"
-                onClick={handleFilterApplications}
+                className={`view-btn ${viewMode === 'card' ? 'active' : ''}`}
+                onClick={() => setViewMode('card')}
               >
-                <i className="fas fa-search"></i>
-                Filter Applications
+                Card View
+              </button>
+              <button 
+                className={`view-btn ${viewMode === 'table' ? 'active' : ''}`}
+                onClick={() => setViewMode('table')}
+              >
+                Table View
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Applications List */}
-        <div className="content-section">
-          <div className="section-header">
-            <h2 className="section-title">
-              <i className="fas fa-list"></i>
-              Applications ({applications.length})
-            </h2>
-            <p className="section-description">
-              View and manage all job applications
-            </p>
           </div>
 
           {loading ? (
@@ -405,78 +619,157 @@ const ApplicationsManagement = () => {
               <div className="loading-spinner"></div>
               <p>Loading applications...</p>
             </div>
-          ) : (
-            <div className="applications-container">
-              {applications.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-icon">
-                    <i className="fas fa-inbox"></i>
-                  </div>
-                  <h3>No Applications Found</h3>
-                  <p>Try selecting a job or candidate to view applications</p>
-                </div>
-              ) : (
-                <div className="applications-grid">
-                  {applications.map(application => (
-                    <div 
-                      key={application.id} 
-                      className={`application-card ${selectedApplication?.id === application.id ? 'selected' : ''}`}
-                      onClick={() => fetchApplicationDetails(application.id)}
+          ) : filteredApplications.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📋</div>
+              <h3>No Applications Found</h3>
+              <p>Try adjusting your search criteria or create a new application.</p>
+            </div>
+          ) : viewMode === 'card' ? (
+            <div className="applications-grid">
+              {filteredApplications.map(application => (
+                <div 
+                  key={application.id} 
+                  className={`application-card ${selectedApplication?.id === application.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedApplication(application)}
+                >
+                  <div className="card-header">
+                    <h4 className="card-title">Application #{application.id}</h4>
+                    <span 
+                      className="status-badge"
+                      style={{ backgroundColor: getStatusColor(application.status) }}
                     >
-                      <div className="application-header">
-                        <h3 className="application-title">Application #{application.id}</h3>
+                      {application.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div className="card-content">
+                    {/* Candidate Profile Highlights */}
+                    <div className="profile-section">
+                      <h5 className="section-title">Candidate Profile</h5>
+                      <div className="profile-info">
+                        <p className="profile-name">{application.candidate?.name || 'N/A'}</p>
+                        <p className="profile-email">{application.candidate?.email || 'N/A'}</p>
+                        <p className="profile-location">{application.candidate?.location || 'N/A'}</p>
+                        {application.candidate?.total_years_experience && (
+                          <p className="profile-experience">
+                            {application.candidate.total_years_experience} years experience
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Job Context */}
+                    <div className="job-section">
+                      <h5 className="section-title">Job Context</h5>
+                      <div className="job-info">
+                        <p className="job-title">{application.job?.title || 'N/A'}</p>
+                        <p className="job-company">{application.job?.company || 'N/A'}</p>
+                        <p className="job-location">{application.job?.location || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    <div className="application-meta">
+                      <p className="applied-date">
+                        Applied: {new Date(application.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="card-actions">
+                    <select
+                      value={application.status}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleUpdateApplicationStatus(application.id, e.target.value);
+                      }}
+                      className="status-select"
+                    >
+                      {statusOptions.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="applications-table">
+                <thead>
+                  <tr>
+                    <th>Application ID</th>
+                    <th>Candidate</th>
+                    <th>Email</th>
+                    <th>Location</th>
+                    <th>Experience</th>
+                    <th>Job Title</th>
+                    <th>Company</th>
+                    <th>Job Location</th>
+                    <th>Status</th>
+                    <th>Applied Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApplications.map(application => (
+                    <tr key={application.id}>
+                      <td>#{application.id}</td>
+                      <td>{application.candidate?.name || 'N/A'}</td>
+                      <td>{application.candidate?.email || 'N/A'}</td>
+                      <td>{application.candidate?.location || 'N/A'}</td>
+                      <td>{application.candidate?.total_years_experience ? `${application.candidate.total_years_experience} years` : 'N/A'}</td>
+                      <td>{application.job?.title || 'N/A'}</td>
+                      <td>{application.job?.company || 'N/A'}</td>
+                      <td>{application.job?.location || 'N/A'}</td>
+                      <td>
                         <span 
                           className="status-badge"
                           style={{ backgroundColor: getStatusColor(application.status) }}
                         >
-                          {application.status}
+                          {application.status.replace('_', ' ').toUpperCase()}
                         </span>
-                      </div>
-                      
-                      <div className="application-content">
-                        <div className="application-info">
-                          <p><strong>Candidate:</strong> {application.candidate?.name || 'N/A'}</p>
-                          <p><strong>Job:</strong> {application.job?.title || 'N/A'}</p>
-                          <p><strong>Applied:</strong> {new Date(application.created_at).toLocaleDateString()}</p>
-                        </div>
-                        
-                        <div className="application-actions">
-                          <select
-                            value={application.status}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleUpdateApplicationStatus(application.id, e.target.value);
-                            }}
-                            className="status-select"
-                          >
-                            <option value="applied">Applied</option>
-                            <option value="accepted">Accepted</option>
-                            <option value="rejected">Rejected</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+                      </td>
+                      <td>{new Date(application.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <select
+                          value={application.status}
+                          onChange={(e) => handleUpdateApplicationStatus(application.id, e.target.value)}
+                          className="status-select"
+                        >
+                          {statusOptions.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              )}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Application Details */}
-        {selectedApplication && (
-          <div className="content-section">
-            <div className="section-header">
-              <h2 className="section-title">
-                <i className="fas fa-file-alt"></i>
-                Application Details
-              </h2>
+      {/* Application Details Modal */}
+      {selectedApplication && (
+        <div className="modal-overlay" onClick={() => setSelectedApplication(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Application Details #{selectedApplication.id}</h2>
+              <button className="modal-close" onClick={() => setSelectedApplication(null)}>
+                ×
+              </button>
             </div>
             
-            <div className="application-details-container">
+            <div className="modal-content">
               <div className="details-grid">
                 <div className="detail-section">
-                  <h3 className="detail-title">Basic Information</h3>
+                  <h3>Basic Information</h3>
                   <div className="detail-content">
                     <p><strong>Application ID:</strong> {selectedApplication.id}</p>
                     <p><strong>Status:</strong> 
@@ -484,7 +777,7 @@ const ApplicationsManagement = () => {
                         className="status-badge"
                         style={{ backgroundColor: getStatusColor(selectedApplication.status) }}
                       >
-                        {selectedApplication.status}
+                        {selectedApplication.status.replace('_', ' ').toUpperCase()}
                       </span>
                     </p>
                     <p><strong>Applied Date:</strong> {new Date(selectedApplication.created_at).toLocaleDateString()}</p>
@@ -493,7 +786,7 @@ const ApplicationsManagement = () => {
                 </div>
 
                 <div className="detail-section">
-                  <h3 className="detail-title">Candidate Information</h3>
+                  <h3>Candidate Information</h3>
                   <div className="detail-content">
                     {selectedApplication.candidate ? (
                       <>
@@ -501,7 +794,8 @@ const ApplicationsManagement = () => {
                         <p><strong>Email:</strong> {selectedApplication.candidate.email}</p>
                         <p><strong>Location:</strong> {selectedApplication.candidate.location}</p>
                         <p><strong>Domain:</strong> {selectedApplication.candidate.domain}</p>
-                        <p><strong>Expected Salary:</strong> ${selectedApplication.candidate.expected_salary_min} - ${selectedApplication.candidate.expected_salary_max}</p>
+                        <p><strong>Experience:</strong> {selectedApplication.candidate.total_years_experience || 'N/A'} years</p>
+                        <p><strong>Expected Salary:</strong> ${selectedApplication.candidate.expected_salary_min || 'N/A'} - ${selectedApplication.candidate.expected_salary_max || 'N/A'}</p>
                       </>
                     ) : (
                       <p>Candidate information not available</p>
@@ -510,7 +804,7 @@ const ApplicationsManagement = () => {
                 </div>
 
                 <div className="detail-section">
-                  <h3 className="detail-title">Job Information</h3>
+                  <h3>Job Information</h3>
                   <div className="detail-content">
                     {selectedApplication.job ? (
                       <>
@@ -518,8 +812,8 @@ const ApplicationsManagement = () => {
                         <p><strong>Company:</strong> {selectedApplication.job.company}</p>
                         <p><strong>Location:</strong> {selectedApplication.job.location}</p>
                         <p><strong>Domain:</strong> {selectedApplication.job.domain}</p>
-                        <p><strong>Salary Range:</strong> ${selectedApplication.job.salary_min} - ${selectedApplication.job.salary_max}</p>
-                        <p><strong>Experience Required:</strong> {selectedApplication.job.total_years_required} years</p>
+                        <p><strong>Salary Range:</strong> ${selectedApplication.job.salary_min || 'N/A'} - ${selectedApplication.job.salary_max || 'N/A'}</p>
+                        <p><strong>Experience Required:</strong> {selectedApplication.job.total_years_required || 'N/A'} years</p>
                       </>
                     ) : (
                       <p>Job information not available</p>
@@ -529,141 +823,145 @@ const ApplicationsManagement = () => {
               </div>
 
               <div className="detail-actions">
-                <h3 className="detail-title">Update Status</h3>
+                <h3>Update Status</h3>
                 <div className="status-update">
                   <select
                     value={selectedApplication.status}
                     onChange={(e) => handleUpdateApplicationStatus(selectedApplication.id, e.target.value)}
                     className="status-select"
                   >
-                    <option value="applied">Applied</option>
-                    <option value="accepted">Accepted</option>
-                    <option value="rejected">Rejected</option>
+                    {statusOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                   <button 
                     className="btn btn-primary"
                     onClick={() => handleUpdateApplicationStatus(selectedApplication.id, selectedApplication.status)}
                   >
-                    <i className="fas fa-save"></i>
                     Update Status
                   </button>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Create Application Modal */}
-        {showForm && (
-          <div className="modal">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h3 className="modal-title">
-                  <i className="fas fa-plus"></i>
-                  Create New Application
-                </h3>
-                <button 
-                  className="modal-close"
-                  onClick={() => setShowForm(false)}
-                >
-                  <i className="fas fa-times"></i>
-                </button>
+      {/* Create Application Modal */}
+      {showForm && (
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Create New Application</h2>
+              <button className="modal-close" onClick={() => setShowForm(false)}>
+                ×
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateApplication} className="modal-form">
+              <div className="form-group">
+                <label>Select Candidate</label>
+                <div className="search-input-wrapper">
+                  <input
+                    type="text"
+                    placeholder="Search candidates by name, email, or location..."
+                    value={candidateSearch}
+                    onChange={handleCandidateSearchChange}
+                    className="search-input"
+                  />
+                  {showCandidateSuggestions && (
+                    <div className="suggestions-dropdown">
+                      {candidateSuggestions.map((candidate) => (
+                        <div 
+                          key={candidate.id} 
+                          className="suggestion-item"
+                          onClick={() => selectCandidate(candidate)}
+                        >
+                          <div className="suggestion-main">
+                            <strong>{candidate.name}</strong>
+                          </div>
+                          <div className="suggestion-email">{candidate.email}</div>
+                          <div className="suggestion-sub">
+                            <span>{candidate.location}</span>
+                            {candidate.total_years_experience && (
+                              <span>{candidate.total_years_experience} years exp</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               
-              <form onSubmit={handleCreateApplication} className="modal-form">
-                <div className="form-group">
-                  <label className="form-label">Select Candidate</label>
-                  <div className="search-dropdown">
-                    <input
-                      type="text"
-                      placeholder="Search candidates by name, email, or location..."
-                      value={searchCandidate}
-                      onChange={(e) => setSearchCandidate(e.target.value)}
-                      className="search-input"
-                    />
-                    <select
-                      value={formData.candidate_id}
-                      onChange={(e) => setFormData({...formData, candidate_id: e.target.value})}
-                      required
-                      className="dropdown-select"
-                    >
-                      <option value="">Select a candidate...</option>
-                      {filteredCandidates.map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {candidate.name} - {candidate.email} ({candidate.location})
-                        </option>
+              <div className="form-group">
+                <label>Select Job</label>
+                <div className="search-input-wrapper">
+                  <input
+                    type="text"
+                    placeholder="Search jobs by title, company, or location..."
+                    value={jobSearch}
+                    onChange={handleJobSearchChange}
+                    className="search-input"
+                  />
+                  {showJobSuggestions && (
+                    <div className="suggestions-dropdown">
+                      {jobSuggestions.map((job) => (
+                        <div 
+                          key={job.id} 
+                          className="suggestion-item"
+                          onClick={() => selectJob(job)}
+                        >
+                          <div className="suggestion-main">
+                            <strong>{job.title}</strong>
+                          </div>
+                          <div className="suggestion-email">{job.company}</div>
+                          <div className="suggestion-sub">
+                            <span>{job.location}</span>
+                            {job.total_years_required && (
+                              <span>{job.total_years_required} years req</span>
+                            )}
+                          </div>
+                        </div>
                       ))}
-                    </select>
-                  </div>
+                    </div>
+                  )}
                 </div>
-                
-                <div className="form-group">
-                  <label className="form-label">Select Job</label>
-                  <div className="search-dropdown">
-                    <input
-                      type="text"
-                      placeholder="Search jobs by title, company, or location..."
-                      value={searchJob}
-                      onChange={(e) => setSearchJob(e.target.value)}
-                      className="search-input"
-                    />
-                    <select
-                      value={formData.job_id}
-                      onChange={(e) => setFormData({...formData, job_id: e.target.value})}
-                      required
-                      className="dropdown-select"
-                    >
-                      <option value="">Select a job...</option>
-                      {filteredJobs.map((job) => (
-                        <option key={job.id} value={job.id}>
-                          {job.title} - {job.company} ({job.location})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value})}
-                    className="status-select"
-                  >
-                    <option value="applied">Applied</option>
-                    <option value="accepted">Accepted</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-                
-                <div className="form-actions">
-                  <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? (
-                      <>
-                        <i className="fas fa-spinner fa-spin"></i>
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <i className="fas fa-plus"></i>
-                        Create Application
-                      </>
-                    )}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary"
-                    onClick={() => setShowForm(false)}
-                  >
-                    <i className="fas fa-times"></i>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
+              </div>
+              
+              <div className="form-group">
+                <label>Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({...formData, status: e.target.value})}
+                  className="status-select"
+                >
+                  {statusOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="form-actions">
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Creating...' : 'Create Application'}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,441 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
+from pydantic import BaseModel
+from datetime import datetime
+
+from config.database import get_db_session
+from models.application import Application
+from models.candidate import Candidate
+from db.crud.application import application as application_crud
+from api.routers.auth import get_current_user
+from schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
+
+router = APIRouter(tags=["Applications"])
+
+@router.get("/public", response_model=List[dict])
+async def get_all_applications_public(
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Get all applications with candidate and job details (public endpoint for management)"""
+    try:
+        # Get all applications with relationships loaded
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select
+        
+        query = select(Application).options(
+            selectinload(Application.candidate),
+            selectinload(Application.job)
+        )
+        
+        if status_filter:
+            query = query.where(Application.status == status_filter)
+        
+        query = query.offset(skip).limit(limit).order_by(Application.created_at.desc())
+        result = await db.execute(query)
+        applications = result.scalars().all()
+        
+        # Convert to response format with full details
+        response_applications = []
+        for app in applications:
+            app_data = {
+                "id": app.id,
+                "job_id": app.job_id,
+                "candidate_id": app.candidate_id,
+                "status": app.status,
+                "created_at": app.created_at,
+                "updated_at": app.updated_at
+            }
+            
+            # Add candidate details if available
+            if hasattr(app, 'candidate') and app.candidate:
+                app_data["candidate"] = {
+                    "id": app.candidate.id,
+                    "name": app.candidate.name,
+                    "email": app.candidate.email,
+                    "location": app.candidate.location,
+                    "domain": app.candidate.domain,
+                    "total_years_experience": app.candidate.total_years_experience,
+                    "expected_salary_min": app.candidate.expected_salary_min,
+                    "expected_salary_max": app.candidate.expected_salary_max
+                }
+            
+            # Add job details if available
+            if hasattr(app, 'job') and app.job:
+                app_data["job"] = {
+                    "id": app.job.id,
+                    "title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                    "domain": app.job.domain,
+                    "salary_min": app.job.salary_min,
+                    "salary_max": app.job.salary_max,
+                    "total_years_required": app.job.total_years_required
+                }
+            
+            response_applications.append(app_data)
+        
+        return response_applications
+    except Exception as e:
+        print(f"Get all applications error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve applications. Please try again later."
+        )
+
+@router.post("/", response_model=ApplicationResponse)
+async def apply_for_job(
+    application_data: ApplicationCreate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Apply for a job"""
+    try:
+        print(f"DEBUG: Checking for existing application - candidate_id: {current_user.id}, job_id: {application_data.job_id}")
+        
+        # Check if already applied
+        existing_application = await application_crud.get_by_candidate_and_job(
+            db, candidate_id=current_user.id, job_id=application_data.job_id
+        )
+        
+        print(f"DEBUG: Existing application found: {existing_application}")
+        
+        if existing_application:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Already applied for this job"
+            )
+        
+        print(f"DEBUG: No existing application found, creating new one")
+        
+        # Create application with current user's ID
+        application_data_dict = application_data.dict()
+        # Always use the authenticated user's ID, regardless of what was sent
+        application_data_dict["candidate_id"] = current_user.id
+        
+        print(f"DEBUG: Application data: {application_data_dict}")
+        
+        application = await application_crud.create(db, obj_in=application_data_dict)
+        
+        # Log interaction
+        from services.interaction_service import interaction_service
+        await interaction_service.log_interaction(
+            db, current_user.id, application_data.job_id, "applied"
+        )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"DEBUG: Exception occurred: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to apply for job: {str(e)}"
+        )
+
+@router.post("/public", response_model=ApplicationResponse)
+async def create_application_public(
+    application_data: ApplicationCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create application for testing (public endpoint)"""
+    try:
+        print(f"DEBUG: Creating application - candidate_id: {application_data.candidate_id}, job_id: {application_data.job_id}")
+        
+        # Ensure candidate_id is provided for public endpoint
+        if not application_data.candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="candidate_id is required for public endpoint"
+            )
+        
+        # Check if already applied
+        existing_application = await application_crud.get_by_candidate_and_job(
+            db, candidate_id=application_data.candidate_id, job_id=application_data.job_id
+        )
+        
+        if existing_application:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Already applied for this job"
+            )
+        
+        # Create application
+        application_data_dict = application_data.dict()
+        application = await application_crud.create(db, obj_in=application_data_dict)
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"DEBUG: Exception occurred: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create application: {str(e)}"
+        )
+
+@router.get("/{application_id}", response_model=ApplicationResponse)
+async def get_application(
+    application_id: int,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get application status"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Check if user owns this application
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only view own applications"
+            )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve application: {str(e)}"
+        )
+
+@router.get("/{application_id}/public", response_model=ApplicationResponse)
+async def get_application_public(
+    application_id: int,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get application status (public endpoint for testing)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve application: {str(e)}"
+        )
+
+@router.put("/{application_id}/status")
+async def update_application_status(
+    application_id: int,
+    status_update: ApplicationUpdate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update application status"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Check if user owns this application
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only update own applications"
+            )
+        
+        application = await application_crud.update(
+            db, db_obj=application, obj_in=status_update
+        )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update application: {str(e)}"
+        )
+
+@router.put("/{application_id}/status/public")
+async def update_application_status_public(
+    application_id: int,
+    status_update: ApplicationUpdate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update application status (public endpoint for testing)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        application = await application_crud.update(
+            db, db_obj=application, obj_in=status_update
+        )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update application: {str(e)}"
+        )
+
+@router.get("/candidate/{candidate_id}/applications")
+async def get_candidate_applications(
+    candidate_id: int,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Get candidate's applications"""
+    try:
+        if current_user.id != candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only view own applications"
+            )
+        
+        applications = await application_crud.get_by_candidate(
+            db, candidate_id=candidate_id, skip=skip, limit=limit, status=status_filter
+        )
+        return applications
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve applications: {str(e)}"
+        )
+
+@router.get("/candidate/{candidate_id}/applications/public")
+async def get_candidate_applications_public(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Get candidate's applications (public endpoint for testing)"""
+    try:
+        # Use get_by_candidate_id to get applications with job details
+        applications = await application_crud.get_by_candidate_id(
+            db, candidate_id=candidate_id, skip=skip, limit=limit
+        )
+        
+        # Convert to response format with job details
+        response_applications = []
+        for app in applications:
+            job_details = {
+                "id": app.id,
+                "job_id": app.job_id,
+                "candidate_id": app.candidate_id,
+                "status": app.status,
+                "created_at": app.created_at,
+                "updated_at": app.updated_at,
+                "applied_at": app.created_at  # Use created_at as applied_at
+            }
+            
+            # Add job details if available
+            if hasattr(app, 'job') and app.job:
+                job_details.update({
+                    "job_title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                    "salary_min": app.job.salary_min,
+                    "salary_max": app.job.salary_max
+                })
+            
+            response_applications.append(job_details)
+        
+        return response_applications
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve applications: {str(e)}"
+        )
+
+@router.get("/job/{job_id}/applications")
+async def get_job_applications(
+    job_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Get applications for a job"""
+    try:
+        applications = await application_crud.get_by_job(
+            db, job_id=job_id, skip=skip, limit=limit, status=status_filter
+        )
+        return applications
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve applications: {str(e)}"
+        )
+
+@router.get("/my-applications", response_model=List[ApplicationResponse])
+async def get_my_applications(
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100)
+):
+    """Get current user's applications"""
+    try:
+        # Get applications with job details
+        applications = await application_crud.get_by_candidate_id(
+            db, candidate_id=current_user.id, skip=skip, limit=limit
+        )
+        
+        # Convert to response format with job details
+        response_applications = []
+        for app in applications:
+            job_details = {
+                "id": app.id,
+                "job_id": app.job_id,
+                "candidate_id": app.candidate_id,
+                "status": app.status,
+                "created_at": app.created_at,
+                "updated_at": app.updated_at,
+                "applied_at": app.created_at  # Use created_at as applied_at
+            }
+            
+            # Add job details if available
+            if hasattr(app, 'job') and app.job:
+                job_details.update({
+                    "job_title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                    "salary_min": app.job.salary_min,
+                    "salary_max": app.job.salary_max
+                })
+            
+            response_applications.append(job_details)
+        
+        return response_applications
+    except Exception as e:
+        print(f"Get my applications error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve applications. Please try again later."
+        )

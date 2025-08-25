@@ -400,7 +400,7 @@ const EnhancedRecruiterRecommendations = () => {
                   className="recommendation-card"
                 >
                   <div className="card-header">
-                    <h4>Candidate #{recommendation.candidate_id}</h4>
+                    <h4>{recommendation.candidate_name || `Candidate #${recommendation.candidate_id}`}</h4>
                     <div 
                       className="match-score"
                       style={{ backgroundColor: getMatchScoreColor(realisticScore / 100) }}

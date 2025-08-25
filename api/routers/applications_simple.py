@@ -19,12 +19,7 @@ async def get_all_applications_public(
     db: AsyncSession = Depends(get_db_session),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    status_filter: Optional[str] = Query(None, description="Filter by status"),
-    search: Optional[str] = Query(None, description="Search by candidate name, email, job title, or company"),
-    candidate_id: Optional[int] = Query(None, description="Filter by specific candidate ID"),
-    job_id: Optional[int] = Query(None, description="Filter by specific job ID"),
-    location: Optional[str] = Query(None, description="Filter by location"),
-    experience_range: Optional[str] = Query(None, description="Filter by experience range (0-2, 3-5, 6-8, 9+)")
+    status_filter: Optional[str] = Query(None, description="Filter by status")
 ):
     """Get all applications with candidate and job details (public endpoint for management)"""
     try:
@@ -43,53 +38,43 @@ async def get_all_applications_public(
                 "updated_at": app.updated_at
             }
             
-            # Get candidate details using separate query with fresh session
+            # Get candidate details using separate query
             if app.candidate_id:
-                try:
-                    # Use raw SQL to avoid SQLAlchemy async issues
-                    from sqlalchemy import text
-                    candidate_query = text("SELECT id, name, email, location, domain, total_years_experience, expected_salary_min, expected_salary_max FROM candidates WHERE id = :candidate_id")
-                    candidate_result = await db.execute(candidate_query, {"candidate_id": app.candidate_id})
-                    candidate_row = candidate_result.fetchone()
-                    
-                    if candidate_row:
-                        app_data["candidate"] = {
-                            "id": candidate_row[0],
-                            "name": candidate_row[1],
-                            "email": candidate_row[2],
-                            "location": candidate_row[3],
-                            "domain": candidate_row[4],
-                            "total_years_experience": candidate_row[5],
-                            "expected_salary_min": candidate_row[6],
-                            "expected_salary_max": candidate_row[7]
-                        }
-                except Exception as e:
-                    print(f"Error fetching candidate {app.candidate_id}: {e}")
-                    # Continue without candidate data
+                from sqlalchemy import select
+                candidate_query = select(Candidate).where(Candidate.id == app.candidate_id)
+                candidate_result = await db.execute(candidate_query)
+                candidate = candidate_result.scalar_one_or_none()
+                
+                if candidate:
+                    app_data["candidate"] = {
+                        "id": candidate.id,
+                        "name": candidate.name,
+                        "email": candidate.email,
+                        "location": candidate.location,
+                        "domain": candidate.domain,
+                        "total_years_experience": candidate.total_years_experience,
+                        "expected_salary_min": candidate.expected_salary_min,
+                        "expected_salary_max": candidate.expected_salary_max
+                    }
             
-            # Get job details using separate query with fresh session
+            # Get job details using separate query
             if app.job_id:
-                try:
-                    # Use raw SQL to avoid SQLAlchemy async issues
-                    from sqlalchemy import text
-                    job_query = text("SELECT id, title, company, location, domain, salary_min, salary_max, total_years_required FROM jobs WHERE id = :job_id")
-                    job_result = await db.execute(job_query, {"job_id": app.job_id})
-                    job_row = job_result.fetchone()
-                    
-                    if job_row:
-                        app_data["job"] = {
-                            "id": job_row[0],
-                            "title": job_row[1],
-                            "company": job_row[2],
-                            "location": job_row[3],
-                            "domain": job_row[4],
-                            "salary_min": job_row[5],
-                            "salary_max": job_row[6],
-                            "total_years_required": job_row[7]
-                        }
-                except Exception as e:
-                    print(f"Error fetching job {app.job_id}: {e}")
-                    # Continue without job data
+                from sqlalchemy import select
+                job_query = select(Job).where(Job.id == app.job_id)
+                job_result = await db.execute(job_query)
+                job = job_result.scalar_one_or_none()
+                
+                if job:
+                    app_data["job"] = {
+                        "id": job.id,
+                        "title": job.title,
+                        "company": job.company,
+                        "location": job.location,
+                        "domain": job.domain,
+                        "salary_min": job.salary_min,
+                        "salary_max": job.salary_max,
+                        "total_years_required": job.total_years_required
+                    }
             
             response_applications.append(app_data)
         

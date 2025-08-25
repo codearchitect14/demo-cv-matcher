@@ -495,6 +495,11 @@
 .status-viewed { background: #f3f4f6; color: var(--dark-gray); }
 .status-rejected { background: var(--warning-light); color: var(--warning-amber); }
 
+/* Uppercase status classes with black text */
+.status-APPLIED { background: var(--light-blue); color: #000000; }
+.status-VIEWED { background: #f3f4f6; color: #000000; }
+.status-REJECTED { background: var(--warning-light); color: #000000; }
+
 .table-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; gap: 12px; flex-wrap: wrap; }
 .pagination { display: flex; gap: 8px; align-items: center; }
 .page-btn { background: var(--white); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 10px; cursor: pointer; }

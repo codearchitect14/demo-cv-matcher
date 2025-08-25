@@ -34,6 +34,7 @@ class SkillMatchResult:
 class EnhancedRecommendationResult:
     """Enhanced recommendation result with skill-specific details"""
     candidate_id: int
+    candidate_name: str
     job_id: int
     overall_match_score: float
     skill_matches: List[SkillMatchResult]
@@ -264,10 +265,12 @@ class EnhancedRecommendationService:
         
         # Resolve ids for both dicts and ORM instances
         cand_id = candidate_data['id'] if isinstance(candidate_data, dict) else getattr(candidate_data, 'id', 0)
+        cand_name = candidate_data.get('name', f"Candidate #{cand_id}") if isinstance(candidate_data, dict) else getattr(candidate_data, 'name', f"Candidate #{cand_id}")
         job_id_val = job_data['id'] if isinstance(job_data, dict) else getattr(job_data, 'id', 0)
 
         return EnhancedRecommendationResult(
             candidate_id=cand_id,
+            candidate_name=cand_name,
             job_id=job_id_val,
             overall_match_score=overall_score,
             skill_matches=skill_matches,
