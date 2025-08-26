@@ -254,6 +254,49 @@ async def list_jobs_public(
             detail=f"Failed to retrieve jobs: {str(e)}"
         )
 
+
+
+@router.get("/recommendations", response_model=List[JobResponseSimple])
+async def get_job_recommendations(
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    limit: int = Query(5, ge=1, le=20)
+):
+    """Get job recommendations for the current candidate"""
+    try:
+        # For now, return recent jobs as recommendations
+        # In a real implementation, this would use ML/AI to provide personalized recommendations
+        jobs = await job_crud.get_multi_with_filters(
+            db, 
+            skip=0, 
+            limit=limit
+        )
+        
+        # Convert to simple response format
+        recommendations = []
+        for job in jobs:
+            recommendations.append({
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "salary_min": job.salary_min,
+                "salary_max": job.salary_max,
+                "domain": job.domain,
+                "total_years_required": job.total_years_required,
+                "created_at": job.created_at,
+                "updated_at": job.updated_at
+            })
+        
+        return recommendations
+        
+    except Exception as e:
+        print(f"Get job recommendations error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get job recommendations. Please try again later."
+        )
+
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: int,
@@ -674,44 +717,3 @@ async def get_search_help():
         ]
     }
 
-@router.get("/recommendations", response_model=List[JobResponseSimple])
-async def get_job_recommendations(
-    current_user: Candidate = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-    limit: int = Query(5, ge=1, le=20)
-):
-    """Get job recommendations for the current candidate"""
-    try:
-        # For now, return recent jobs as recommendations
-        # In a real implementation, this would use ML/AI to provide personalized recommendations
-        jobs = await job_crud.get_multi_with_filters(
-            db, 
-            skip=0, 
-            limit=limit,
-            order_by="created_at DESC"
-        )
-        
-        # Convert to simple response format
-        recommendations = []
-        for job in jobs:
-            recommendations.append({
-                "id": job.id,
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "salary_min": job.salary_min,
-                "salary_max": job.salary_max,
-                "domain": job.domain,
-                "total_years_required": job.total_years_required,
-                "created_at": job.created_at,
-                "updated_at": job.updated_at
-            })
-        
-        return recommendations
-        
-    except Exception as e:
-        print(f"Get job recommendations error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get job recommendations. Please try again later."
-        )

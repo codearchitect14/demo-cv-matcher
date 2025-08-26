@@ -18,7 +18,7 @@ class ApplicationResponse(BaseModel):
     id: int
     job_id: int
     candidate_id: int
-    status: ApplicationStatusEnum
+    status: str  # Changed from ApplicationStatusEnum to str to handle raw SQL values
     created_at: datetime
     updated_at: datetime
     applied_at: Optional[datetime] = None
@@ -27,6 +27,7 @@ class ApplicationResponse(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    job: Optional[dict] = None  # Add job object for my-applications endpoint
     
     class Config:
         from_attributes = True

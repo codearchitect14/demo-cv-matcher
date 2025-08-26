@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from config.database import get_db_session
-from models.application import Application
+from models.application import Application, ApplicationStatusEnum
 from models.candidate import Candidate
 from models.job import Job
 from db.crud.application import application as application_crud
@@ -183,8 +183,12 @@ async def create_application_public(
                 detail="Already applied for this job"
             )
         
-        # Create application
-        application_data_dict = application_data.dict()
+        # Create application with proper status handling
+        application_data_dict = application_data.model_dump()
+        # Ensure status is properly set
+        if 'status' not in application_data_dict or not application_data_dict['status']:
+            application_data_dict['status'] = ApplicationStatusEnum.APPLIED
+        
         application = await application_crud.create(db, obj_in=application_data_dict)
         
         return application
@@ -195,4 +199,65 @@ async def create_application_public(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create application: {str(e)}"
+        )
+
+@router.get("/my-applications", response_model=List[ApplicationResponse])
+async def get_my_applications(
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """Get applications for the current authenticated user"""
+    try:
+        # Use raw SQL to avoid enum issues
+        from sqlalchemy import text
+        
+        query = text("""
+            SELECT 
+                a.id, a.job_id, a.candidate_id, a.status, a.created_at, a.updated_at,
+                j.title as job_title, j.company, j.location as job_location, j.domain as job_domain,
+                j.salary_min, j.salary_max, j.total_years_required
+            FROM applications a
+            LEFT JOIN jobs j ON a.job_id = j.id
+            WHERE a.candidate_id = :candidate_id
+            ORDER BY a.created_at DESC
+            LIMIT :limit OFFSET :skip
+        """)
+        
+        result = await db.execute(query, {
+            "candidate_id": current_user.id,
+            "limit": limit,
+            "skip": skip
+        })
+        rows = result.fetchall()
+        
+        applications = []
+        for row in rows:
+            app_data = {
+                "id": row[0],
+                "job_id": row[1],
+                "candidate_id": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "updated_at": row[5],
+                "job": {
+                    "id": row[1],
+                    "title": row[6],
+                    "company": row[7],
+                    "location": row[8],
+                    "domain": row[9],
+                    "salary_min": row[10],
+                    "salary_max": row[11],
+                    "total_years_required": row[12]
+                } if row[6] else None
+            }
+            applications.append(app_data)
+        
+        return applications
+    except Exception as e:
+        print(f"Get my applications error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve your applications. Please try again later."
         )

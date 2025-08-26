@@ -35,7 +35,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         start_time = time.time()
         
         try:
-            obj_data = obj_in.dict() if hasattr(obj_in, 'dict') else obj_in
+            obj_data = obj_in.model_dump() if hasattr(obj_in, 'model_dump') else (obj_in.dict() if hasattr(obj_in, 'dict') else obj_in)
             db_obj = self.model(**obj_data)
             db.add(db_obj)
             # Flush to assign primary key without issuing a SELECT

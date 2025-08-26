@@ -1,393 +1,455 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiService } from '../api';
-import api from '../api';
 import './JobSearch.css';
 
 const JobSearch = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    query: '',
-    limit: 10,
-    apply_filters: true,
-    strict_mode: false,
-    use_ml_ranking: true
+    query: 'python'
+  });
+  const [filters, setFilters] = useState({
+    location: '',
+    company: ''
   });
   const [searchResults, setSearchResults] = useState([]);
+  const [filteredResults, setFilteredResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
-  const [showJobModal, setShowJobModal] = useState(false);
   const [applicationStatus, setApplicationStatus] = useState({});
+  const [viewMode, setViewMode] = useState('grid');
+  const [showFilters, setShowFilters] = useState(true);
+  const [searchTags, setSearchTags] = useState(['python']);
 
-  // Initialize authentication when component loads
   useEffect(() => {
-    // Initialize auth token from localStorage
-    const accessToken = localStorage.getItem('access_token') || 
-                       localStorage.getItem('token') || 
-                       localStorage.getItem('recruiterToken') || 
-                       localStorage.getItem('candidateToken') ||
-                       sessionStorage.getItem('access_token') ||
-                       sessionStorage.getItem('token') ||
-                       sessionStorage.getItem('recruiterToken') ||
-                       sessionStorage.getItem('candidateToken');
-    
-    if (accessToken) {
-      apiService.setAuthToken(accessToken);
-      console.log('Authentication initialized with token');
-    }
-  }, []);
+    const fetchCurrentUser = async () => {
+      try {
+        const user = await apiService.getCurrentUser();
+        if (!user) {
+          navigate('/login');
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+        navigate('/login');
+      }
+    };
 
+    fetchCurrentUser();
+  }, [navigate]);
+
+  // Initial search on component mount
+  useEffect(() => {
+    if (formData.query.trim()) {
+      handleSubmit({ preventDefault: () => {} });
+    }
+  }, []); // Only run once on mount
+
+  // Handlers for inputs and filters
   const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({ ...prev, [name]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({ location: '', company: '' });
+  };
+
+  // Apply client-side filters whenever filters or results change
+  useEffect(() => {
+    let filtered = Array.isArray(searchResults) ? [...searchResults] : [];
+    console.log('Filtering results. Original count:', searchResults.length);
+    console.log('Filtered count:', filtered.length);
+
+    if (filters.location) {
+      const q = filters.location.toLowerCase();
+      filtered = filtered.filter(j => (j.location || '').toLowerCase().includes(q));
+    }
+    if (filters.company) {
+      const q = filters.company.toLowerCase();
+      filtered = filtered.filter(j => (j.company || '').toLowerCase().includes(q));
+    }
+
+    // Sort by match score (highest first)
+    filtered.sort((a, b) => {
+      const scoreA = a.combined_score || 0;
+      const scoreB = b.combined_score || 0;
+      return scoreB - scoreA; // Descending order (highest first)
+    });
+
+    console.log('Final filtered count:', filtered.length);
+    setFilteredResults(filtered);
+  }, [filters, searchResults]);
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    if (!formData.query.trim()) return;
+
     setLoading(true);
     setError('');
-    setSearchResults([]);
 
     try {
-      const response = await apiService.searchJobs(formData);
-      setSearchResults(Array.isArray(response) ? response : []);
-    } catch (err) {
-      setError(err.message || 'Failed to search jobs');
-      console.error('Search error:', err);
+      console.log('Searching for:', formData.query.trim());
+      const params = {
+        domain: formData.query.trim(),
+        location: filters.location || undefined,
+        limit: 10,
+      };
+
+      const results = await apiService.searchJobs(params);
+      console.log('Search results received:', results);
+      console.log('Results type:', typeof results);
+      console.log('Results length:', Array.isArray(results) ? results.length : 'Not an array');
+      
+      setSearchResults(results);
+      setFilteredResults(results);
+
+      if (!searchTags.includes(formData.query)) {
+        setSearchTags(prev => [...prev, formData.query]);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setError('Failed to search jobs. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleViewDetails = async (job) => {
-    try {
-      setSelectedJob(job);
-      setShowJobModal(true);
-      
-      // Log the job view for analytics
-      console.log('Job viewed:', job.title, 'at', job.company);
-      
-      // You can also send analytics data to your backend
-      // await apiService.logJobView(job.id);
-      
-    } catch (err) {
-      console.error('Error viewing job details:', err);
-      setError('Failed to load job details');
-    }
+  const removeSearchTag = (tagToRemove) => {
+    setSearchTags(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
-  const handleApplyNow = async (job) => {
-    console.log('=== APPLY NOW CLICKED ===');
-    console.log('Job object:', job);
-    console.log('Job ID field:', job.id || job.job_id);
-    console.log('Available job fields:', Object.keys(job));
-    
-    try {
-      // Set status for THIS specific job only
-      const jobId = job.id || job.job_id;
-      setApplicationStatus(prev => ({ ...prev, [jobId]: 'applying' }));
-      
-      // Check if user is logged in - check all possible token names
-      const accessToken = localStorage.getItem('access_token') || 
-                         localStorage.getItem('token') || 
-                         localStorage.getItem('recruiterToken') || 
-                         localStorage.getItem('candidateToken') ||
-                         sessionStorage.getItem('access_token') ||
-                         sessionStorage.getItem('token') ||
-                         sessionStorage.getItem('recruiterToken') ||
-                         sessionStorage.getItem('candidateToken');
-      
-      console.log('=== DEBUGGING AUTHENTICATION ===');
-      console.log('Found token:', accessToken ? 'Token exists' : 'No token found');
-      console.log('Token value:', accessToken);
-      console.log('Token length:', accessToken ? accessToken.length : 0);
-      console.log('Token starts with:', accessToken ? accessToken.substring(0, 20) + '...' : 'No token');
-      
-      // Check all storage locations
-      console.log('=== STORAGE CHECK ===');
-      console.log('localStorage.access_token:', localStorage.getItem('access_token'));
-      console.log('localStorage.token:', localStorage.getItem('token'));
-      console.log('localStorage.recruiterToken:', localStorage.getItem('recruiterToken'));
-      console.log('localStorage.candidateToken:', localStorage.getItem('candidateToken'));
-      console.log('sessionStorage.access_token:', sessionStorage.getItem('access_token'));
-      console.log('sessionStorage.token:', sessionStorage.getItem('token'));
-      
-      if (!accessToken) {
-        // Reset status for this job only
-        setApplicationStatus(prev => ({ ...prev, [jobId]: 'error' }));
-        // Redirect to login page or show login modal
-        alert('Please log in to apply for this job');
-        // You can implement your own login redirect logic here
-        // window.location.href = '/login';
-        return;
-      }
-      
-      // Set the authentication token in API headers
-      apiService.setAuthToken(accessToken);
-      
-      // Verify the token is set correctly
-      console.log('Authorization header set:', api.defaults.headers.common['Authorization']);
-      
-      // Test the token by making a simple API call first
-      try {
-        console.log('=== TESTING TOKEN ===');
-        const testResponse = await apiService.getCurrentUser();
-        console.log('Token is valid! User:', testResponse);
-      } catch (tokenError) {
-        console.error('Token validation failed:', tokenError);
-        setApplicationStatus(prev => ({ ...prev, [jobId]: 'error' }));
-        alert('Your login session has expired. Please log in again.');
-        return;
-      }
-      
-      // Get user data from localStorage
-      const userData = localStorage.getItem('user_data') || 
-                      localStorage.getItem('candidate_data') ||
-                      sessionStorage.getItem('user_data') ||
-                      sessionStorage.getItem('candidate_data');
-      
-      let candidateId = 1; // Default fallback
-      if (userData) {
-        try {
-          const parsedUserData = JSON.parse(userData);
-          candidateId = parsedUserData.id || parsedUserData.candidate_id || 1;
-        } catch (e) {
-          console.warn('Could not parse user data:', e);
-        }
-      }
-      
-      // Create application with required fields only
-      const applicationData = {
-        job_id: jobId,  // Use the correct job ID
-        status: 'applied'
-      };
-      
-      console.log('Sending application with token:', accessToken ? 'Token present' : 'No token');
-      console.log('Application data:', applicationData);
-      
-      // Send application to backend
-      const response = await apiService.createApplication(applicationData);
-      
-      if (response) {
-        setApplicationStatus(prev => ({ ...prev, [jobId]: 'applied' }));
-        alert(`Successfully applied for ${job.title} at ${job.company}!`);
-        
-        // Log the application
-        console.log('Job applied:', job.title, 'at', job.company);
-        
-        // You can also send analytics data to your backend
-        // await apiService.logJobApplication(job.id);
-        
-      } else {
-        throw new Error('Failed to submit application');
-      }
-      
-    } catch (err) {
-      console.error('Error applying for job:', err);
-      const jobId = job.id || job.job_id;
-      setApplicationStatus(prev => ({ ...prev, [jobId]: 'error' }));
-      setError('Failed to submit application. Please try again.');
-    }
+  const handleViewDetails = (job) => {
+    setSelectedJob(job);
   };
 
   const closeJobModal = () => {
-    setShowJobModal(false);
     setSelectedJob(null);
   };
 
-  const formatSalary = (min, max) => {
-    if (!min && !max) return 'Salary not specified';
-    if (!min) return `Up to $${max?.toLocaleString()}`;
-    if (!max) return `From $${min?.toLocaleString()}`;
-    return `$${min?.toLocaleString()} - $${max?.toLocaleString()}`;
+  const handleApplyNow = async (jobId) => {
+    try {
+      await apiService.createApplication(jobId);
+      setApplicationStatus(prev => ({
+        ...prev,
+        [jobId]: 'applied'
+      }));
+    } catch (error) {
+      console.error('Application error:', error);
+      setError('Failed to apply for job. Please try again.');
+    }
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 0.8) return 'high';
-    if (score >= 0.6) return 'medium';
+  const getMatchScoreClass = (score) => {
+    if (score >= 60) return 'high';
+    if (score >= 40) return 'medium';
     return 'low';
   };
 
-  const getRatingStars = (rating = 4.5) => {
-    // Ensure rating is within valid range (0-5)
-    const clampedRating = Math.max(0, Math.min(5, rating));
-    const fullStars = Math.floor(clampedRating);
-    const hasHalfStar = clampedRating % 1 >= 0.5;
-    const emptyStars = Math.max(0, 5 - fullStars - (hasHalfStar ? 1 : 0));
+  const formatSalary = (min, max) => {
+    if (!min && !max) return 'Not specified';
+    if (!max) return `$${min.toLocaleString()}`;
+    if (!min) return `$${max.toLocaleString()}`;
+    return `$${min.toLocaleString()} - $${max.toLocaleString()}`;
+  };
+
+  const getRatingStars = (rating) => {
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 !== 0;
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
     
+    return '★'.repeat(fullStars) + (hasHalfStar ? '☆' : '') + '☆'.repeat(emptyStars);
+  };
+
+  const renderJobCard = (job, index) => {
+    const matchScore = Math.round(job.combined_score * 100);
+    const matchClass = getMatchScoreClass(matchScore);
+
     return (
-      <div className="rating">
-        <div className="stars">
-          {'★'.repeat(fullStars)}
-          {hasHalfStar && '☆'}
-          {'☆'.repeat(emptyStars)}
+      <div key={job.job_id} className={`job-card ${matchClass}-match`}>
+        <div className="card-header">
+          <div className="job-title-section">
+            <div className="job-title">{job.title}</div>
+            <div className="company-name">{job.company}</div>
+          </div>
+          <div className={`match-score ${matchClass}`}>{matchScore}% Match</div>
         </div>
-        <span className="rating-text">({clampedRating.toFixed(1)})</span>
+        
+        <div className="card-content">
+          <div className="job-details">
+            <div className="detail-item">
+              <span className="detail-label">Location</span>
+              <span className="detail-value">{job.location}</span>
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">Salary</span>
+              <span className="detail-value">{formatSalary(job.salary_min, job.salary_max)}</span>
+            </div>
+          </div>
+
+          <div className="rating">
+            <div className="stars">{getRatingStars(Math.min(5, 4.2 + (index * 0.1)))}</div>
+            <span className="rating-text">({(4.2 + (index * 0.1)).toFixed(1)})</span>
+          </div>
+
+          {job.domain && (
+            <div className="skills-section">
+              <span className="skills-label">Domain:</span>
+              <div className="skills-list">
+                <span className="skill-tag">{job.domain}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card-actions">
+          <button 
+            className="btn-view-details"
+            onClick={() => handleViewDetails(job)}
+          >
+            View Details
+          </button>
+          <button 
+            className={`btn-apply-now ${applicationStatus[job.job_id] === 'applied' ? 'applied' : ''}`}
+            onClick={() => handleApplyNow(job.job_id)}
+            disabled={applicationStatus[job.job_id] === 'applied'}
+          >
+            {applicationStatus[job.job_id] === 'applied' ? 'Applied' : 'Apply Now'}
+          </button>
+        </div>
       </div>
     );
   };
 
-  const resetFilters = () => {
-    setFormData({
-      query: '',
-      limit: 10,
-      apply_filters: true,
-      strict_mode: false,
-      use_ml_ranking: true
-    });
-    setSearchResults([]);
-    setError('');
+  const renderJobListItem = (job, index) => {
+    const matchScore = Math.round(job.combined_score * 100);
+    const matchClass = getMatchScoreClass(matchScore);
+
+    return (
+      <div key={job.job_id} className={`job-list-item ${matchClass}-match`}>
+        <div className="list-item-header">
+          <div className="list-item-title-section">
+            <div className="list-job-title">{job.title}</div>
+            <div className="list-company-name">{job.company}</div>
+          </div>
+          <div className={`list-match-score ${matchClass}`}>{matchScore}% Match</div>
+        </div>
+        
+        <div className="list-item-content">
+          <div className="list-item-details">
+            <div className="list-detail-item">
+              <span className="list-detail-label">Location</span>
+              <span className="list-detail-value">{job.location}</span>
+            </div>
+            <div className="list-detail-item">
+              <span className="list-detail-label">Salary</span>
+              <span className="list-detail-value">{formatSalary(job.salary_min, job.salary_max)}</span>
+            </div>
+          </div>
+
+          <div className="rating">
+            <div className="stars">{getRatingStars(Math.min(5, 4.2 + (index * 0.1)))}</div>
+            <span className="rating-text">({(4.2 + (index * 0.1)).toFixed(1)})</span>
+          </div>
+        </div>
+
+        {job.domain && (
+          <div className="list-skills-section">
+            <div className="list-skills-list">
+              <span className="list-skill-tag">{job.domain}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="list-item-actions">
+          <button 
+            className="btn-view-details"
+            onClick={() => handleViewDetails(job)}
+          >
+            View Details
+          </button>
+          <button 
+            className={`btn-apply-now ${applicationStatus[job.job_id] === 'applied' ? 'applied' : ''}`}
+            onClick={() => handleApplyNow(job.job_id)}
+            disabled={applicationStatus[job.job_id] === 'applied'}
+          >
+            {applicationStatus[job.job_id] === 'applied' ? 'Applied' : 'Apply Now'}
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="job-search">
-      {/* Professional Header */}
+      {/* Dark Blue Header - Matching Candidate Recommendations */}
       <div className="unified-header">
         <div className="header-content">
-          <h1 className="header-title"><span className="title-icon">🔍</span> Job Search</h1>
+          <h1 className="header-title">Job Search</h1>
         </div>
         <div className="header-actions">
-          <button className="btn-back" onClick={() => window.history.back()}>← Back</button>
+          <button className="btn-back" onClick={() => navigate('/candidate-dashboard')}>
+            ← Back to Dashboard
+          </button>
+          <button className="btn-logout" onClick={() => navigate('/login')}>
+            Logout
+          </button>
         </div>
       </div>
 
-      {/* Clean Search Form */}
-      <div className="search-container">
-        <form onSubmit={handleSubmit} className="search-form">
-          <div className="search-input-group">
-            <div className="input-wrapper">
-              <input
-                type="text"
-                name="query"
-                value={formData.query}
-                onChange={handleInputChange}
-                placeholder="Search for jobs (e.g., Python Developer, React Engineer)"
-                className="search-input"
-                required
-              />
-              <button type="submit" className="search-button" disabled={loading}>
-                {loading ? (
-                  <span className="loading-spinner">⏳</span>
-                ) : (
-                  <span>🔍</span>
-                )}
-                {loading ? 'Searching...' : 'Search'}
-              </button>
+      {/* Main Container - No Gap Layout */}
+      <div className="job-search-container">
+        {/* Left Column - Search & Filter Jobs */}
+        <div className="filters-sidebar">
+          <div className="filters-content">
+            <h2 className="filters-title">Search & Filter Jobs</h2>
+            
+            {/* Search Section */}
+            <div className="search-section">
+              <div className="search-box">
+                <input
+                  type="text"
+                  name="query"
+                  value={formData.query}
+                  onChange={handleInputChange}
+                  className="search-input"
+                  placeholder="Search jobs, skills, companies..."
+                />
+                <button type="submit" className="search-button" disabled={loading} onClick={handleSubmit}>
+                  {loading ? (
+                    <span className="loading-spinner"></span>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M21.71 20.29L18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a1 1 0 0 0 1.42 0 1 1 0 0 0 0-1.39zM11 18a7 7 0 1 1 7-7 7 7 0 0 1-7 7z"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
+              
+              {searchTags.length > 0 && (
+                <div className="search-tags">
+                  {searchTags.map((tag, index) => (
+                    <span key={index} className="tag">
+                      {tag} <span className="remove" onClick={() => removeSearchTag(tag)}>×</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        </form>
 
-        {/* Error Display */}
-        {error && (
-          <div className="error-message">
-            <span>{error}</span>
-            <button onClick={() => setError('')} className="error-close">×</button>
-          </div>
-        )}
+                         {/* Filters Section */}
+             <div className="filters-section">
+               <div className="filter-group">
+                 <label htmlFor="location">Location</label>
+                 <input
+                   type="text"
+                   id="location"
+                   name="location"
+                   value={filters.location}
+                   onChange={handleFilterChange}
+                   className="filter-input"
+                   placeholder="e.g., New York"
+                 />
+               </div>
 
-        {/* Professional Search Results */}
-        {searchResults.length > 0 && (
-          <div className="search-results">
-            <div className="results-header">
-              <h2>{searchResults.length} Jobs Found</h2>
-              <div className="results-summary">
-                <span className="average-score">
-                  Average Match: {(searchResults.reduce((acc, job) => acc + job.combined_score, 0) / searchResults.length * 100).toFixed(1)}%
-                </span>
+               <div className="filter-group">
+                 <label htmlFor="company">Company</label>
+                 <input
+                   type="text"
+                   id="company"
+                   name="company"
+                   value={filters.company}
+                   onChange={handleFilterChange}
+                   className="filter-input"
+                   placeholder="e.g., Google"
+                 />
+               </div>
+
+              <div className="filter-actions">
+                <button className="btn-find-jobs" onClick={handleSubmit} disabled={loading}>
+                  {loading ? 'Searching...' : 'Find Jobs'}
+                </button>
+                <button className="btn-clear-filters" onClick={clearFilters}>
+                  Clear Filters
+                </button>
               </div>
             </div>
-            
-            <div className="search-results-grid">
-              {searchResults.map((job, index) => (
-                <div key={job.job_id || index} className="job-card">
-                  <div className="card-header">
-                    <div className="job-title-section">
-                      <h3 className="job-title">{job.title}</h3>
-                      <span className="company-name">{job.company}</span>
-                    </div>
-                    <div className={`match-score ${getScoreColor(job.combined_score)}`}>
-                      {(job.combined_score * 100).toFixed(0)}% Match
-                    </div>
-                  </div>
-                  
-                  <div className="card-content">
-                    <div className="job-details">
-                      <div className="detail-item">
-                        <span className="detail-icon">📍</span>
-                        <span className="detail-label">Location</span>
-                        <span className="detail-value">{job.location}</span>
-                      </div>
-                      
-                      <div className="detail-item">
-                        <span className="detail-icon">💰</span>
-                        <span className="detail-label">Salary</span>
-                        <span className="detail-value">{formatSalary(job.salary_min, job.salary_max)}</span>
-                      </div>
-                      
-                      <div className="detail-item">
-                        <span className="detail-icon">⭐</span>
-                        <span className="detail-label">Rating</span>
-                        <span className="detail-value">{getRatingStars(Math.min(5, 4.2 + (index * 0.1)))}</span>
-                      </div>
-                    </div>
-                    
-                    {job.mandatory_skills && job.mandatory_skills.length > 0 && (
-                      <div className="skills-section">
-                        <span className="skills-label">Required Skills:</span>
-                        <div className="skills-list">
-                          {job.mandatory_skills.slice(0, 4).map((skill, skillIndex) => (
-                            <span key={skillIndex} className="skill-tag">
-                              {skill.skill}
-                            </span>
-                          ))}
-                          {job.mandatory_skills.length > 4 && (
-                            <span className="skill-tag more-skills">
-                              +{job.mandatory_skills.length - 4} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="card-actions">
-                    <button 
-                      className="btn-view-details"
-                      onClick={() => handleViewDetails(job)}
-                    >
-                      View Details
-                    </button>
-                    <button 
-                      className={`btn-apply-now ${applicationStatus[job.id || job.job_id] === 'applied' ? 'applied' : ''}`}
-                      onClick={() => handleApplyNow(job)}
-                      disabled={applicationStatus[job.id || job.job_id] === 'applying' || applicationStatus[job.id || job.job_id] === 'applied'}
-                    >
-                      {applicationStatus[job.id || job.job_id] === 'applying' ? 'Applying...' : 
-                       applicationStatus[job.id || job.job_id] === 'applied' ? 'Applied ✓' : 'Apply Now'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
-        )}
+        </div>
 
-        {/* Clean Empty State */}
-        {!loading && searchResults.length === 0 && !error && (
-          <div className="empty-state">
-            <div className="empty-icon">🔍</div>
-            <h3>Start Your Job Search</h3>
-            <p>Enter a job title, skill, or company to find relevant positions</p>
+        {/* Right Column - Job Results */}
+        <div className="main-content">
+                     <div className="results-header">
+             <h2 className="results-title">
+               Job Results ({filteredResults.length})
+               {loading && <span style={{fontSize: '0.9rem', color: '#6b7280', marginLeft: '10px'}}> - Searching...</span>}
+             </h2>
+           </div>
+
+          {error && (
+            <div className="error-message">
+              <span>{error}</span>
+              <button className="error-close" onClick={() => setError('')}>×</button>
+            </div>
+          )}
+
+          <div className="search-results">
+             <div className="view-controls">
+               <div className="view-toggle">
+                 <button
+                   className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                   onClick={() => setViewMode('grid')}
+                 >
+                   Grid
+                 </button>
+                 <button
+                   className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
+                   onClick={() => setViewMode('list')}
+                 >
+                   List
+                 </button>
+               </div>
+             </div>
+
+            {viewMode === 'grid' ? (
+              <div className="search-results-grid">
+                {console.log('Rendering grid with', filteredResults.length, 'results')}
+                {filteredResults.map((job, index) => renderJobCard(job, index))}
+              </div>
+            ) : (
+              <div className="search-results-list">
+                {console.log('Rendering list with', filteredResults.length, 'results')}
+                {filteredResults.map((job, index) => renderJobListItem(job, index))}
+              </div>
+            )}
+
+                         {loading && (
+               <div className="empty-state">
+                 <h3>Searching for Jobs...</h3>
+                 <p>Please wait while we find the best matches for you</p>
+               </div>
+             )}
+             
+             {!loading && filteredResults.length === 0 && !error && (
+               <div className="empty-state">
+                 <h3>No Jobs Found</h3>
+                 <p>Try adjusting your search criteria or filters to find more opportunities</p>
+               </div>
+             )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Job Details Modal */}
-      {showJobModal && selectedJob && (
+      {selectedJob && (
         <div className="modal-overlay" onClick={closeJobModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{selectedJob.title}</h2>
               <button className="modal-close" onClick={closeJobModal}>×</button>
@@ -405,37 +467,22 @@ const JobSearch = () => {
                 <h3>Salary</h3>
                 <p>{formatSalary(selectedJob.salary_min, selectedJob.salary_max)}</p>
               </div>
-              <div className="job-detail-section">
-                <h3>Job Description</h3>
-                <p>{selectedJob.job_description || 'No description available'}</p>
-              </div>
-              {selectedJob.mandatory_skills && selectedJob.mandatory_skills.length > 0 && (
+              {selectedJob.description && (
                 <div className="job-detail-section">
-                  <h3>Required Skills</h3>
-                  <div className="skills-list">
-                    {selectedJob.mandatory_skills.map((skill, index) => (
-                      <span key={index} className="skill-tag">
-                        {skill.skill} ({skill.min_experience || 0} years)
-                      </span>
-                    ))}
-                  </div>
+                  <h3>Description</h3>
+                  <p>{selectedJob.description}</p>
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn-view-details" onClick={closeJobModal}>
-                Close
-              </button>
-              <button 
-                className="btn-apply-now"
-                onClick={() => {
-                  handleApplyNow(selectedJob);
-                  closeJobModal();
-                }}
-              >
-                Apply Now
-              </button>
-            </div>
+                         <div className="modal-footer">
+               <button 
+                 className={`btn-apply-now ${applicationStatus[selectedJob.job_id] === 'applied' ? 'applied' : ''}`}
+                 onClick={() => handleApplyNow(selectedJob.job_id)}
+                 disabled={applicationStatus[selectedJob.job_id] === 'applied'}
+               >
+                 {applicationStatus[selectedJob.job_id] === 'applied' ? 'Applied' : 'Apply Now'}
+               </button>
+             </div>
           </div>
         </div>
       )}
@@ -443,4 +490,4 @@ const JobSearch = () => {
   );
 };
 
-export default JobSearch; 
+export default JobSearch;

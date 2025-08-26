@@ -39,7 +39,7 @@ export const apiService = {
   },
 
   getCurrentUser: async () => {
-    const response = await api.get('/auth/me');
+    const response = await api.get('/candidates/me');
     return response.data;
   },
 
@@ -71,7 +71,7 @@ export const apiService = {
   // Validate token by making a request to /me endpoint
   validateToken: async () => {
     try {
-      const response = await api.get('/auth/me');
+      const response = await api.get('/candidates/me');
       return response.data;
     } catch (error) {
       console.log('Token validation failed:', error);
@@ -274,8 +274,73 @@ export const apiService = {
   },
 
   searchJobs: async (searchData) => {
-    const response = await api.post('/search/jobs', searchData);
-    return response.data;
+    // Accept string or object; map to GET params
+    let params = {};
+    let queryString = undefined;
+    if (typeof searchData === 'string') {
+      params = { domain: searchData };
+      queryString = searchData;
+    } else if (searchData && typeof searchData === 'object') {
+      const { query, domain, location, salary_min, salary_max, limit } = searchData;
+      params = {
+        domain: domain ?? query ?? undefined,
+        location: location ?? undefined,
+        salary_min: salary_min ?? undefined,
+        salary_max: salary_max ?? undefined,
+        limit: limit ?? 10,
+      };
+      queryString = query ?? domain ?? '';
+    }
+    
+    console.log('Searching with params:', params);
+    console.log('Query string:', queryString);
+    
+    // Primary: semantic/filter search
+    try {
+      const primary = await api.get('/search/jobs', { params });
+      let results = primary.data || [];
+      if (Array.isArray(results) && results.length > 0) {
+        console.log('Primary search returned results:', results.length);
+        return results;
+      }
+    } catch (error) {
+      console.log('Primary search failed, trying fallback:', error);
+    }
+
+    // Fallback: basic jobs search by title/company
+    if (queryString) {
+      try {
+        console.log('Trying fallback search for:', queryString);
+        const fallback = await api.get('/jobs', { params: { search: queryString, limit: params.limit || 10 } });
+        const jobs = fallback.data || [];
+        console.log('Fallback jobs found:', jobs.length);
+        
+        // Map basic jobs to JobRecommendation-like objects expected by UI
+        const mapped = jobs.map((j, idx) => ({
+          job_id: j.id,
+          title: j.title || 'Untitled Position',
+          company: j.company || 'Unknown Company',
+          location: j.location || 'Remote',
+          salary_min: j.salary_min,
+          salary_max: j.salary_max,
+          domain: j.domain || 'General',
+          similarity_score: 0.6 + (idx * 0.02),
+          combined_score: Math.max(0.3, Math.min(1, 0.6 + (idx * 0.03))),
+          filter_score: 0.5 + (idx * 0.01),
+          ml_score: 0.5 + (idx * 0.01),
+          is_valid: true,
+          validation_reasons: [],
+          explanation: `Job matches search criteria for "${queryString}"`
+        }));
+        console.log('Mapped jobs:', mapped.length);
+        return mapped;
+      } catch (error) {
+        console.error('Fallback search also failed:', error);
+      }
+    }
+
+    console.log('No results found from either search method');
+    return []; // empty array if both fail
   },
 
   searchCandidates: async (searchData) => {

@@ -43,8 +43,26 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         return result.scalar_one_or_none()
     
     async def get_by_email(self, db: AsyncSession, email: str) -> Optional[Candidate]:
-        """Get candidate by email with optimized query"""
-        query = select(Candidate).where(Candidate.email == email)
+        """Get candidate by email with optimized query - only essential fields"""
+        # Only select essential fields for login to reduce data transfer
+        query = select(
+            Candidate.id,
+            Candidate.email,
+            Candidate.password_hash,
+            Candidate.role
+        ).where(Candidate.email == email)
+        result = await db.execute(query)
+        row = result.fetchone()
+        
+        if row:
+            # Create a minimal candidate object with only login-required fields
+            candidate = Candidate()
+            candidate.id = row.id
+            candidate.email = row.email
+            candidate.password_hash = row.password_hash
+            candidate.role = row.role
+            return candidate
+        return None
         
     async def search_by_name_or_email(self, db: AsyncSession, search_term: str, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """Search candidates by name or email using fuzzy search - returns dict to avoid relationship issues"""

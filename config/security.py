@@ -58,7 +58,7 @@ class SecurityConfig:
 pwd_context = CryptContext(
     schemes=["bcrypt"], 
     deprecated="auto",
-    bcrypt__rounds=12  # Balanced security vs performance (default is 12, reduce to 10-11 for better performance)
+    bcrypt__rounds=10  # Reduced rounds for better performance (12->10)
 )
 
 # In-memory storage for development (replaces Redis)

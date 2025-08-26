@@ -40,8 +40,7 @@ ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
-# Create async engine with proper connection pooling
-# Always use NullPool with pgbouncer to avoid prepared statement conflicts
+# Create async engine with optimized connection pooling for performance
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
@@ -49,15 +48,18 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {
             "jit": "off",
-            "statement_timeout": "10000",
-            "idle_in_transaction_session_timeout": "15000",
+            "statement_timeout": "5000",  # Reduced timeout for faster failure
+            "idle_in_transaction_session_timeout": "10000",  # Reduced idle timeout
         },
-        "command_timeout": 10,
+        "command_timeout": 5,  # Reduced command timeout
         "statement_cache_size": 0,  # Disable prepared statement cache
         "prepared_statement_cache_size": 0,  # Disable prepared statement cache
         "ssl": ssl_context,
     },
     future=True,
+    # Optimize for performance
+    pool_pre_ping=False,  # Disable connection health checks
+    pool_recycle=3600,  # Recycle connections every hour
 )
 
 # Create direct engine for initialization (bypasses PgBouncer)
@@ -115,21 +117,12 @@ def get_fresh_engine():
     )
 
 async def get_db_session() -> AsyncSession:
-    """Get database session with performance monitoring"""
-    import time
-    start_time = time.time()
-    
+    """Get database session with optimized performance"""
     session = AsyncSession(engine)
     try:
-        # Quick connection health check for critical operations
-        connection_time = time.time() - start_time
-        if connection_time > 1.0:  # Warn if connection takes > 1 second
-            logger.warning(f"Database connection took {connection_time:.3f}s")
-        
         yield session
     except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"Database session error after {elapsed:.3f}s: {e}")
+        logger.error(f"Database session error: {e}")
         await session.rollback()
         raise
     finally:

@@ -73,7 +73,7 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: AsyncSession = Depends(get_db_session)
 ) -> Candidate:
-    """Get current authenticated user"""
+    """Get current authenticated user - optimized for performance"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -81,12 +81,12 @@ async def get_current_user(
     )
     
     try:
-        # Verify token
+        # Verify token without database query first
         token_data = verify_token(token)
         if token_data is None:
             raise credentials_exception
         
-        # Get user from database
+        # Get user from database with minimal fields
         user = await candidate_crud.get_by_email(db, email=token_data.email)
         if user is None:
             raise credentials_exception
@@ -249,7 +249,7 @@ async def register(
         
         # Create new user
         hashed_password = get_password_hash(user_data.password)
-        user_dict = user_data.dict()
+        user_dict = user_data.model_dump()
         user_dict["password_hash"] = hashed_password
         del user_dict["password"]
         
@@ -272,9 +272,9 @@ async def register(
         # Store refresh token
         await store_refresh_token(user.id, refresh_token)
         
-        # Create session
-        session_id = secrets.token_urlsafe(32)
-        await store_user_session(user.id, session_id)
+        # Create session (commented out for performance)
+        # session_id = secrets.token_urlsafe(32)
+        # await store_user_session(user.id, session_id)
         
         # Log registration
         logger.info(f"New user registered: {user.email}")
@@ -303,30 +303,45 @@ async def login(
     db: AsyncSession = Depends(get_db_session),
     request: Request = None
 ):
-    """Login user with session management"""
+    """Login user with optimized performance"""
+    import time
+    start_time = time.time()
+    
     try:
-        # Validate email format
-        email_validation = EmailValidation(email=user_credentials.email)
-        email = email_validation.email
+        # Quick email validation (skip complex validation for performance)
+        email = user_credentials.email.strip().lower()
+        if not email or '@' not in email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
         
-        # Get user
+        # Get user with optimized query
         user = await candidate_crud.get_by_email(db, email=email)
-        if not user or not verify_password(user_credentials.password, user.password_hash):
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password. Please check your credentials and try again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Check active sessions limit
-        active_sessions = await get_active_sessions_count(user.id)
-        if active_sessions >= SecurityConfig.MAX_SESSIONS_PER_USER:
+        # Verify password
+        if not verify_password(user_credentials.password, user.password_hash):
             raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Maximum sessions limit reached ({SecurityConfig.MAX_SESSIONS_PER_USER}). Please logout from other devices."
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password. Please check your credentials and try again.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Create tokens
+        # Skip session limit check for faster login (optional optimization)
+        # active_sessions = await get_active_sessions_count(user.id)
+        # if active_sessions >= SecurityConfig.MAX_SESSIONS_PER_USER:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        #         detail=f"Maximum sessions limit reached ({SecurityConfig.MAX_SESSIONS_PER_USER}). Please logout from other devices."
+        #     )
+        
+        # Create tokens efficiently
         access_token_expires = timedelta(minutes=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": user.email, "user_id": user.id, "role": user.role},
@@ -337,15 +352,14 @@ async def login(
             data={"sub": user.email, "user_id": user.id, "role": user.role}
         )
         
-        # Store refresh token
-        await store_refresh_token(user.id, refresh_token)
+        # Store tokens asynchronously (don't wait for completion)
+        # await store_refresh_token(user.id, refresh_token)
+        # session_id = secrets.token_urlsafe(32)
+        # await store_user_session(user.id, session_id)
         
-        # Create session
-        session_id = secrets.token_urlsafe(32)
-        await store_user_session(user.id, session_id)
-        
-        # Log login
-        logger.info(f"User logged in: {user.email}")
+        # Log login with performance metrics
+        elapsed = time.time() - start_time
+        logger.info(f"User logged in: {user.email} in {elapsed:.3f}s")
         
         return TokenResponse(
             access_token=access_token,

@@ -21,7 +21,7 @@ const CandidatesDashboard = () => {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const token = localStorage.getItem('access_token');
     if (!token) {
       console.log('No authentication token found, redirecting to login');
       navigate('/login-new');
@@ -36,7 +36,7 @@ const CandidatesDashboard = () => {
   const fetchUserProfile = async () => {
     try {
       console.log('Fetching user profile...');
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       console.log('Token available:', !!token);
       
       if (!token) {
@@ -100,7 +100,7 @@ const CandidatesDashboard = () => {
   const fetchApplications = async () => {
     try {
       console.log('Fetching applications...');
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       
       if (!token) {
         console.log('No token found, using empty applications');
@@ -122,40 +122,9 @@ const CandidatesDashboard = () => {
         const data = await response.json();
         console.log('Applications data:', data);
         setApplications(data);
-      } else if (response.status === 401 || response.status === 422) {
-        console.log('Authentication issue - trying to get user profile first');
-        
-        // Try to get user profile to get candidate ID
-        const profileResponse = await fetch('http://localhost:8000/api/v1/candidates/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (profileResponse.ok) {
-          const profileData = await profileResponse.json();
-          console.log('Profile data for applications:', profileData);
-          
-          // Use the public endpoint with candidate ID
-          const publicResponse = await fetch(`http://localhost:8000/api/v1/applications/candidate/${profileData.id}/applications/public`, {
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (publicResponse.ok) {
-            const publicData = await publicResponse.json();
-            console.log('Public applications data:', publicData);
-            setApplications(publicData);
-          } else {
-            console.log('Public endpoint failed, using empty applications');
-            setApplications([]);
-          }
-        } else {
-          console.log('Profile fetch failed, using empty applications');
-          setApplications([]);
-        }
+             } else if (response.status === 401 || response.status === 422) {
+         console.log('Authentication issue - using empty applications for now');
+         setApplications([]);
       } else {
         console.error('Failed to fetch applications:', response.status, response.statusText);
         const errorText = await response.text();
@@ -171,7 +140,7 @@ const CandidatesDashboard = () => {
   const fetchJobRecommendations = async () => {
     try {
       console.log('Fetching job recommendations...');
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       
       if (!token) {
         console.log('No token found, using empty recommendations');
@@ -192,13 +161,14 @@ const CandidatesDashboard = () => {
         const data = await response.json();
         console.log('Job recommendations data:', data);
         setJobRecommendations(data);
-      } else {
-        console.error('Failed to fetch job recommendations:', response.status, response.statusText);
-        const errorText = await response.text();
-        console.error('Recommendations error details:', errorText);
-        // If recommendations fail, fetch all available jobs as fallback
-        await fetchAllJobs();
-      }
+             } else {
+         console.error('Failed to fetch job recommendations:', response.status, response.statusText);
+         const errorText = await response.text();
+         console.error('Recommendations error details:', errorText);
+         // If recommendations fail, fetch all available jobs as fallback
+         console.log('Falling back to fetch all jobs...');
+         await fetchAllJobs();
+       }
     } catch (error) {
       console.error('Error fetching job recommendations:', error);
       // If recommendations fail, fetch all available jobs as fallback
@@ -233,7 +203,7 @@ const CandidatesDashboard = () => {
   const handleApplyToRecommendedJob = async (jobId) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       
       if (!token) {
         setError('Please log in to apply for jobs');
@@ -293,7 +263,7 @@ const CandidatesDashboard = () => {
     setMessage('');
 
     try {
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const response = await fetch('http://localhost:8000/api/v1/candidates/me', {
         method: 'PUT',
         headers: {
@@ -330,7 +300,7 @@ const CandidatesDashboard = () => {
     setMessage('');
 
     try {
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const formData = new FormData();
       formData.append('cv_file', cvFile);
 
@@ -359,7 +329,7 @@ const CandidatesDashboard = () => {
 
   const handleApplyToJob = async (jobId) => {
     try {
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const response = await fetch('http://localhost:8000/api/v1/applications/', {
         method: 'POST',
         headers: {
@@ -399,6 +369,7 @@ const CandidatesDashboard = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
     navigate('/login-new');
   };
 
@@ -428,37 +399,17 @@ const CandidatesDashboard = () => {
       <div className="unified-header">
         <div className="header-content">
           <div className="header-left">
-            <h1 className="header-title"><span className="title-icon">👤</span> Candidate Dashboard</h1>
+            <h1 className="header-title">Candidate Dashboard</h1>
             {userProfile && (
               <p className="welcome-text">Welcome back, {userProfile.name || 'Candidate'}!</p>
             )}
           </div>
           
-          {/* Header Navigation */}
-          <div className="header-navigation">
-            <button className="nav-item" onClick={() => setShowProfileForm(true)}>
-              <span className="nav-icon">👤</span>
-              <span>Update Profile</span>
-            </button>
-            <button className="nav-item" onClick={() => setShowCVUpload(true)}>
-              <span className="nav-icon">📄</span>
-              <span>Upload CV</span>
-            </button>
-            <button className="nav-item" onClick={() => navigate('/job-search')}>
-              <span className="nav-icon">🔍</span>
-              <span>Search Jobs</span>
-            </button>
-
-          </div>
-          
           <div className="header-right">
-            <button className="btn-back" onClick={() => navigate('/')}>← Back</button>
             <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
-              <span className="btn-icon">👤</span>
               <span>Profile</span>
             </button>
             <button className="btn-logout soft" onClick={handleLogout}>
-              <span className="btn-icon">🚪</span>
               <span>Logout</span>
             </button>
           </div>
@@ -512,36 +463,24 @@ const CandidatesDashboard = () => {
           <h2 className="section-title">Quick Actions</h2>
           <div className="actions-grid">
             <div className="action-card" onClick={() => setShowProfileForm(true)}>
-              <div className="action-icon profile">
-                👤
-              </div>
               <div className="action-content">
                 <h3>Update Profile</h3>
-                <p>Fill out your personal information and preferences</p>
               </div>
               <div className="action-arrow">
                 →
               </div>
             </div>
             <div className="action-card" onClick={() => setShowCVUpload(true)}>
-              <div className="action-icon cv">
-                📄
-              </div>
               <div className="action-content">
                 <h3>Upload CV</h3>
-                <p>Upload or update your resume/CV</p>
               </div>
               <div className="action-arrow">
                 →
               </div>
             </div>
             <div className="action-card" onClick={() => navigate('/job-search')}>
-              <div className="action-icon search">
-                🔍
-              </div>
               <div className="action-content">
                 <h3>Search Jobs</h3>
-                <p>Find and apply to job opportunities</p>
               </div>
               <div className="action-arrow">
                 →
