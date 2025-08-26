@@ -28,68 +28,61 @@ async def get_all_applications_public(
 ):
     """Get all applications with candidate and job details (public endpoint for management)"""
     try:
-        # Get all applications using CRUD function
-        applications = await application_crud.get_multi(db, skip=skip, limit=limit)
+        # Use a single JOIN query to get all data at once, avoiding multiple queries
+        from sqlalchemy import text
         
-        # Convert to response format with full details
+        query = text("""
+            SELECT 
+                a.id, a.job_id, a.candidate_id, a.status, a.created_at, a.updated_at,
+                c.name as candidate_name, c.email as candidate_email, c.location as candidate_location,
+                c.domain as candidate_domain, c.expected_salary_min, c.expected_salary_max,
+                j.title as job_title, j.company, j.location as job_location, j.domain as job_domain,
+                j.salary_min, j.salary_max, j.total_years_required
+            FROM applications a
+            LEFT JOIN candidates c ON a.candidate_id = c.id
+            LEFT JOIN jobs j ON a.job_id = j.id
+            ORDER BY a.created_at DESC
+            LIMIT :limit OFFSET :skip
+        """)
+        
+        result = await db.execute(query, {"limit": limit, "skip": skip})
+        rows = result.fetchall()
+        
         response_applications = []
-        for app in applications:
+        for row in rows:
             app_data = {
-                "id": app.id,
-                "job_id": app.job_id,
-                "candidate_id": app.candidate_id,
-                "status": app.status,
-                "created_at": app.created_at,
-                "updated_at": app.updated_at
+                "id": row[0],
+                "job_id": row[1],
+                "candidate_id": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "updated_at": row[5]
             }
             
-            # Get candidate details using separate query with fresh session
-            if app.candidate_id:
-                try:
-                    # Use raw SQL to avoid SQLAlchemy async issues
-                    from sqlalchemy import text
-                    candidate_query = text("SELECT id, name, email, location, domain, total_years_experience, expected_salary_min, expected_salary_max FROM candidates WHERE id = :candidate_id")
-                    candidate_result = await db.execute(candidate_query, {"candidate_id": app.candidate_id})
-                    candidate_row = candidate_result.fetchone()
-                    
-                    if candidate_row:
-                        app_data["candidate"] = {
-                            "id": candidate_row[0],
-                            "name": candidate_row[1],
-                            "email": candidate_row[2],
-                            "location": candidate_row[3],
-                            "domain": candidate_row[4],
-                            "total_years_experience": candidate_row[5],
-                            "expected_salary_min": candidate_row[6],
-                            "expected_salary_max": candidate_row[7]
-                        }
-                except Exception as e:
-                    print(f"Error fetching candidate {app.candidate_id}: {e}")
-                    # Continue without candidate data
+            # Add candidate data if available
+            if row[6]:  # candidate_name exists
+                app_data["candidate"] = {
+                    "id": row[2],  # candidate_id
+                    "name": row[6],
+                    "email": row[7],
+                    "location": row[8],
+                    "domain": row[9],
+                    "expected_salary_min": row[10],
+                    "expected_salary_max": row[11]
+                }
             
-            # Get job details using separate query with fresh session
-            if app.job_id:
-                try:
-                    # Use raw SQL to avoid SQLAlchemy async issues
-                    from sqlalchemy import text
-                    job_query = text("SELECT id, title, company, location, domain, salary_min, salary_max, total_years_required FROM jobs WHERE id = :job_id")
-                    job_result = await db.execute(job_query, {"job_id": app.job_id})
-                    job_row = job_result.fetchone()
-                    
-                    if job_row:
-                        app_data["job"] = {
-                            "id": job_row[0],
-                            "title": job_row[1],
-                            "company": job_row[2],
-                            "location": job_row[3],
-                            "domain": job_row[4],
-                            "salary_min": job_row[5],
-                            "salary_max": job_row[6],
-                            "total_years_required": job_row[7]
-                        }
-                except Exception as e:
-                    print(f"Error fetching job {app.job_id}: {e}")
-                    # Continue without job data
+            # Add job data if available
+            if row[12]:  # job_title exists
+                app_data["job"] = {
+                    "id": row[1],  # job_id
+                    "title": row[12],
+                    "company": row[13],
+                    "location": row[14],
+                    "domain": row[15],
+                    "salary_min": row[16],
+                    "salary_max": row[17],
+                    "total_years_required": row[18]
+                }
             
             response_applications.append(app_data)
         
@@ -109,21 +102,55 @@ async def update_application_status_public(
 ):
     """Update application status (public endpoint for testing)"""
     try:
-        application = await application_crud.get(db, id=application_id)
+        # Use raw SQL to avoid transaction issues
+        from sqlalchemy import text
+        
+        # First check if application exists
+        check_query = text("SELECT id FROM applications WHERE id = :application_id")
+        result = await db.execute(check_query, {"application_id": application_id})
+        application = result.fetchone()
+        
         if not application:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Application not found"
             )
         
-        application = await application_crud.update(
-            db, db_obj=application, obj_in=status_update
-        )
+        # Update the status using raw SQL
+        update_query = text("""
+            UPDATE applications 
+            SET status = :status, updated_at = NOW() 
+            WHERE id = :application_id
+            RETURNING id, job_id, candidate_id, status, created_at, updated_at
+        """)
         
-        return application
+        result = await db.execute(update_query, {
+            "application_id": application_id,
+            "status": status_update.status
+        })
+        
+        updated_application = result.fetchone()
+        await db.commit()
+        
+        if updated_application:
+            return {
+                "id": updated_application[0],
+                "job_id": updated_application[1],
+                "candidate_id": updated_application[2],
+                "status": updated_application[3],
+                "created_at": updated_application[4],
+                "updated_at": updated_application[5]
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update application"
+            )
+            
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Update application error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update application: {str(e)}"

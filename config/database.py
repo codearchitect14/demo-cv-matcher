@@ -41,93 +41,44 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 # Create async engine with proper connection pooling
-if "pooler" in DATABASE_URL:
-    # Use small pool when connecting through pgbouncer/pooler for better performance
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,
-        pool_size=5,  # Small pool size for pooler
-        max_overflow=10,
-        pool_timeout=5,
-        pool_recycle=1800,
-        pool_pre_ping=False,  # Disable pre-ping for faster connections
-        connect_args={
-            "server_settings": {
-                "jit": "off",
-                "statement_timeout": "5000",  # Reduced timeout for faster failure
-                "idle_in_transaction_session_timeout": "10000",
-            },
-            "command_timeout": 5,  # Reduced timeout
-            "statement_cache_size": 0,
-            "ssl": ssl_context,
+# Always use NullPool with pgbouncer to avoid prepared statement conflicts
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    poolclass=NullPool,  # Use NullPool to avoid connection pooling conflicts with pgbouncer
+    connect_args={
+        "server_settings": {
+            "jit": "off",
+            "statement_timeout": "10000",
+            "idle_in_transaction_session_timeout": "15000",
         },
-        future=True,
-    )
-else:
-    # Use connection pooling when connecting directly to PostgreSQL
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,
-        pool_size=10,
-        max_overflow=20,
-        pool_timeout=10,
-        pool_recycle=3600,
-        pool_pre_ping=True,
-        connect_args={
-            "server_settings": {
-                "jit": "off",
-                "statement_timeout": "10000",
-                "idle_in_transaction_session_timeout": "15000",
-            },
-            "command_timeout": 10,
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
-            "ssl": ssl_context,
-        },
-        future=True,
-    )
+        "command_timeout": 10,
+        "statement_cache_size": 0,  # Disable prepared statement cache
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+        "ssl": ssl_context,
+    },
+    future=True,
+)
 
 # Create direct engine for initialization (bypasses PgBouncer)
-if "pooler" in DIRECT_DATABASE_URL:
-    # Use NullPool when connecting through pgbouncer/pooler
-    direct_engine = create_async_engine(
-        DIRECT_DATABASE_URL,
-        echo=False,
-        poolclass=NullPool,
-        connect_args={
-            "server_settings": {
-                "jit": "off",
-                "statement_timeout": "10000",
-                "idle_in_transaction_session_timeout": "15000",
-            },
-            "command_timeout": 10,
-            "statement_cache_size": 0,
-            "ssl": ssl_context,
+# Always use NullPool to avoid prepared statement conflicts
+direct_engine = create_async_engine(
+    DIRECT_DATABASE_URL,
+    echo=False,
+    poolclass=NullPool,
+    connect_args={
+        "server_settings": {
+            "jit": "off",
+            "statement_timeout": "10000",
+            "idle_in_transaction_session_timeout": "15000",
         },
-        future=True,
-    )
-else:
-    # Use connection pooling when connecting directly to PostgreSQL
-    direct_engine = create_async_engine(
-        DIRECT_DATABASE_URL,
-        echo=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=5,
-        pool_recycle=1800,
-        pool_pre_ping=True,
-        connect_args={
-            "server_settings": {
-                "jit": "off",
-                "statement_timeout": "10000",
-                "idle_in_transaction_session_timeout": "15000",
-            },
-            "command_timeout": 10,
-            "statement_cache_size": 0,
-            "ssl": ssl_context,
-        },
-        future=True,
-    )
+        "command_timeout": 10,
+        "statement_cache_size": 0,  # Disable prepared statement cache
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+        "ssl": ssl_context,
+    },
+    future=True,
+)
 
 SessionLocal = sessionmaker(
     bind=engine,
@@ -144,48 +95,24 @@ logger = logging.getLogger(__name__)
 
 def get_fresh_engine():
     """Get a fresh database engine instance with connection pooling"""
-    if "pooler" in DATABASE_URL:
-        # Use NullPool when connecting through pgbouncer/pooler
-        return create_async_engine(
-            DATABASE_URL,
-            echo=False,
-            poolclass=NullPool,
-            connect_args={
-                "server_settings": {
-                    "jit": "off",
-                    "statement_timeout": "10000",
-                    "idle_in_transaction_session_timeout": "15000",
-                },
-                "command_timeout": 10,
-                "statement_cache_size": 0,
-                "prepared_statement_cache_size": 0,
-                "ssl": ssl_context,
+    # Always use NullPool to avoid prepared statement conflicts with pgbouncer
+    return create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={
+            "server_settings": {
+                "jit": "off",
+                "statement_timeout": "10000",
+                "idle_in_transaction_session_timeout": "15000",
             },
-            future=True,
-        )
-    else:
-        # Use connection pooling when connecting directly to PostgreSQL
-        return create_async_engine(
-            DATABASE_URL,
-            echo=False,
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=5,
-            pool_recycle=1800,
-            pool_pre_ping=True,
-            connect_args={
-                "server_settings": {
-                    "jit": "off",
-                    "statement_timeout": "10000",
-                    "idle_in_transaction_session_timeout": "15000",
-                },
-                "command_timeout": 10,
-                "statement_cache_size": 0,
-                "prepared_statement_cache_size": 0,
-                "ssl": ssl_context,
-            },
-            future=True,
-        )
+            "command_timeout": 10,
+            "statement_cache_size": 0,  # Disable prepared statement cache
+            "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+            "ssl": ssl_context,
+        },
+        future=True,
+    )
 
 async def get_db_session() -> AsyncSession:
     """Get database session with performance monitoring"""

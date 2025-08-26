@@ -119,6 +119,8 @@ const ApplicationsManagement = () => {
       if (response.ok) {
         const data = await response.json();
         console.log('Fetched applications:', data);
+        console.log('First application candidate data:', data[0]?.candidate);
+        console.log('First application job data:', data[0]?.job);
         setApplications(data);
       } else {
         setError('Failed to fetch applications');
@@ -369,6 +371,11 @@ const ApplicationsManagement = () => {
 
   // Apply client-side filtering since backend filtering has connection issues
   const filteredApplications = applications.filter(app => {
+    // Debug logging
+    if (searchTerm) {
+      console.log('Filtering app:', app.id, 'candidate:', app.candidate?.name, 'job:', app.job?.title);
+    }
+    
     // Search filter
     const matchesSearch = !searchTerm || 
       (app.candidate?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -384,29 +391,7 @@ const ApplicationsManagement = () => {
       (app.candidate?.location?.toLowerCase().includes(filters.location.toLowerCase()) ||
        app.job?.location?.toLowerCase().includes(filters.location.toLowerCase()));
     
-    // Experience range filter
-    let matchesExperience = true;
-    if (filters.experience_range && filters.experience_range !== '' && app.candidate?.total_years_experience !== undefined) {
-      const experience = app.candidate.total_years_experience;
-      switch (filters.experience_range) {
-        case '0-2':
-          matchesExperience = experience >= 0 && experience <= 2;
-          break;
-        case '3-5':
-          matchesExperience = experience >= 3 && experience <= 5;
-          break;
-        case '6-8':
-          matchesExperience = experience >= 6 && experience <= 8;
-          break;
-        case '9+':
-          matchesExperience = experience >= 9;
-          break;
-        default:
-          matchesExperience = true;
-      }
-    }
-    
-    return matchesSearch && matchesStatus && matchesLocation && matchesExperience;
+         return matchesSearch && matchesStatus && matchesLocation;
   });
 
   const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
@@ -552,20 +537,7 @@ const ApplicationsManagement = () => {
             </select>
           </div>
 
-          <div className="filter-section">
-            <div className="filter-section-title">Experience Range</div>
-            <select
-              value={filters.experience_range}
-              onChange={(e) => setFilters({ ...filters, experience_range: e.target.value })}
-              className="filter-input"
-            >
-              {experienceRanges.map(range => (
-                <option key={range.value} value={range.value}>
-                  {range.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          
 
           <div className="filter-section">
             <div className="filter-section-title">Location Filter</div>
@@ -648,14 +620,9 @@ const ApplicationsManagement = () => {
                     <div className="profile-section">
                       <h5 className="section-title">Candidate Profile</h5>
                       <div className="profile-info">
-                        <p className="profile-name">{application.candidate?.name || 'N/A'}</p>
-                        <p className="profile-email">{application.candidate?.email || 'N/A'}</p>
-                        <p className="profile-location">{application.candidate?.location || 'N/A'}</p>
-                        {application.candidate?.total_years_experience && (
-                          <p className="profile-experience">
-                            {application.candidate.total_years_experience} years experience
-                          </p>
-                        )}
+                                                 <p className="profile-name">{application.candidate?.name || 'N/A'}</p>
+                         <p className="profile-email">{application.candidate?.email || 'N/A'}</p>
+                         <p className="profile-location">{application.candidate?.location || 'N/A'}</p>
                       </div>
                     </div>
 
@@ -700,30 +667,28 @@ const ApplicationsManagement = () => {
               <table className="applications-table">
                 <thead>
                   <tr>
-                    <th>Application ID</th>
-                    <th>Candidate</th>
-                    <th>Email</th>
-                    <th>Location</th>
-                    <th>Experience</th>
-                    <th>Job Title</th>
-                    <th>Company</th>
-                    <th>Job Location</th>
-                    <th>Status</th>
-                    <th>Applied Date</th>
-                    <th>Actions</th>
+                                         <th>Application ID</th>
+                     <th>Candidate</th>
+                     <th>Email</th>
+                     <th>Location</th>
+                     <th>Job Title</th>
+                     <th>Company</th>
+                     <th>Job Location</th>
+                     <th>Status</th>
+                     <th>Applied Date</th>
+                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredApplications.map(application => (
                     <tr key={application.id}>
-                      <td>#{application.id}</td>
-                      <td>{application.candidate?.name || 'N/A'}</td>
-                      <td>{application.candidate?.email || 'N/A'}</td>
-                      <td>{application.candidate?.location || 'N/A'}</td>
-                      <td>{application.candidate?.total_years_experience ? `${application.candidate.total_years_experience} years` : 'N/A'}</td>
-                      <td>{application.job?.title || 'N/A'}</td>
-                      <td>{application.job?.company || 'N/A'}</td>
-                      <td>{application.job?.location || 'N/A'}</td>
+                                             <td>#{application.id}</td>
+                       <td>{application.candidate?.name || 'N/A'}</td>
+                       <td>{application.candidate?.email || 'N/A'}</td>
+                       <td>{application.candidate?.location || 'N/A'}</td>
+                       <td>{application.job?.title || 'N/A'}</td>
+                       <td>{application.job?.company || 'N/A'}</td>
+                       <td>{application.job?.location || 'N/A'}</td>
                       <td>
                         <span 
                           className="status-badge"

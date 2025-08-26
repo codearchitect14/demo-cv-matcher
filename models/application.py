@@ -8,7 +8,9 @@ class ApplicationStatusEnum(str, enum.Enum):
     """Application status enumeration"""
     APPLIED = "applied"
     REJECTED = "rejected"
-    ACCEPTED = "accepted"
+    REVIEWED = "reviewed"
+    INTERVIEW_SCHEDULED = "interview_scheduled"
+    HIRED = "hired"
     PENDING = "pending"
 
 

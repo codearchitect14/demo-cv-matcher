@@ -7,7 +7,7 @@ const EnhancedRecruiterRecommendations = () => {
   const navigate = useNavigate();
   const [selectedJobId, setSelectedJobId] = useState('');
   const [recruiterJobs, setRecruiterJobs] = useState([]);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(8);
   const [includeExplanation, setIncludeExplanation] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
@@ -21,6 +21,13 @@ const EnhancedRecruiterRecommendations = () => {
   useEffect(() => {
     fetchRecruiterJobs();
   }, []);
+
+  // Auto-fetch recommendations when a job is selected
+  useEffect(() => {
+    if (selectedJobId) {
+      fetchRecommendationsForJob(selectedJobId, 8); // Show max 8 candidates by default
+    }
+  }, [selectedJobId]);
 
   const fetchRecruiterJobs = async () => {
     setIsLoadingJobs(true);
@@ -39,9 +46,13 @@ const EnhancedRecruiterRecommendations = () => {
             })
           : [];
         setRecruiterJobs(sorted);
-        // Auto-select the newest job for convenience
+        // Auto-select the newest job for convenience and fetch recommendations
         if (sorted.length > 0) {
           setSelectedJobId(String(sorted[0].id));
+          // Auto-fetch recommendations for the first job
+          setTimeout(() => {
+            fetchRecommendationsForJob(sorted[0].id, 8);
+          }, 100);
         }
         console.log('Fetched jobs:', jobs);
       } else {
@@ -55,8 +66,8 @@ const EnhancedRecruiterRecommendations = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!selectedJobId) {
+  const fetchRecommendationsForJob = async (jobId, customLimit = null) => {
+    if (!jobId) {
       setError('Please select a job.');
       return;
     }
@@ -72,8 +83,8 @@ const EnhancedRecruiterRecommendations = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          job_id: parseInt(selectedJobId),
-          limit: limit,
+          job_id: parseInt(jobId),
+          limit: customLimit || limit,
           include_explanation: includeExplanation
         })
       });
@@ -84,7 +95,7 @@ const EnhancedRecruiterRecommendations = () => {
         console.log('Recommendations:', recommendations);
         
         // Get job details for context
-        const selectedJob = recruiterJobs.find(job => job.id === parseInt(selectedJobId));
+        const selectedJob = recruiterJobs.find(job => job.id === parseInt(jobId));
         if (selectedJob) {
           setJobDetails(selectedJob);
         }
@@ -98,6 +109,10 @@ const EnhancedRecruiterRecommendations = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    await fetchRecommendationsForJob(selectedJobId);
   };
 
   const toggleCardExpansion = (candidateId) => {
@@ -527,7 +542,7 @@ const EnhancedRecruiterRecommendations = () => {
             </>
           )}
 
-          {recommendations.length === 0 && !isLoading && selectedJobId && (
+          {recommendations.length === 0 && !isLoading && selectedJobId && !isLoadingJobs && (
             <div className="no-results">
               <h3>No Matching Candidates Found</h3>
               <p>Try adjusting your search criteria or check if the job ID is correct.</p>
