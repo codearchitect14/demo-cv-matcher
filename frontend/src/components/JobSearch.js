@@ -16,6 +16,7 @@ const JobSearch = () => {
   const [filteredResults, setFilteredResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isSuccessMessage, setIsSuccessMessage] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [applicationStatus, setApplicationStatus] = useState({});
   const [viewMode, setViewMode] = useState('grid');
@@ -23,19 +24,46 @@ const JobSearch = () => {
   const [searchTags, setSearchTags] = useState(['python']);
 
   useEffect(() => {
-    const fetchCurrentUser = async () => {
+    const checkAuthentication = async () => {
+      console.log('JobSearch: Checking authentication...');
+      
+      // Wait longer for the app to initialize auth
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // First check if we have a token
+      if (!apiService.isAuthenticated()) {
+        console.log('JobSearch: No token found, redirecting to login');
+        navigate('/login');
+        return;
+      }
+
       try {
-        const user = await apiService.getCurrentUser();
+        console.log('JobSearch: Token found, validating...');
+        // Validate the token by fetching current user
+        const user = await apiService.validateToken();
         if (!user) {
+          console.log('JobSearch: Token validation failed, redirecting to login');
+          // Token is invalid, clear it and redirect to login
+          apiService.logout();
           navigate('/login');
+        } else {
+          console.log('JobSearch: Token validation successful, user:', user.email);
         }
       } catch (error) {
-        console.error('Error fetching user:', error);
-        navigate('/login');
+        console.error('JobSearch: Error validating token:', error);
+        // Don't immediately logout on network errors, just log the error
+        if (error.response && error.response.status === 401) {
+          console.log('JobSearch: 401 Unauthorized, clearing token and redirecting');
+          apiService.logout();
+          navigate('/login');
+        } else {
+          console.log('JobSearch: Network error during validation, continuing anyway');
+          // For now, let's continue even if validation fails due to network issues
+        }
       }
     };
 
-    fetchCurrentUser();
+    checkAuthentication();
   }, [navigate]);
 
   // Initial search on component mount
@@ -94,6 +122,7 @@ const JobSearch = () => {
 
     setLoading(true);
     setError('');
+    setIsSuccessMessage(false);
 
     try {
       console.log('Searching for:', formData.query.trim());
@@ -136,14 +165,38 @@ const JobSearch = () => {
 
   const handleApplyNow = async (jobId) => {
     try {
-      await apiService.createApplication(jobId);
+      await apiService.createApplication({ job_id: jobId });
       setApplicationStatus(prev => ({
         ...prev,
         [jobId]: 'applied'
       }));
     } catch (error) {
       console.error('Application error:', error);
+      
+      // Check if it's an "already applied" error
+      if (error.response && error.response.status === 400) {
+        const errorMessage = error.response.data?.detail || error.response.data?.message || '';
+        if (errorMessage.toLowerCase().includes('already applied')) {
+          // Mark as applied in the UI since the backend confirms it
+          setApplicationStatus(prev => ({
+            ...prev,
+            [jobId]: 'applied'
+          }));
+          // Show a success message instead of error
+          setError('You have already applied for this job!');
+          setIsSuccessMessage(true);
+          // Clear the error after 3 seconds
+          setTimeout(() => {
+            setError('');
+            setIsSuccessMessage(false);
+          }, 3000);
+          return;
+        }
+      }
+      
+      // For other errors, show the generic error message
       setError('Failed to apply for job. Please try again.');
+      setIsSuccessMessage(false);
     }
   };
 
@@ -393,12 +446,15 @@ const JobSearch = () => {
              </h2>
            </div>
 
-          {error && (
-            <div className="error-message">
-              <span>{error}</span>
-              <button className="error-close" onClick={() => setError('')}>×</button>
-            </div>
-          )}
+                     {error && (
+             <div className={`error-message ${isSuccessMessage ? 'success' : ''}`}>
+               <span>{error}</span>
+               <button className="error-close" onClick={() => {
+                 setError('');
+                 setIsSuccessMessage(false);
+               }}>×</button>
+             </div>
+           )}
 
           <div className="search-results">
              <div className="view-controls">

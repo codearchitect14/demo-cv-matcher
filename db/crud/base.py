@@ -36,6 +36,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         
         try:
             obj_data = obj_in.model_dump() if hasattr(obj_in, 'model_dump') else (obj_in.dict() if hasattr(obj_in, 'dict') else obj_in)
+            
+            # Handle enum conversion for status field if it exists
+            if 'status' in obj_data and hasattr(obj_data['status'], 'value'):
+                obj_data['status'] = obj_data['status'].value
+            
             db_obj = self.model(**obj_data)
             db.add(db_obj)
             # Flush to assign primary key without issuing a SELECT

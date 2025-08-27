@@ -57,24 +57,34 @@ export const apiService = {
   },
 
   isAuthenticated: () => {
-    return !!localStorage.getItem('access_token');
+    const token = localStorage.getItem('access_token');
+    console.log('Checking authentication, token exists:', !!token);
+    return !!token;
   },
 
   // Initialize auth token from localStorage
   initializeAuth: () => {
     const token = localStorage.getItem('access_token');
+    console.log('Initializing auth with token:', token ? 'Token exists' : 'No token');
+    console.log('Token value:', token);
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      console.log('Authorization header set to:', api.defaults.headers.common['Authorization']);
     }
   },
 
   // Validate token by making a request to /me endpoint
   validateToken: async () => {
     try {
+      console.log('Validating token...');
+      console.log('Current Authorization header:', api.defaults.headers.common['Authorization']);
       const response = await api.get('/candidates/me');
+      console.log('Token validation successful:', response.data);
       return response.data;
     } catch (error) {
       console.log('Token validation failed:', error);
+      console.log('Error response:', error.response?.data);
+      console.log('Error status:', error.response?.status);
       return null;
     }
   },
@@ -184,7 +194,7 @@ export const apiService = {
   },
 
   getApplications: async (filters = {}) => {
-    const response = await api.get('/applications', { params: filters });
+    const response = await api.get('/applications/public', { params: filters });
     return response.data;
   },
 

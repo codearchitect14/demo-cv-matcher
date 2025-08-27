@@ -185,9 +185,62 @@ async def create_application_public(
         
         # Create application with proper status handling
         application_data_dict = application_data.model_dump()
-        # Ensure status is properly set
-        if 'status' not in application_data_dict or not application_data_dict['status']:
-            application_data_dict['status'] = ApplicationStatusEnum.APPLIED
+        # Ensure status is properly set - convert enum to string value
+        if 'status' in application_data_dict and application_data_dict['status']:
+            # If status is an enum object, convert it to its value
+            if hasattr(application_data_dict['status'], 'value'):
+                application_data_dict['status'] = application_data_dict['status'].value
+            elif isinstance(application_data_dict['status'], ApplicationStatusEnum):
+                application_data_dict['status'] = application_data_dict['status'].value
+        else:
+            application_data_dict['status'] = ApplicationStatusEnum.APPLIED.value
+        
+        application = await application_crud.create(db, obj_in=application_data_dict)
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"DEBUG: Exception occurred: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create application: {str(e)}"
+        )
+
+@router.post("/", response_model=ApplicationResponse)
+async def create_application(
+    application_data: ApplicationCreate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create application for the authenticated user"""
+    try:
+        print(f"DEBUG: Creating application for user {current_user.id} - job_id: {application_data.job_id}")
+        
+        # Use current user's ID instead of requiring it in the request
+        application_data_dict = application_data.model_dump()
+        application_data_dict['candidate_id'] = current_user.id
+        
+        # Check if already applied
+        existing_application = await application_crud.get_by_candidate_and_job(
+            db, candidate_id=current_user.id, job_id=application_data.job_id
+        )
+        
+        if existing_application:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Already applied for this job"
+            )
+        
+        # Ensure status is properly set - convert enum to string value
+        if 'status' in application_data_dict and application_data_dict['status']:
+            # If status is an enum object, convert it to its value
+            if hasattr(application_data_dict['status'], 'value'):
+                application_data_dict['status'] = application_data_dict['status'].value
+            elif isinstance(application_data_dict['status'], ApplicationStatusEnum):
+                application_data_dict['status'] = application_data_dict['status'].value
+        else:
+            application_data_dict['status'] = ApplicationStatusEnum.APPLIED.value
         
         application = await application_crud.create(db, obj_in=application_data_dict)
         
@@ -260,4 +313,141 @@ async def get_my_applications(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve your applications. Please try again later."
+        )
+
+@router.get("/{application_id}", response_model=ApplicationResponse)
+async def get_application(
+    application_id: int,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get a specific application by ID (only if it belongs to the current user)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Ensure user can only access their own applications
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only view own applications"
+            )
+        
+        return application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get application error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve application. Please try again later."
+        )
+
+@router.put("/{application_id}", response_model=ApplicationResponse)
+async def update_application(
+    application_id: int,
+    update_data: ApplicationUpdate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update a specific application (only if it belongs to the current user)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Ensure user can only update their own applications
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only update own applications"
+            )
+        
+        updated_application = await application_crud.update(db, db_obj=application, obj_in=update_data.model_dump())
+        return updated_application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update application error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update application. Please try again later."
+        )
+
+@router.delete("/{application_id}")
+async def delete_application(
+    application_id: int,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Delete a specific application (only if it belongs to the current user)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Ensure user can only delete their own applications
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only delete own applications"
+            )
+        
+        await application_crud.remove(db, id=application_id)
+        return {"message": "Application deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete application error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete application. Please try again later."
+        )
+
+@router.put("/{application_id}/status", response_model=ApplicationResponse)
+async def update_application_status(
+    application_id: int,
+    status_update: ApplicationUpdate,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update application status (only if it belongs to the current user)"""
+    try:
+        application = await application_crud.get(db, id=application_id)
+        
+        if not application:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found"
+            )
+        
+        # Ensure user can only update their own applications
+        if application.candidate_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only update own applications"
+            )
+        
+        updated_application = await application_crud.update(db, db_obj=application, obj_in=status_update.model_dump())
+        return updated_application
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update application status error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update application status. Please try again later."
         )

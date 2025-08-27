@@ -6,12 +6,12 @@ import enum
 
 class ApplicationStatusEnum(str, enum.Enum):
     """Application status enumeration"""
-    APPLIED = "applied"
-    REJECTED = "rejected"
-    REVIEWED = "reviewed"
-    INTERVIEW_SCHEDULED = "interview_scheduled"
-    HIRED = "hired"
-    PENDING = "pending"
+    APPLIED = "APPLIED"
+    REJECTED = "REJECTED"
+    REVIEWED = "REVIEWED"
+    INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
+    HIRED = "HIRED"
+    PENDING = "PENDING"
 
 
 class Application(BaseModel):

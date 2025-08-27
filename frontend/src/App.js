@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { apiService } from './api';
 import WelcomePage from './components/WelcomePage';
 import SignUpNew from './components/SignUpNew';
 import LoginNew from './components/LoginNew';
@@ -25,6 +26,11 @@ import EnhancedTestPage from './components/EnhancedTestPage';
 import './App.css';
 
 function App() {
+  // Initialize authentication on app load
+  useEffect(() => {
+    apiService.initializeAuth();
+  }, []);
+
   return (
     <Router>
       <div className="app">

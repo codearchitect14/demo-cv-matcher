@@ -8,10 +8,19 @@ class ApplicationCreate(BaseModel):
     job_id: int
     candidate_id: Optional[int] = None
     status: ApplicationStatusEnum = ApplicationStatusEnum.APPLIED
+    
+    model_config = {
+        "use_enum_values": True,
+        "from_attributes": True
+    }
 
 
 class ApplicationUpdate(BaseModel):
     status: ApplicationStatusEnum
+    
+    model_config = {
+        "use_enum_values": True
+    }
 
 
 class ApplicationResponse(BaseModel):
@@ -29,5 +38,6 @@ class ApplicationResponse(BaseModel):
     salary_max: Optional[int] = None
     job: Optional[dict] = None  # Add job object for my-applications endpoint
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
