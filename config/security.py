@@ -49,6 +49,11 @@ class SecurityConfig:
     MAX_QUERY_LENGTH = 10000  # for JSON / URL-encoded requests
     # Max allowed body for multipart uploads (bytes). Defaults to 100MB.
     MAX_UPLOAD_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_CONTENT_LENGTH", str(100 * 1024 * 1024)))
+    
+    # Response Time Limits
+    MAX_RESPONSE_TIME = float(os.getenv("MAX_RESPONSE_TIME", "35.0"))  # Maximum response time in seconds
+    SLOW_RESPONSE_THRESHOLD = float(os.getenv("SLOW_RESPONSE_THRESHOLD", "10.0"))  # Log slow responses over this threshold
+    
     FORBIDDEN_SQL_KEYWORDS = [
         "DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "INSERT", 
         "UPDATE", "EXEC", "EXECUTE", "UNION", "SELECT", "SCRIPT"

@@ -213,18 +213,26 @@ async def create_application(
     current_user: Candidate = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Create application for the authenticated user"""
+    """Create application for the authenticated user - Optimized for performance"""
     try:
         print(f"DEBUG: Creating application for user {current_user.id} - job_id: {application_data.job_id}")
         
-        # Use current user's ID instead of requiring it in the request
-        application_data_dict = application_data.model_dump()
-        application_data_dict['candidate_id'] = current_user.id
+        # Use raw SQL for faster duplicate check
+        from sqlalchemy import text
         
-        # Check if already applied
-        existing_application = await application_crud.get_by_candidate_and_job(
-            db, candidate_id=current_user.id, job_id=application_data.job_id
-        )
+        # Fast duplicate check using raw SQL
+        check_query = text("""
+            SELECT id FROM applications 
+            WHERE candidate_id = :candidate_id AND job_id = :job_id 
+            LIMIT 1
+        """)
+        
+        result = await db.execute(check_query, {
+            "candidate_id": current_user.id,
+            "job_id": application_data.job_id
+        })
+        
+        existing_application = result.fetchone()
         
         if existing_application:
             raise HTTPException(
@@ -232,26 +240,91 @@ async def create_application(
                 detail="Already applied for this job"
             )
         
-        # Ensure status is properly set - convert enum to string value
-        if 'status' in application_data_dict and application_data_dict['status']:
-            # If status is an enum object, convert it to its value
-            if hasattr(application_data_dict['status'], 'value'):
-                application_data_dict['status'] = application_data_dict['status'].value
-            elif isinstance(application_data_dict['status'], ApplicationStatusEnum):
-                application_data_dict['status'] = application_data_dict['status'].value
+        # Create application using raw SQL for better performance
+        insert_query = text("""
+            INSERT INTO applications (candidate_id, job_id, status, created_at, updated_at)
+            VALUES (:candidate_id, :job_id, :status, NOW(), NOW())
+            RETURNING id, candidate_id, job_id, status, created_at, updated_at
+        """)
+        
+        result = await db.execute(insert_query, {
+            "candidate_id": current_user.id,
+            "job_id": application_data.job_id,
+            "status": ApplicationStatusEnum.APPLIED.value
+        })
+        
+        application_row = result.fetchone()
+        await db.commit()
+        
+        if application_row:
+            return {
+                "id": application_row[0],
+                "candidate_id": application_row[1],
+                "job_id": application_row[2],
+                "status": application_row[3],
+                "created_at": application_row[4],
+                "updated_at": application_row[5]
+            }
         else:
-            application_data_dict['status'] = ApplicationStatusEnum.APPLIED.value
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create application"
+            )
         
-        application = await application_crud.create(db, obj_in=application_data_dict)
-        
-        return application
     except HTTPException:
         raise
     except Exception as e:
         print(f"DEBUG: Exception occurred: {e}")
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create application: {str(e)}"
+        )
+
+@router.get("/check-status/{job_id}")
+async def check_application_status(
+    job_id: int,
+    current_user: Candidate = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Check if user has already applied for a specific job"""
+    try:
+        from sqlalchemy import text
+        
+        check_query = text("""
+            SELECT id, status, created_at 
+            FROM applications 
+            WHERE candidate_id = :candidate_id AND job_id = :job_id 
+            LIMIT 1
+        """)
+        
+        result = await db.execute(check_query, {
+            "candidate_id": current_user.id,
+            "job_id": job_id
+        })
+        
+        application = result.fetchone()
+        
+        if application:
+            return {
+                "has_applied": True,
+                "application_id": application[0],
+                "status": application[1],
+                "applied_at": application[2]
+            }
+        else:
+            return {
+                "has_applied": False,
+                "application_id": None,
+                "status": None,
+                "applied_at": None
+            }
+            
+    except Exception as e:
+        print(f"DEBUG: Check application status error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check application status: {str(e)}"
         )
 
 @router.get("/my-applications", response_model=List[ApplicationResponse])

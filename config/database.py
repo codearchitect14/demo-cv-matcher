@@ -41,6 +41,7 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 # Create async engine with optimized connection pooling for performance
+# Using transaction pooler (IPv4 compatible) with prepared statement workaround
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
@@ -48,12 +49,11 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {
             "jit": "off",
-            "statement_timeout": "5000",  # Reduced timeout for faster failure
-            "idle_in_transaction_session_timeout": "10000",  # Reduced idle timeout
+            "statement_timeout": "30000",  # 30 second timeout
+            "idle_in_transaction_session_timeout": "30000",  # 30 second timeout
         },
-        "command_timeout": 5,  # Reduced command timeout
+        "command_timeout": 30,  # 30 second command timeout
         "statement_cache_size": 0,  # Disable prepared statement cache
-        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
         "ssl": ssl_context,
     },
     future=True,
@@ -74,9 +74,8 @@ direct_engine = create_async_engine(
             "statement_timeout": "10000",
             "idle_in_transaction_session_timeout": "15000",
         },
-        "command_timeout": 10,
+        "command_timeout": 30,
         "statement_cache_size": 0,  # Disable prepared statement cache
-        "prepared_statement_cache_size": 0,  # Disable prepared statement cache
         "ssl": ssl_context,
     },
     future=True,
@@ -105,20 +104,49 @@ def get_fresh_engine():
         connect_args={
             "server_settings": {
                 "jit": "off",
-                "statement_timeout": "10000",
-                "idle_in_transaction_session_timeout": "15000",
+                "statement_timeout": "30000",
+                "idle_in_transaction_session_timeout": "30000",
             },
-            "command_timeout": 10,
+            "command_timeout": 30,
             "statement_cache_size": 0,  # Disable prepared statement cache
             "prepared_statement_cache_size": 0,  # Disable prepared statement cache
+            "prepared_statement_name_func": None,  # Disable prepared statement naming
             "ssl": ssl_context,
+            # Additional asyncpg parameters to prevent prepared statement conflicts
+            "prepared_statement_cache_queries": False,
+            "prepared_statement_name_func": lambda: None,
         },
         future=True,
     )
 
 async def get_db_session() -> AsyncSession:
-    """Get database session with optimized performance"""
-    session = AsyncSession(engine)
+    """Get database session with optimized performance and pgbouncer compatibility"""
+    # Create a fresh engine for each session to avoid prepared statement conflicts
+    fresh_engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={
+            "server_settings": {
+                "jit": "off",
+                "statement_timeout": "30000",
+                "idle_in_transaction_session_timeout": "30000",
+            },
+            "command_timeout": 30,
+            "statement_cache_size": 0,
+            "ssl": ssl_context,
+        },
+        future=True,
+        pool_pre_ping=False,
+        pool_recycle=3600,
+        # Force SQLAlchemy to not use prepared statements
+        execution_options={
+            "autocommit": True,
+            "isolation_level": "AUTOCOMMIT"
+        }
+    )
+    
+    session = AsyncSession(fresh_engine)
     try:
         yield session
     except Exception as e:
@@ -128,6 +156,7 @@ async def get_db_session() -> AsyncSession:
     finally:
         try:
             await session.close()
+            await fresh_engine.dispose()  # Dispose the fresh engine
         except Exception as e:
             logger.error(f"Error closing database session: {e}")
 

@@ -11,6 +11,7 @@ from config.database import init_db
 from config.logging import setup_logging, log_api_request, log_security_event
 from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
+from middleware.timeout_middleware import timeout_middleware
 from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter
 from services.api_service import api_service
 from services.cache_service import cache_service
@@ -32,16 +33,18 @@ async def lifespan(app: FastAPI):
         # Initialize cache service
         await cache_service.connect()
         logger.info("Cache service initialized successfully")
-        # Warm FAISS jobs index lazily (non-blocking best-effort)
-        try:
-            from config.database import get_db_session
-            # Create a short-lived session to warm the index
-            async for session in get_db_session():
-                # Build/load in background without failing startup
-                await faiss_service.ensure_jobs_index(session)
-                break
-        except Exception as e:
-            logger.warning(f"FAISS warmup skipped: {e}")
+        # Temporarily disable FAISS warmup to avoid prepared statement issues
+        logger.info("FAISS warmup disabled during startup to avoid prepared statement conflicts")
+        # TODO: Re-enable FAISS warmup once prepared statement issues are resolved
+        # try:
+        #     from config.database import get_db_session
+        #     # Create a short-lived session to warm the index
+        #     async for session in get_db_session():
+        #         # Build/load in background without failing startup
+        #         await faiss_service.ensure_jobs_index(session)
+        #         break
+        # except Exception as e:
+        #     logger.warning(f"FAISS warmup skipped: {e}")
         
         # Temporarily skip database initialization to avoid prepared statement issues
         logger.info("Skipping database initialization for now...")
@@ -91,6 +94,11 @@ app.add_middleware(
 @app.middleware("http")
 async def security_middleware_handler(request: Request, call_next):
     return await security_middleware(request, call_next)
+
+# Add timeout middleware (should be first to catch slow requests early)
+@app.middleware("http")
+async def timeout_middleware_handler(request: Request, call_next):
+    return await timeout_middleware(request, call_next)
 
 # Add rate limiting middleware
 @app.middleware("http")

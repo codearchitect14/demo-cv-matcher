@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, Index, Boolean
 from sqlalchemy.orm import relationship
 from models.base import BaseModel
 
@@ -15,6 +15,7 @@ class Job(BaseModel):
     domain = Column(String(100), nullable=False, index=True)
     total_years_required = Column(Integer, nullable=False, default=0)
     job_description = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
     # recruiter_id = Column(Integer, ForeignKey("recruiters.id", ondelete="CASCADE"), nullable=True, index=True)
     
     # Relationships

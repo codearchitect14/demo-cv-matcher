@@ -145,13 +145,13 @@ async def create_job_public(
             """
             INSERT INTO jobs (
                 title, company, location, salary_min, salary_max,
-                domain, total_years_required, job_description, created_at, updated_at
+                domain, total_years_required, job_description, is_active, created_at, updated_at
             ) VALUES (
                 :title, :company, :location, :salary_min, :salary_max,
-                :domain, :total_years_required, :job_description, NOW(), NOW()
+                :domain, :total_years_required, :job_description, true, NOW(), NOW()
             )
             RETURNING id, title, company, location, salary_min, salary_max,
-                      domain, total_years_required, job_description, created_at, updated_at
+                      domain, total_years_required, job_description, is_active, created_at, updated_at
             """
         )
         params = {
@@ -203,6 +203,7 @@ async def create_job_public(
             "domain": row.domain,
             "total_years_required": row.total_years_required,
             "job_description": row.job_description,
+            "is_active": row.is_active,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
             "mandatory_skills": [],
@@ -443,77 +444,87 @@ async def list_jobs(
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """List jobs with enhanced filters - NO prepared statements"""
+    """List jobs with enhanced filters - Optimized for fast response"""
     try:
-        # Build filter dictionary for ORM query
-        filters = {}
+        # Use raw SQL for maximum performance
+        from sqlalchemy import text
+        
+        # Build dynamic WHERE clause
+        where_conditions = []
+        params = {"limit": limit, "skip": skip}
         
         # Individual filters
         if location:
-            filters["location"] = location
+            where_conditions.append("location ILIKE :location")
+            params["location"] = f"%{location}%"
+        
         if domain:
-            filters["domain"] = domain
+            where_conditions.append("domain ILIKE :domain")
+            params["domain"] = f"%{domain}%"
+        
         if title:
-            filters["title"] = title
+            where_conditions.append("title ILIKE :title")
+            params["title"] = f"%{title}%"
+        
         if company:
-            filters["company"] = company
+            where_conditions.append("company ILIKE :company")
+            params["company"] = f"%{company}%"
+        
         if salary_min is not None:
-            filters["salary_min"] = salary_min
+            where_conditions.append("salary_min >= :salary_min")
+            params["salary_min"] = salary_min
+        
         if salary_max is not None:
-            filters["salary_max"] = salary_max
-            
-        # Use enhanced search method
+            where_conditions.append("salary_max <= :salary_max")
+            params["salary_max"] = salary_max
+        
+        # Search across multiple fields
         if search:
-            # Search across multiple fields
-            jobs = await job_crud.search_jobs_enhanced(
-                db=db,
-                search_query=search,
-                filters=filters,
-                skip=skip,
-                limit=limit
-            )
-        else:
-            # Use regular filters
-            jobs = await job_crud.get_multi_with_filters_enhanced(
-                db=db,
-                filters=filters,
-                skip=skip,
-                limit=limit
-            )
+            search_condition = """
+                (title ILIKE :search OR 
+                 company ILIKE :search OR 
+                 location ILIKE :search OR 
+                 domain ILIKE :search OR
+                 job_description ILIKE :search)
+            """
+            where_conditions.append(search_condition)
+            params["search"] = f"%{search}%"
+        
+        # Build the query
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        query = text(f"""
+            SELECT id, title, company, location, salary_min, salary_max, domain, 
+                   total_years_required, job_description, created_at, updated_at
+            FROM jobs 
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT :limit OFFSET :skip
+        """)
+        
+        result = await db.execute(query, params)
+        rows = result.fetchall()
         
         # Convert to response format
-        job_responses = []
-        for job in jobs:
-            job_response = {
-                "id": job.id,
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "salary_min": job.salary_min,
-                "salary_max": job.salary_max,
-                "domain": job.domain,
-                "total_years_required": job.total_years_required,
-                "job_description": job.job_description,
-                "created_at": job.created_at,
-                "updated_at": job.updated_at,
-                "mandatory_skills": []
-            }
-            
-            # Add mandatory skills if they exist
-            if hasattr(job, 'mandatory_skills') and job.mandatory_skills:
-                for skill in job.mandatory_skills:
-                    job_response["mandatory_skills"].append({
-                        "id": skill.id,
-                        "skill": skill.skill,
-                        "min_experience": skill.min_experience,
-                        "job_id": job.id,
-                        "created_at": skill.created_at,
-                        "updated_at": skill.updated_at
-                    })
-            
-            job_responses.append(job_response)
+        jobs = []
+        for row in rows:
+            jobs.append(JobResponse(
+                id=row[0],
+                title=row[1],
+                company=row[2],
+                location=row[3],
+                salary_min=row[4],
+                salary_max=row[5],
+                domain=row[6],
+                total_years_required=row[7],
+                job_description=row[8],
+                created_at=row[9],
+                updated_at=row[10],
+                mandatory_skills=[]  # Empty for now to avoid additional queries
+            ))
         
-        return job_responses
+        logger.info(f"Found {len(jobs)} jobs matching criteria")
+        return jobs
         
     except Exception as e:
         logger.error(f"Error listing jobs: {e}")

@@ -316,14 +316,43 @@ async def login(
                 detail="Invalid email format"
             )
         
-        # Get user with optimized query
-        user = await candidate_crud.get_by_email(db, email=email)
-        if not user:
+        # Get user with optimized raw SQL query
+        from sqlalchemy import text
+        
+        user_query = text("""
+            SELECT id, name, email, password_hash, role, location, domain, 
+                   expected_salary_min, expected_salary_max, summary, created_at
+            FROM candidates 
+            WHERE email = :email 
+            LIMIT 1
+        """)
+        
+        result = await db.execute(user_query, {"email": email})
+        user_row = result.fetchone()
+        
+        if not user_row:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password. Please check your credentials and try again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        # Create a simple user object for password verification
+        class SimpleUser:
+            def __init__(self, row):
+                self.id = row[0]
+                self.name = row[1]
+                self.email = row[2]
+                self.password_hash = row[3]
+                self.role = row[4]
+                self.location = row[5]
+                self.domain = row[6]
+                self.expected_salary_min = row[7]
+                self.expected_salary_max = row[8]
+                self.summary = row[9]
+                self.created_at = row[10]
+        
+        user = SimpleUser(user_row)
         
         # Verify password
         if not verify_password(user_credentials.password, user.password_hash):

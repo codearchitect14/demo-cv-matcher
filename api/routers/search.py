@@ -22,53 +22,72 @@ async def search_jobs_get(
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Search jobs using GET parameters
+    Search jobs using GET parameters - Optimized for fast response
     """
     try:
-        # Create filters dictionary
-        filters = {}
-        if domain:
-            filters["domain"] = domain
-        if location:
-            filters["location"] = location
-        if salary_min is not None:
-            filters["salary_min"] = salary_min
-        if salary_max is not None:
-            filters["salary_max"] = salary_max
+        # Use raw SQL for maximum performance
+        from sqlalchemy import text
         
-        # Get jobs with filters
-        jobs = await job_crud.get_multi_with_filters(
-            db=db,
-            filters=filters,
-            skip=0,
-            limit=limit
-        )
+        # Build dynamic WHERE clause
+        where_conditions = []
+        params = {"limit": limit}
+        
+        if domain:
+            where_conditions.append("domain ILIKE :domain")
+            params["domain"] = f"%{domain}%"
+        
+        if location:
+            where_conditions.append("location ILIKE :location")
+            params["location"] = f"%{location}%"
+        
+        if salary_min is not None:
+            where_conditions.append("salary_min >= :salary_min")
+            params["salary_min"] = salary_min
+        
+        if salary_max is not None:
+            where_conditions.append("salary_max <= :salary_max")
+            params["salary_max"] = salary_max
+        
+        # Build the query
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        query = text(f"""
+            SELECT id, title, company, location, salary_min, salary_max, domain, total_years_required
+            FROM jobs 
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+        
+        result = await db.execute(query, params)
+        rows = result.fetchall()
         
         # Convert to response format with realistic scores
         job_recommendations = []
-        for i, job in enumerate(jobs):
+        import random
+        
+        for row in rows:
+            job_id, title, company, job_location, job_salary_min, job_salary_max, job_domain, total_years = row
+            
             # Calculate varied scores based on job data
             base_score = 0.6  # Base score
             
             # Adjust score based on domain match
-            if domain and job.domain.lower() == domain.lower():
+            if domain and job_domain and domain.lower() in job_domain.lower():
                 base_score += 0.2
             
             # Adjust score based on location match
-            if location and location.lower() in job.location.lower():
+            if location and job_location and location.lower() in job_location.lower():
                 base_score += 0.1
             
             # Adjust score based on salary range
-            if salary_min and job.salary_min:
-                if job.salary_min >= salary_min:
-                    base_score += 0.05
+            if salary_min and job_salary_min and job_salary_min >= salary_min:
+                base_score += 0.05
             
-            if salary_max and job.salary_max:
-                if job.salary_max <= salary_max:
-                    base_score += 0.05
+            if salary_max and job_salary_max and job_salary_max <= salary_max:
+                base_score += 0.05
             
             # Add some randomness for variety
-            import random
             random_factor = random.uniform(-0.1, 0.1)
             final_score = min(1.0, max(0.3, base_score + random_factor))
             
@@ -78,13 +97,13 @@ async def search_jobs_get(
             ml_score = final_score * random.uniform(0.6, 0.8)
             
             job_recommendations.append(JobRecommendation(
-                job_id=job.id,
-                title=job.title,
-                company=job.company or "Unknown Company",
-                location=job.location,
-                salary_min=job.salary_min,
-                salary_max=job.salary_max,
-                domain=job.domain,
+                job_id=job_id,
+                title=title,
+                company=company or "Unknown Company",
+                location=job_location,
+                salary_min=job_salary_min,
+                salary_max=job_salary_max,
+                domain=job_domain,
                 similarity_score=semantic_score,
                 combined_score=final_score,
                 filter_score=filter_score,
