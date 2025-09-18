@@ -134,6 +134,56 @@ class CRUDRecruiter(CRUDBase[Recruiter, RecruiterCreate, RecruiterUpdate]):
             .offset(offset)
         )
         return result.scalars().all()
+    
+    # ===== ADMIN METHODS =====
+    
+    async def get_all_with_filters(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        role_filter: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        company_id: Optional[int] = None
+    ) -> List[Recruiter]:
+        """Get all recruiters with filters - Company Admin only"""
+        query = select(Recruiter)
+        
+        # Apply company filter for isolation
+        if company_id is not None:
+            query = query.where(Recruiter.company_id == company_id)
+        
+        # Apply filters
+        if search:
+            search_term = f"%{search}%"
+            query = query.where(
+                (Recruiter.full_name.ilike(search_term)) |
+                (Recruiter.email.ilike(search_term)) |
+                (Recruiter.company_name.ilike(search_term))
+            )
+        
+        if role_filter:
+            query = query.where(Recruiter.role == role_filter)
+        
+        if is_active is not None:
+            query = query.where(Recruiter.is_active == is_active)
+        
+        # Order and paginate
+        query = query.order_by(Recruiter.created_at.desc()).offset(skip).limit(limit)
+        
+        result = await db.execute(query)
+        return result.scalars().all()
+    
+    async def count_active_jobs(self, db: AsyncSession, recruiter_id: int) -> int:
+        """Count active jobs for a recruiter"""
+        result = await db.execute(
+            select(func.count(Job.id)).where(
+                Job.recruiter_id == recruiter_id,
+                Job.is_active == True
+            )
+        )
+        return result.scalar() or 0
 
 # Create recruiter CRUD instance
 recruiter = CRUDRecruiter(Recruiter) 

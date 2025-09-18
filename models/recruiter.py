@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, Index, Boolean, Enum
+from sqlalchemy import Column, String, Integer, Text, Index, Boolean, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from .base import BaseModel
 import enum
@@ -47,8 +47,9 @@ class Recruiter(BaseModel):
     phone_number = Column(String(20), nullable=True)
     password_hash = Column(String(255), nullable=False)
     
-    # Company Info
-    company_name = Column(String(255), nullable=False, index=True)
+    # Company Info - Now using company_id for proper isolation
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_name = Column(String(255), nullable=False, index=True)  # Keep for backward compatibility
     domain = Column(String(50), nullable=False, index=True)
     company_size = Column(String(20), nullable=False, index=True)
     company_description = Column(Text, nullable=True)
@@ -59,6 +60,7 @@ class Recruiter(BaseModel):
     email_verified = Column(Boolean, nullable=False, default=False, index=True)
     
     # Relationships
-    # jobs = relationship("Job", back_populates="recruiter", cascade="all, delete-orphan")  # Commented out since recruiter_id is commented
+    company = relationship("Company", back_populates="recruiters")
+    jobs = relationship("Job", back_populates="recruiter", cascade="all, delete-orphan")
     # applications relationship removed - no longer needed since recruiter_id was removed from applications
     # interactions relationship removed - InteractionLog uses generic user_id approach 

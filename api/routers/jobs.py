@@ -12,6 +12,7 @@ from db.crud.job import job as job_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user, get_current_recruiter
 from schemas.job import JobCreate, JobUpdate, JobResponse, JobResponseSimple, JobMandatorySkillCreate, JobSearchFilter
+from middleware.recruiter_auth import get_current_recruiter as get_recruiter_context, RecruiterContext
 from sqlalchemy import select, text
 import logging
 import asyncio
@@ -96,9 +97,10 @@ async def create_job_as_recruiter(
 ):
     """Create a new job posting as a recruiter"""
     try:
-        # Create the job with recruiter ID (exclude relationship field first)
+        # Create the job with recruiter ID and company ID (exclude relationship field first)
         job_dict = job_data.dict(exclude={'mandatory_skills'})
         job_dict["recruiter_id"] = current_recruiter.id
+        job_dict["company_id"] = getattr(current_recruiter, 'company_id', 1)  # Default to company 1
         job = await job_crud.create(db, obj_in=job_dict)
         
         # Add mandatory skills if provided using raw SQL to avoid prepared statement issues
@@ -135,77 +137,131 @@ async def create_job_as_recruiter(
 
 @router.post("/public", response_model=JobResponse)
 async def create_job_public(
-    job_data: JobCreate,
-    db: AsyncSession = Depends(get_db_session)
+    job_data: JobCreate
 ):
-    """Create a new job posting (public endpoint for testing)"""
+    """Create a new job posting (public endpoint for testing) with direct connection"""
     try:
-        # Insert job via raw SQL with RETURNING to avoid extra round-trips
-        insert_sql = text(
-            """
-            INSERT INTO jobs (
-                title, company, location, salary_min, salary_max,
-                domain, total_years_required, job_description, is_active, created_at, updated_at
-            ) VALUES (
-                :title, :company, :location, :salary_min, :salary_max,
-                :domain, :total_years_required, :job_description, true, NOW(), NOW()
+        import asyncpg
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        
+        # Validate recruiter_id if provided using direct connection
+        if hasattr(job_data, 'recruiter_id') and job_data.recruiter_id is not None:
+            conn = None
+            try:
+                conn = await asyncpg.connect(
+                    os.getenv('DATABASE_URL'), 
+                    statement_cache_size=0,
+                    command_timeout=8
+                )
+                recruiter_check = await conn.fetchrow(
+                    "SELECT id FROM recruiters WHERE id = $1 AND is_active = true",
+                    job_data.recruiter_id
+                )
+                if not recruiter_check:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Recruiter with ID {job_data.recruiter_id} not found or inactive"
+                    )
+            finally:
+                if conn:
+                    try:
+                        await conn.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing recruiter validation connection: {e}")
+        
+        # Insert job using direct connection with timeout handling
+        conn = None
+        try:
+            conn = await asyncpg.connect(
+                os.getenv('DATABASE_URL'), 
+                statement_cache_size=0,
+                command_timeout=8
             )
-            RETURNING id, title, company, location, salary_min, salary_max,
-                      domain, total_years_required, job_description, is_active, created_at, updated_at
+            
+            insert_sql = """
+                INSERT INTO jobs (
+                    title, company, location, salary_min, salary_max,
+                    domain, total_years_required, job_description, is_active, threshold_score, recruiter_id, created_at, updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, NOW(), NOW()
+                )
+                RETURNING id, title, company, location, salary_min, salary_max,
+                          domain, total_years_required, job_description, is_active, threshold_score, recruiter_id, created_at, updated_at
             """
-        )
-        params = {
-            "title": job_data.title,
-            "company": job_data.company,
-            "location": job_data.location,
-            "salary_min": job_data.salary_min,
-            "salary_max": job_data.salary_max,
-            "domain": job_data.domain,
-            "total_years_required": job_data.total_years_required,
-            "job_description": job_data.job_description,
-        }
-        result = await db.execute(insert_sql, params)
-        row = result.fetchone()
+            
+            params = [
+                job_data.title,
+                job_data.company,
+                job_data.location,
+                job_data.salary_min,
+                job_data.salary_max,
+                job_data.domain,
+                job_data.total_years_required,
+                job_data.job_description,
+                getattr(job_data, 'threshold_score', 70),  # Default to 70 if not provided
+                getattr(job_data, 'recruiter_id', None)  # Default to None if not provided
+            ]
+            
+            row = await conn.fetchrow(insert_sql, *params)
+        finally:
+            if conn:
+                try:
+                    await conn.close()
+                except Exception as e:
+                    logger.warning(f"Error closing connection: {e}")
         if not row:
             raise RuntimeError("Failed to insert job")
-        job_id = row.id
+        job_id = row['id']
 
-        # Add mandatory skills if provided using raw SQL to avoid prepared statement issues
-        if job_data.mandatory_skills:
-            for skill_data in job_data.mandatory_skills:
-                sd = _skill_to_dict(skill_data)
-                await db.execute(
-                    text(
+        # Add mandatory skills if provided using direct connection
+        if hasattr(job_data, 'mandatory_skills') and job_data.mandatory_skills:
+            conn2 = None
+            try:
+                conn2 = await asyncpg.connect(
+                    os.getenv('DATABASE_URL'), 
+                    statement_cache_size=0,
+                    command_timeout=8
+                )
+                for skill_data in job_data.mandatory_skills:
+                    sd = _skill_to_dict(skill_data)
+                    await conn2.execute(
                         """
                         INSERT INTO job_mandatory_skills (job_id, skill, min_experience, created_at, updated_at)
-                        VALUES (:job_id, :skill, :min_experience, NOW(), NOW())
-                        """
-                    ),
-                    {
-                        "job_id": job_id,
-                        "skill": sd.get("skill"),
-                        "min_experience": sd.get("min_experience", 1),
-                    },
-                )
-        await db.commit()
+                        VALUES ($1, $2, $3, NOW(), NOW())
+                        """,
+                        job_id,
+                        sd.get("skill"),
+                        sd.get("min_experience", 1)
+                    )
+            finally:
+                if conn2:
+                    try:
+                        await conn2.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing mandatory skills connection: {e}")
 
         # Schedule FAISS indexing in background
         asyncio.create_task(_index_job_async(job_id))
 
         # Build response matching JobResponse
         response = {
-            "id": row.id,
-            "title": row.title,
-            "company": row.company,
-            "location": row.location,
-            "salary_min": row.salary_min,
-            "salary_max": row.salary_max,
-            "domain": row.domain,
-            "total_years_required": row.total_years_required,
-            "job_description": row.job_description,
-            "is_active": row.is_active,
-            "created_at": row.created_at,
-            "updated_at": row.updated_at,
+            "id": row['id'],
+            "title": row['title'],
+            "company": row['company'],
+            "location": row['location'],
+            "salary_min": row['salary_min'],
+            "salary_max": row['salary_max'],
+            "domain": row['domain'],
+            "total_years_required": row['total_years_required'],
+            "job_description": row['job_description'],
+            "is_active": row['is_active'],
+            "threshold_score": row['threshold_score'],
+            "recruiter_id": row['recruiter_id'],
+            "created_at": row['created_at'],
+            "updated_at": row['updated_at'],
             "mandatory_skills": [],
         }
         return response
@@ -441,93 +497,112 @@ async def list_jobs(
     salary_min: Optional[int] = Query(None, ge=0, description="Minimum salary"),
     salary_max: Optional[int] = Query(None, ge=0, description="Maximum salary"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: AsyncSession = Depends(get_db_session)
+    limit: int = Query(10, ge=1, le=100)
 ):
-    """List jobs with enhanced filters - Optimized for fast response"""
+    """List jobs with enhanced filters - Ultra-fast response using global connection pool"""
+    import time
+    start_time = time.time()
+    
     try:
-        # Use raw SQL for maximum performance
-        from sqlalchemy import text
+        from config.connection_pool import global_pool
         
-        # Build dynamic WHERE clause
+        # Build optimized WHERE clause with indexed columns first
         where_conditions = []
-        params = {"limit": limit, "skip": skip}
+        params = []
+        param_count = 0
         
-        # Individual filters
-        if location:
-            where_conditions.append("location ILIKE :location")
-            params["location"] = f"%{location}%"
-        
+        # Use indexed columns for better performance
         if domain:
-            where_conditions.append("domain ILIKE :domain")
-            params["domain"] = f"%{domain}%"
+            param_count += 1
+            where_conditions.append(f"domain = ${param_count}")
+            params.append(domain)
+        
+        if location:
+            param_count += 1
+            where_conditions.append(f"location ILIKE ${param_count}")
+            params.append(f"%{location}%")
         
         if title:
-            where_conditions.append("title ILIKE :title")
-            params["title"] = f"%{title}%"
+            param_count += 1
+            where_conditions.append(f"title ILIKE ${param_count}")
+            params.append(f"%{title}%")
         
         if company:
-            where_conditions.append("company ILIKE :company")
-            params["company"] = f"%{company}%"
+            param_count += 1
+            where_conditions.append(f"company ILIKE ${param_count}")
+            params.append(f"%{company}%")
         
         if salary_min is not None:
-            where_conditions.append("salary_min >= :salary_min")
-            params["salary_min"] = salary_min
+            param_count += 1
+            where_conditions.append(f"salary_min >= ${param_count}")
+            params.append(salary_min)
         
         if salary_max is not None:
-            where_conditions.append("salary_max <= :salary_max")
-            params["salary_max"] = salary_max
+            param_count += 1
+            where_conditions.append(f"salary_max <= ${param_count}")
+            params.append(salary_max)
         
-        # Search across multiple fields
+        # Search across multiple fields (optimized for indexed columns)
         if search:
-            search_condition = """
-                (title ILIKE :search OR 
-                 company ILIKE :search OR 
-                 location ILIKE :search OR 
-                 domain ILIKE :search OR
-                 job_description ILIKE :search)
+            param_count += 1
+            search_condition = f"""
+                (title ILIKE ${param_count} OR 
+                 company ILIKE ${param_count} OR 
+                 location ILIKE ${param_count} OR 
+                 domain ILIKE ${param_count})
             """
             where_conditions.append(search_condition)
-            params["search"] = f"%{search}%"
+            params.append(f"%{search}%")
         
-        # Build the query
+        # Build optimized query with proper indexing
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
         
-        query = text(f"""
+        # Add limit and offset parameters
+        param_count += 1
+        limit_param = f"${param_count}"
+        param_count += 1
+        offset_param = f"${param_count}"
+        params.extend([limit, skip])
+        
+        # Optimized query - only select needed columns, use indexed ORDER BY
+        query = f"""
             SELECT id, title, company, location, salary_min, salary_max, domain, 
                    total_years_required, job_description, created_at, updated_at
             FROM jobs 
-            WHERE {where_clause}
+            WHERE {where_clause} AND is_active = true
             ORDER BY created_at DESC
-            LIMIT :limit OFFSET :skip
-        """)
+            LIMIT {limit_param} OFFSET {offset_param}
+        """
         
-        result = await db.execute(query, params)
-        rows = result.fetchall()
+        # Execute using global connection pool for better performance
+        rows = await global_pool.fetch(query, *params)
         
-        # Convert to response format
+        # Convert to response format efficiently
         jobs = []
         for row in rows:
             jobs.append(JobResponse(
-                id=row[0],
-                title=row[1],
-                company=row[2],
-                location=row[3],
-                salary_min=row[4],
-                salary_max=row[5],
-                domain=row[6],
-                total_years_required=row[7],
-                job_description=row[8],
-                created_at=row[9],
-                updated_at=row[10],
-                mandatory_skills=[]  # Empty for now to avoid additional queries
+                id=row['id'],
+                title=row['title'],
+                company=row['company'],
+                location=row['location'],
+                salary_min=row['salary_min'],
+                salary_max=row['salary_max'],
+                domain=row['domain'],
+                total_years_required=row['total_years_required'],
+                job_description=row['job_description'],
+                created_at=row['created_at'],
+                updated_at=row['updated_at'],
+                mandatory_skills=[]  # Skip skills to avoid N+1 queries
             ))
         
-        logger.info(f"Found {len(jobs)} jobs matching criteria")
+        elapsed = time.time() - start_time
+        logger.info(f"Found {len(jobs)} jobs matching criteria (took {elapsed:.3f}s)")
         return jobs
         
     except Exception as e:
         logger.error(f"Error listing jobs: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve jobs. Please try again later."
@@ -727,4 +802,101 @@ async def get_search_help():
             "All endpoints return jobs ordered by creation date (newest first)"
         ]
     }
+
+@router.get("/recruiter/assigned", response_model=List[JobResponse])
+async def get_recruiter_assigned_jobs(
+    db: AsyncSession = Depends(get_db_session),
+    recruiter_context: RecruiterContext = Depends(get_recruiter_context),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status_filter: Optional[str] = Query(None, description="Filter by job status (active/inactive)"),
+    search: Optional[str] = Query(None, description="Search by job title, company, or location")
+):
+    """Get jobs assigned to the authenticated recruiter with optimized performance"""
+    import time
+    start_time = time.time()
+    
+    try:
+        from config.connection_pool import global_pool
+        
+        # Build dynamic WHERE clause for filtering
+        where_conditions = []
+        params = {"limit": limit, "skip": skip}
+        
+        # Add recruiter filter - non-admin recruiters can only see their assigned jobs
+        if not recruiter_context.is_admin:
+            where_conditions.append("recruiter_id = :recruiter_id")
+            params["recruiter_id"] = recruiter_context.recruiter_id
+        else:
+            # Admins see all jobs, but can optionally filter by recruiter
+            if hasattr(recruiter_context, 'filter_recruiter_id') and recruiter_context.filter_recruiter_id:
+                where_conditions.append("recruiter_id = :recruiter_id")
+                params["recruiter_id"] = recruiter_context.filter_recruiter_id
+        
+        # Add status filter
+        if status_filter:
+            if status_filter.lower() == "active":
+                where_conditions.append("is_active = true")
+            elif status_filter.lower() == "inactive":
+                where_conditions.append("is_active = false")
+        
+        # Add search filter
+        if search:
+            where_conditions.append("""
+                (LOWER(title) LIKE LOWER(:search) OR 
+                 LOWER(company) LIKE LOWER(:search) OR 
+                 LOWER(location) LIKE LOWER(:search))
+            """)
+            params["search"] = f"%{search}%"
+        
+        # Build the final query
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        query = text(f"""
+            SELECT 
+                j.id, j.title, j.company, j.location, j.salary_min, j.salary_max,
+                j.domain, j.total_years_required, j.job_description, j.is_active, 
+                j.threshold_score, j.recruiter_id, j.created_at, j.updated_at,
+                r.full_name as recruiter_name, r.email as recruiter_email
+            FROM jobs j
+            LEFT JOIN recruiters r ON j.recruiter_id = r.id
+            WHERE {where_clause}
+            ORDER BY j.created_at DESC
+            LIMIT :limit OFFSET :skip
+        """)
+        
+        # Execute using global connection pool for better performance
+        rows = await global_pool.fetch(query.text, **params)
+        
+        # Convert to JobResponse format efficiently
+        jobs = []
+        for row in rows:
+            jobs.append(JobResponse(
+                id=row['id'],
+                title=row['title'],
+                company=row['company'],
+                location=row['location'],
+                salary_min=row['salary_min'],
+                salary_max=row['salary_max'],
+                domain=row['domain'],
+                total_years_required=row['total_years_required'],
+                job_description=row['job_description'],
+                is_active=row['is_active'],
+                threshold_score=row.get('threshold_score', 70),
+                recruiter_id=row['recruiter_id'],
+                created_at=row['created_at'],
+                updated_at=row['updated_at'],
+                mandatory_skills=[]  # Skip skills to avoid N+1 queries
+            ))
+        
+        elapsed = time.time() - start_time
+        logger.info(f"Retrieved {len(jobs)} assigned jobs for recruiter {recruiter_context.recruiter_id} (took {elapsed:.3f}s)")
+        return jobs
+        
+    except Exception as e:
+        print(f"Get recruiter jobs error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve jobs. Please try again later."
+        )
 

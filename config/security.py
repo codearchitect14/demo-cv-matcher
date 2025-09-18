@@ -3,9 +3,9 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from pydantic import BaseModel
-import redis.asyncio as redis
+# import redis.asyncio as redis  # Temporarily disabled
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -51,20 +51,23 @@ class SecurityConfig:
     MAX_UPLOAD_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_CONTENT_LENGTH", str(100 * 1024 * 1024)))
     
     # Response Time Limits
-    MAX_RESPONSE_TIME = float(os.getenv("MAX_RESPONSE_TIME", "35.0"))  # Maximum response time in seconds
-    SLOW_RESPONSE_THRESHOLD = float(os.getenv("SLOW_RESPONSE_THRESHOLD", "10.0"))  # Log slow responses over this threshold
+    MAX_RESPONSE_TIME = float(os.getenv("MAX_RESPONSE_TIME", "8.0"))  # Maximum response time in seconds
+    SLOW_RESPONSE_THRESHOLD = float(os.getenv("SLOW_RESPONSE_THRESHOLD", "5.0"))  # Log slow responses over this threshold
     
     FORBIDDEN_SQL_KEYWORDS = [
         "DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "INSERT", 
         "UPDATE", "EXEC", "EXECUTE", "UNION", "SELECT", "SCRIPT"
     ]
 
-# Password Hashing - Optimized for performance
-pwd_context = CryptContext(
-    schemes=["bcrypt"], 
-    deprecated="auto",
-    bcrypt__rounds=10  # Reduced rounds for better performance (12->10)
-)
+# Password Hashing - Optimized for performance using bcrypt directly
+# Default rounds for new hashes
+BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "10"))
+
+# Precomputed dummy hash to simulate constant-time verification when user is missing
+# Generated once at import time to avoid per-request overhead
+_DUMMY_PASSWORD = b"dummy_password_for_constant_time"
+_DUMMY_SALT = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+_DUMMY_BCRYPT_HASH: bytes = bcrypt.hashpw(_DUMMY_PASSWORD, _DUMMY_SALT)
 
 # In-memory storage for development (replaces Redis)
 _refresh_tokens = {}
@@ -82,12 +85,37 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a password against its hash using bcrypt directly.
+    Returns False on any error to avoid leaking details.
+    """
+    try:
+        if not plain_password or not hashed_password:
+            return False
+        if isinstance(hashed_password, str):
+            hashed_bytes = hashed_password.encode("utf-8")
+        else:
+            hashed_bytes = hashed_password
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_bytes)
+    except Exception:
+        # Swallow bcrypt/backend errors and return False for safety
+        return False
 
 def get_password_hash(password: str) -> str:
-    """Generate password hash"""
-    return pwd_context.hash(password)
+    """Generate bcrypt password hash with configured rounds."""
+    if not password:
+        raise ValueError("Password must not be empty")
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+
+def simulate_constant_time_verify() -> None:
+    """Perform a fixed-cost bcrypt check to mitigate timing side-channels.
+    Always returns None and should not affect auth outcome.
+    """
+    try:
+        bcrypt.checkpw(_DUMMY_PASSWORD, _DUMMY_BCRYPT_HASH)
+    except Exception:
+        # Ignore any backend issues; purpose is only to burn comparable CPU time
+        pass
 
 def validate_password_strength(password: str) -> bool:
     """Validate password strength according to security policy"""

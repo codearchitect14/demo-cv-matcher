@@ -3,6 +3,7 @@ from .job import job
 from .application import application
 from .interaction import interaction
 from .recruiter import recruiter
+from .company import company
 from .audit import audit
 from .skill import skill
 from .job_skill import job_skill
@@ -14,6 +15,7 @@ __all__ = [
     "application",
     "interaction",
     "recruiter",
+    "company",
     "audit",
     "skill",
     "job_skill",

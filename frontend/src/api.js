@@ -194,7 +194,7 @@ export const apiService = {
   },
 
   getApplications: async (filters = {}) => {
-    const response = await api.get('/applications/public', { params: filters });
+    const response = await api.get('/applications/public-fast', { params: filters });
     return response.data;
   },
 

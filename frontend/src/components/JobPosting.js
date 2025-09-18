@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import apiService from '../api';
 
@@ -7,7 +7,29 @@ const JobPosting = ({ onJobPosted }) => {
   const [message, setMessage] = useState('');
   const [mandatorySkills, setMandatorySkills] = useState([]);
   const [newSkill, setNewSkill] = useState({ skill: '', min_experience: '' });
+  const [recruiters, setRecruiters] = useState([]);
+  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
+
+  // Fetch recruiters on component mount
+  useEffect(() => {
+    const fetchRecruiters = async () => {
+      setLoadingRecruiters(true);
+      try {
+        const response = await fetch('http://localhost:8000/api/v1/jobs-fast/recruiters-fast');
+        if (response.ok) {
+          const data = await response.json();
+          setRecruiters(data);
+        }
+      } catch (error) {
+        console.error('Error fetching recruiters:', error);
+      } finally {
+        setLoadingRecruiters(false);
+      }
+    };
+
+    fetchRecruiters();
+  }, []);
 
   const onSubmit = async (data) => {
     setLoading(true);
@@ -22,7 +44,8 @@ const JobPosting = ({ onJobPosted }) => {
         salary_min: parseFloat(data.salary_min),
         salary_max: parseFloat(data.salary_max),
         total_years_required: parseInt(data.total_years_required),
-        description: data.description
+        job_description: data.description,
+        recruiter_id: data.recruiter_id ? parseInt(data.recruiter_id) : null
       };
 
       const response = await apiService.createJob(jobData);
@@ -116,6 +139,25 @@ const JobPosting = ({ onJobPosted }) => {
             <option value="Product Management">Product Management</option>
           </select>
           {errors.domain && <span style={{color: 'red'}}>{typeof errors.domain.message === 'string' ? errors.domain.message : JSON.stringify(errors.domain.message)}</span>}
+        </div>
+
+        <div className="form-group">
+          <label>Assigned Recruiter</label>
+          <select {...register('recruiter_id')}>
+            <option value="">Select recruiter (optional)</option>
+            {loadingRecruiters ? (
+              <option disabled>Loading recruiters...</option>
+            ) : (
+              recruiters.map(recruiter => (
+                <option key={recruiter.id} value={recruiter.id}>
+                  {recruiter.name} ({recruiter.email})
+                </option>
+              ))
+            )}
+          </select>
+          <small style={{color: '#666', fontSize: '12px'}}>
+            Leave empty to assign later or for admin assignment
+          </small>
         </div>
 
         <div className="form-group">

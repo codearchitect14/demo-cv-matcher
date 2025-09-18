@@ -47,6 +47,24 @@
 .btn-back { background:#f1f5f9; color:#1e293b; border:1px solid #e2e8f0; padding:8px 14px; border-radius:8px; font-size:0.9rem; font-weight:600; margin-right:10px; }
 .btn-back:hover{ background:#e2e8f0; }
 
+.btn-secondary {
+  background: #6b7280;
+  color: white;
+  border: 1px solid #6b7280;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-right: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #4b5563;
+  border-color: #4b5563;
+}
+
 .btn-post-job {
   background: #ffffff;
   color: #1e293b;

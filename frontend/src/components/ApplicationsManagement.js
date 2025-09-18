@@ -32,7 +32,8 @@ const ApplicationsManagement = () => {
     candidate_id: '',
     status: '',
     experience_range: '',
-    location: ''
+    location: '',
+    qualification_filter: ''
   });
   
   const [formData, setFormData] = useState({
@@ -115,12 +116,23 @@ const ApplicationsManagement = () => {
   const fetchAllApplications = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/applications/public?limit=100');
+      // Build query parameters for qualification filtering
+      const queryParams = new URLSearchParams();
+      queryParams.append('limit', '100');
+      
+      if (filters.qualification_filter) {
+        queryParams.append('qualification_filter', filters.qualification_filter);
+      }
+      
+      const response = await fetch(`http://localhost:8000/api/v1/applications/public-fast?${queryParams.toString()}`);
       if (response.ok) {
         const data = await response.json();
         console.log('Fetched applications:', data);
-        console.log('First application candidate data:', data[0]?.candidate);
-        console.log('First application job data:', data[0]?.job);
+        console.log('First application qualification data:', {
+          candidate_score: data[0]?.candidate_score,
+          is_qualified: data[0]?.is_qualified,
+          threshold_score: data[0]?.job?.threshold_score
+        });
         setApplications(data);
       } else {
         setError('Failed to fetch applications');
@@ -344,7 +356,8 @@ const ApplicationsManagement = () => {
       candidate_id: '',
       status: '',
       experience_range: '',
-      location: ''
+      location: '',
+      qualification_filter: ''
     });
     setSearchTerm('');
     setMainSearchSuggestions([]);
@@ -396,7 +409,7 @@ const ApplicationsManagement = () => {
 
   const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/status/public`, {
+      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -418,11 +431,43 @@ const ApplicationsManagement = () => {
     }
   };
 
+  const handleRecalculateQualification = async (applicationId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/recalculate-qualification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMessage('Qualification recalculated successfully');
+        fetchAllApplications();
+        if (selectedApplication?.id === applicationId) {
+          setSelectedApplication({ 
+            ...selectedApplication, 
+            candidate_score: data.candidate_score,
+            is_qualified: data.is_qualified,
+            status: data.status
+          });
+        }
+      } else {
+        setError('Failed to recalculate qualification');
+      }
+    } catch (err) {
+      setError('Failed to recalculate qualification');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateApplication = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/applications/public', {
+      const response = await fetch('http://localhost:8000/api/v1/applications/recruiter', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -550,6 +595,20 @@ const ApplicationsManagement = () => {
             />
           </div>
 
+          <div className="filter-section">
+            <div className="filter-section-title">Qualification Filter</div>
+            <select
+              value={filters.qualification_filter}
+              onChange={(e) => setFilters({ ...filters, qualification_filter: e.target.value })}
+              className="filter-input"
+            >
+              <option value="">All Candidates</option>
+              <option value="qualified">✅ Qualified Only</option>
+              <option value="rejected">❌ Rejected Only</option>
+            </select>
+          </div>
+
+
           <div className="filter-actions">
             <button className="btn btn-primary btn-find" onClick={applyFilters}>
               Apply Filters
@@ -607,12 +666,29 @@ const ApplicationsManagement = () => {
                 >
                   <div className="card-header">
                     <h4 className="card-title">Application #{application.id}</h4>
-                    <span 
-                      className="status-badge"
-                      style={{ backgroundColor: getStatusColor(application.status) }}
-                    >
-                      {application.status.replace('_', ' ').toUpperCase()}
-                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span 
+                        className="status-badge"
+                        style={{ backgroundColor: getStatusColor(application.status) }}
+                      >
+                        {application.status.replace('_', ' ').toUpperCase()}
+                      </span>
+                      {application.candidate_score !== null && application.candidate_score !== undefined && (
+                        <span 
+                          className="qualification-badge"
+                          style={{ 
+                            backgroundColor: application.is_qualified ? '#10b981' : '#ef4444',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {application.is_qualified ? '✅' : '❌'} {application.candidate_score}%
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="card-content">
@@ -633,6 +709,22 @@ const ApplicationsManagement = () => {
                         <p className="job-title">{application.job?.title || 'N/A'}</p>
                         <p className="job-company">{application.job?.company || 'N/A'}</p>
                         <p className="job-location">{application.job?.location || 'N/A'}</p>
+                        {application.job?.threshold_score && (
+                          <p className="job-threshold" style={{ fontSize: '12px', color: '#666' }}>
+                            Threshold: {application.job.threshold_score}%
+                          </p>
+                        )}
+                        {application.recruiter && (
+                          <div className="recruiter-info" style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+                            <p style={{ fontSize: '12px', color: '#666', margin: '0 0 2px 0' }}>Assigned Recruiter:</p>
+                            <p style={{ fontSize: '13px', fontWeight: 'bold', margin: '0', color: '#2c3e50' }}>
+                              {application.recruiter.name}
+                            </p>
+                            <p style={{ fontSize: '11px', color: '#666', margin: '0' }}>
+                              {application.recruiter.email}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -667,28 +759,69 @@ const ApplicationsManagement = () => {
               <table className="applications-table">
                 <thead>
                   <tr>
-                                         <th>Application ID</th>
-                     <th>Candidate</th>
-                     <th>Email</th>
-                     <th>Location</th>
-                     <th>Job Title</th>
-                     <th>Company</th>
-                     <th>Job Location</th>
-                     <th>Status</th>
-                     <th>Applied Date</th>
-                     <th>Actions</th>
+                    <th>Application ID</th>
+                    <th>Candidate</th>
+                    <th>Email</th>
+                    <th>Location</th>
+                    <th>Job Title</th>
+                    <th>Company</th>
+                    <th>Job Location</th>
+                    <th>Score</th>
+                    <th>Qualified</th>
+                    <th>Recruiter</th>
+                    <th>Status</th>
+                    <th>Applied Date</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredApplications.map(application => (
                     <tr key={application.id}>
-                                             <td>#{application.id}</td>
-                       <td>{application.candidate?.name || 'N/A'}</td>
-                       <td>{application.candidate?.email || 'N/A'}</td>
-                       <td>{application.candidate?.location || 'N/A'}</td>
-                       <td>{application.job?.title || 'N/A'}</td>
-                       <td>{application.job?.company || 'N/A'}</td>
-                       <td>{application.job?.location || 'N/A'}</td>
+                      <td>#{application.id}</td>
+                      <td>{application.candidate?.name || 'N/A'}</td>
+                      <td>{application.candidate?.email || 'N/A'}</td>
+                      <td>{application.candidate?.location || 'N/A'}</td>
+                      <td>{application.job?.title || 'N/A'}</td>
+                      <td>{application.job?.company || 'N/A'}</td>
+                      <td>{application.job?.location || 'N/A'}</td>
+                      <td>
+                        {application.candidate_score !== null && application.candidate_score !== undefined ? (
+                          <span style={{ 
+                            fontWeight: 'bold',
+                            color: application.candidate_score >= (application.job?.threshold_score || 70) ? '#10b981' : '#ef4444'
+                          }}>
+                            {application.candidate_score}%
+                          </span>
+                        ) : (
+                          <span style={{ color: '#999' }}>N/A</span>
+                        )}
+                      </td>
+                      <td>
+                        {application.is_qualified !== null && application.is_qualified !== undefined ? (
+                          <span style={{ 
+                            color: application.is_qualified ? '#10b981' : '#ef4444',
+                            fontWeight: 'bold'
+                          }}>
+                            {application.is_qualified ? '✅ Yes' : '❌ No'}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#999' }}>N/A</span>
+                        )}
+                      </td>
+                      <td>
+                        {application.recruiter ? (
+                          <div style={{ fontSize: '12px' }}>
+                            <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
+                              {application.recruiter.name}
+                            </div>
+                            <div style={{ color: '#666', fontSize: '11px' }}>
+                              {application.recruiter.email}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#999', fontSize: '12px' }}>Unassigned</span>
+                        )}
+                      </td>
                       <td>
                         <span 
                           className="status-badge"
@@ -747,6 +880,36 @@ const ApplicationsManagement = () => {
                     </p>
                     <p><strong>Applied Date:</strong> {new Date(selectedApplication.created_at).toLocaleDateString()}</p>
                     <p><strong>Last Updated:</strong> {new Date(selectedApplication.updated_at).toLocaleDateString()}</p>
+                    
+                    {/* Qualification Information */}
+                    <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#333' }}>Qualification Assessment</h4>
+                      {selectedApplication.candidate_score !== null ? (
+                        <>
+                          <p><strong>Candidate Score:</strong> 
+                            <span style={{ 
+                              fontWeight: 'bold',
+                              color: selectedApplication.candidate_score >= (selectedApplication.job?.threshold_score || 70) ? '#10b981' : '#ef4444',
+                              marginLeft: '8px'
+                            }}>
+                              {selectedApplication.candidate_score}%
+                            </span>
+                          </p>
+                          <p><strong>Job Threshold:</strong> {selectedApplication.job?.threshold_score || 70}%</p>
+                          <p><strong>Qualified:</strong> 
+                            <span style={{ 
+                              color: selectedApplication.is_qualified ? '#10b981' : '#ef4444',
+                              fontWeight: 'bold',
+                              marginLeft: '8px'
+                            }}>
+                              {selectedApplication.is_qualified ? '✅ Yes' : '❌ No'}
+                            </span>
+                          </p>
+                        </>
+                      ) : (
+                        <p style={{ color: '#666', fontStyle: 'italic' }}>Qualification assessment not available</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -806,6 +969,17 @@ const ApplicationsManagement = () => {
                     onClick={() => handleUpdateApplicationStatus(selectedApplication.id, selectedApplication.status)}
                   >
                     Update Status
+                  </button>
+                </div>
+                
+                <div style={{ marginTop: '16px' }}>
+                  <h4>Qualification Actions</h4>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => handleRecalculateQualification(selectedApplication.id)}
+                    style={{ marginRight: '8px' }}
+                  >
+                    🔄 Recalculate Qualification
                   </button>
                 </div>
               </div>

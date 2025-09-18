@@ -64,15 +64,59 @@ class CRUDJob(CRUDBase[Job, JobCreate, JobUpdate]):
         )
         return result.scalars().all()
 
-    async def get_by_recruiter(self, db: AsyncSession, recruiter_id: int) -> List[Job]:
-        """Get jobs by recruiter ID with eager loading"""
+    async def get_by_recruiter(self, db: AsyncSession, recruiter_id: int, skip: int = 0, limit: int = 100) -> List[Job]:
+        """Get jobs assigned to a specific recruiter with pagination"""
         result = await db.execute(
             select(self.model)
             .options(selectinload(self.model.mandatory_skills))
             .where(self.model.recruiter_id == recruiter_id)
-            .order_by(self.model.created_at.desc())
+            .order_by(desc(self.model.created_at))
+            .offset(skip)
+            .limit(limit)
         )
         return result.scalars().all()
+    
+    async def count_by_recruiter(self, db: AsyncSession, recruiter_id: int) -> int:
+        """Count jobs assigned to a specific recruiter"""
+        result = await db.execute(
+            select(func.count(self.model.id))
+            .where(self.model.recruiter_id == recruiter_id)
+        )
+        return result.scalar() or 0
+    
+    async def get_unassigned_jobs(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Job]:
+        """Get jobs that are not assigned to any recruiter"""
+        result = await db.execute(
+            select(self.model)
+            .options(selectinload(self.model.mandatory_skills))
+            .where(self.model.recruiter_id.is_(None))
+            .order_by(desc(self.model.created_at))
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
+    
+    async def assign_job_to_recruiter(self, db: AsyncSession, job_id: int, recruiter_id: int) -> Optional[Job]:
+        """Assign a job to a recruiter"""
+        job = await self.get(db, job_id)
+        if not job:
+            return None
+        
+        job.recruiter_id = recruiter_id
+        await db.commit()
+        await db.refresh(job)
+        return job
+    
+    async def unassign_job(self, db: AsyncSession, job_id: int) -> Optional[Job]:
+        """Remove recruiter assignment from a job"""
+        job = await self.get(db, job_id)
+        if not job:
+            return None
+        
+        job.recruiter_id = None
+        await db.commit()
+        await db.refresh(job)
+        return job
 
     async def get_by_salary_range(
         self, db: AsyncSession, min_salary: int, max_salary: int

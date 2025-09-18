@@ -22,6 +22,10 @@ import RecruiterRecommendations from './components/RecruiterRecommendations';
 import EnhancedCandidateRecommendations from './components/EnhancedCandidateRecommendations';
 import EnhancedRecruiterRecommendations from './components/EnhancedRecruiterRecommendations';
 import EnhancedTestPage from './components/EnhancedTestPage';
+import CompanyAdminDashboard from './components/CompanyAdminDashboard';
+import CompanyManagement from './components/CompanyManagement';
+import RecruiterAdmin from './components/RecruiterAdmin';
+import JobAssignments from './components/JobAssignments';
 // import Navigation from './components/Navigation';
 import './App.css';
 
@@ -67,6 +71,12 @@ function App() {
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
           <Route path="/recommendations-engine" element={<RecommendationsEngine />} />
           <Route path="/gdpr-management" element={<GDPRManagement />} />
+          
+          {/* Company Management Routes */}
+            <Route path="/company-admin" element={<CompanyAdminDashboard />} />
+            <Route path="/company-management" element={<CompanyManagement />} />
+            <Route path="/recruiter-admin" element={<RecruiterAdmin />} />
+            <Route path="/job-assignments" element={<JobAssignments />} />
         </Routes>
       </div>
     </Router>

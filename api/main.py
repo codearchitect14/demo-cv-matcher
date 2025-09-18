@@ -9,10 +9,12 @@ import os
 
 from config.database import init_db
 from config.logging import setup_logging, log_api_request, log_security_event
+from config.connection_pool import global_pool
 from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
 from middleware.timeout_middleware import timeout_middleware
-from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter
+from middleware.performance_middleware import performance_middleware
+from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_optimized
 from services.api_service import api_service
 from services.cache_service import cache_service
 from services.faiss_service import faiss_service
@@ -30,6 +32,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting application...")
     try:
+        # Initialize global connection pool
+        await global_pool.initialize()
+        logger.info("Global connection pool initialized successfully")
+        
         # Initialize cache service
         await cache_service.connect()
         logger.info("Cache service initialized successfully")
@@ -63,6 +69,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down application...")
     await cache_service.disconnect()
+    await global_pool.close()
 
 # Create FastAPI app with security features
 app = FastAPI(
@@ -95,7 +102,12 @@ app.add_middleware(
 async def security_middleware_handler(request: Request, call_next):
     return await security_middleware(request, call_next)
 
-# Add timeout middleware (should be first to catch slow requests early)
+# Add performance monitoring middleware (should be first)
+@app.middleware("http")
+async def performance_middleware_handler(request: Request, call_next):
+    return await performance_middleware(request, call_next)
+
+# Add timeout middleware (should be second to catch slow requests early)
 @app.middleware("http")
 async def timeout_middleware_handler(request: Request, call_next):
     return await timeout_middleware(request, call_next)
@@ -149,6 +161,12 @@ app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(gdpr.router, prefix="/api/v1/gdpr", tags=["GDPR"])
 app.include_router(recruiter.router, prefix="/api/v1/recruiter", tags=["Recruiter"])
+app.include_router(jobs_fast.router, prefix="/api/v1/jobs-fast", tags=["Jobs Fast"])
+app.include_router(recruiter_fast.router, prefix="/api/v1/recruiter-fast", tags=["Recruiter Fast"])
+app.include_router(job_assignments.router, prefix="/api/v1/jobs/assignments", tags=["Job Assignments"])
+app.include_router(applications_optimized.router, prefix="/api/v1/applications", tags=["Applications Optimized"])
+app.include_router(company.router, prefix="/api/v1/company", tags=["Company"])
+app.include_router(company_public.router, prefix="/api/v1/company", tags=["Company Public"])
 
 # Health check endpoint
 @app.get("/health")

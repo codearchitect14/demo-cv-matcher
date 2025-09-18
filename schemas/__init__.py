@@ -36,6 +36,12 @@ from .search import (
     SearchQuery,
     SortOrder
 )
+from .company import (
+    CompanyCreate,
+    CompanyUpdate,
+    CompanyResponse,
+    CompanyStats
+)
 
 __all__ = [
     "CandidateCreate",
@@ -63,5 +69,9 @@ __all__ = [
     "JobSearchFilter",
     "CandidateSearchFilter",
     "SearchQuery",
-    "SortOrder"
+    "SortOrder",
+    "CompanyCreate",
+    "CompanyUpdate",
+    "CompanyResponse",
+    "CompanyStats"
 ]

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum as SQLEnum, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum as SQLEnum, Index, Numeric, Boolean
 from sqlalchemy.orm import relationship
 from models.base import BaseModel
 import enum
@@ -21,6 +21,8 @@ class Application(BaseModel):
     job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(SQLEnum(ApplicationStatusEnum), nullable=False, default=ApplicationStatusEnum.APPLIED, index=True)
+    candidate_score = Column(Numeric(5, 2), nullable=True, index=True)
+    is_qualified = Column(Boolean, nullable=True, index=True)
     
     # Relationships
     job = relationship("Job", back_populates="applications")

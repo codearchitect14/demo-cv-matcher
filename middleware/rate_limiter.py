@@ -6,8 +6,7 @@ from typing import Dict, Optional, Tuple
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 import redis.asyncio as redis
-import os
-
+import os 
 logger = logging.getLogger(__name__)
 
 class RedisRateLimiter:
@@ -119,7 +118,8 @@ class RedisRateLimiter:
         elif '/api/v1/upload' in path or '/upload' in path:
             return self.limits['upload']
         elif '/admin/' in path:
-            return self.limits['admin']
+            # Admin not explicitly configured; use a conservative default
+            return self.limits.get('admin', self.limits['api'])
         else:
             return self.limits['api']
     

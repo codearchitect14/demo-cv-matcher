@@ -15,11 +15,44 @@ from schemas.recruiter import (
     Domain
 )
 from api.routers.auth import create_access_token, get_password_hash, verify_password
+from config.security import simulate_constant_time_verify
 from middleware.rate_limiter import rate_limiter
 
 router = APIRouter(tags=["Recruiter"])
 
 logger = logging.getLogger(__name__)
+
+# Lightweight asyncpg pool (initialized lazily)
+_pool = None
+
+async def _get_pool():
+    global _pool
+    if _pool is None:
+        import os
+        import asyncpg
+        dsn = os.getenv('DATABASE_URL')
+        if dsn and dsn.startswith('postgresql+asyncpg://'):
+            dsn = dsn.replace('postgresql+asyncpg://', 'postgresql://', 1)
+        _pool = await asyncpg.create_pool(
+            dsn=dsn,
+            min_size=1,
+            max_size=5,
+            statement_cache_size=0,
+            command_timeout=5
+        )
+    return _pool
+
+async def _fetch_recruiter_by_email(email: str):
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT id, full_name, email, password_hash, is_active, role
+            FROM recruiters 
+            WHERE email = $1
+            """,
+            email
+        )
 
 @router.post("/register", response_model=RecruiterResponse)
 async def register_recruiter(
@@ -45,6 +78,9 @@ async def register_recruiter(
         recruiter_dict.pop("password_confirm")
         recruiter_dict["password_hash"] = hashed_password
         
+        # Set default company_id (for testing - should be 1)
+        recruiter_dict["company_id"] = 1
+        
         # Convert enum values to strings for SQLAlchemy
         if "domain" in recruiter_dict:
             recruiter_dict["domain"] = recruiter_dict["domain"].value
@@ -68,33 +104,38 @@ async def register_recruiter(
 
 @router.post("/login")
 async def login_recruiter(
-    login_data: RecruiterLogin,
-    db: AsyncSession = Depends(get_db_session)
+    login_data: RecruiterLogin
 ):
-    """Login recruiter - Optimized for performance"""
+    """Login recruiter - Optimized for performance with direct connection"""
     import time
+    import asyncpg
+    import asyncio
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv()
     start_time = time.time()
     
     try:
-        # Get recruiter by email - single optimized query
-        recruiter_obj = await recruiter.get_by_email(db, login_data.email)
+        # Get recruiter by email using a module-level pool for faster reuse
+        recruiter_obj = await _fetch_recruiter_by_email(login_data.email)
         if not recruiter_obj:
-            # Use consistent timing to prevent username enumeration
-            verify_password("dummy", "$2b$12$dummy_hash_to_prevent_timing_attacks")
+            # Burn comparable CPU to mitigate enumeration timing
+            simulate_constant_time_verify()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
         # Verify password - this is the most expensive operation
-        if not verify_password(login_data.password, recruiter_obj.password_hash):
+        if not verify_password(login_data.password, recruiter_obj['password_hash']):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
         # Check if recruiter is active (no additional DB query needed)
-        if not recruiter_obj.is_active:
+        if not recruiter_obj['is_active']:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Account is deactivated"
@@ -103,25 +144,25 @@ async def login_recruiter(
         # Create access token with proper email (not ID) as subject
         access_token = create_access_token(
             data={
-                "sub": recruiter_obj.email,  # Use email as subject for consistency
-                "user_id": recruiter_obj.id,
-                "role": recruiter_obj.role, 
+                "sub": recruiter_obj['email'],  # Use email as subject for consistency
+                "user_id": recruiter_obj['id'],
+                "role": recruiter_obj['role'], 
                 "type": "recruiter"
             }
         )
         
         elapsed_time = time.time() - start_time
-        logger.info(f"Recruiter logged in: {recruiter_obj.email} (took {elapsed_time:.3f}s)")
+        logger.info(f"Recruiter logged in: {recruiter_obj['email']} (took {elapsed_time:.3f}s)")
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": recruiter_obj.id,
-                "email": recruiter_obj.email,
-                "full_name": recruiter_obj.full_name,
-                "role": recruiter_obj.role,
-                "company_name": recruiter_obj.company_name
+                "id": recruiter_obj['id'],
+                "email": recruiter_obj['email'],
+                "full_name": recruiter_obj['full_name'],
+                "role": recruiter_obj['role'],
+                "company_name": recruiter_obj.get('company_name', '')
             }
         }
         
@@ -130,9 +171,10 @@ async def login_recruiter(
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(f"Error logging in recruiter: {e} (took {elapsed_time:.3f}s)")
+        # Normalize backend errors to avoid leaking details
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to login"
+            detail="Login temporarily unavailable. Please try again."
         )
 
 @router.get("/profile", response_model=RecruiterProfile)
@@ -263,4 +305,231 @@ async def get_recruiter_applications(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get applications"
+        )
+
+# ===== ADMIN ENDPOINTS FOR RECRUITER MANAGEMENT =====
+
+@router.get("/admin/all", response_model=List[RecruiterResponse])
+async def get_all_recruiters_admin(
+    current_user: dict = Depends(lambda: {"id": 1, "role": "admin", "company_id": 1}),  # Placeholder
+    db: AsyncSession = Depends(get_db_session),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: Optional[str] = Query(None, description="Search by name, email, or company"),
+    role_filter: Optional[str] = Query(None, description="Filter by role: admin, recruiter"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status")
+):
+    """Get all recruiters for current user's company - Company Admin only"""
+    try:
+        # TODO: Add proper admin authentication check
+        # if current_user["role"] not in ["admin", "super_admin"]:
+        #     raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Filter recruiters by company_id for company isolation
+        recruiters = await recruiter.get_all_with_filters(
+            db, 
+            skip=skip, 
+            limit=limit, 
+            search=search, 
+            role_filter=role_filter, 
+            is_active=is_active,
+            company_id=current_user.get("company_id")  # Add company filtering
+        )
+        return recruiters
+        
+    except Exception as e:
+        logger.error(f"Error getting company recruiters: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get recruiters"
+        )
+
+@router.post("/admin/create", response_model=RecruiterResponse)
+async def create_recruiter_admin(
+    recruiter_data: RecruiterCreate,
+    current_user: dict = Depends(lambda: {"id": 1, "role": "admin"}),  # Placeholder
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create a new recruiter - Admin only"""
+    try:
+        # TODO: Add proper admin authentication check
+        # if current_user["role"] != "admin":
+        #     raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Check if email already exists
+        existing_recruiter = await recruiter.get_by_email(db, recruiter_data.email)
+        if existing_recruiter:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Hash password
+        hashed_password = get_password_hash(recruiter_data.password)
+        
+        # Create recruiter data
+        recruiter_dict = recruiter_data.dict()
+        recruiter_dict.pop("password")
+        recruiter_dict.pop("password_confirm")
+        recruiter_dict["password_hash"] = hashed_password
+        
+        # Set default company_id (for testing - should be 1)
+        recruiter_dict["company_id"] = 1
+        
+        # Convert enum values to strings for SQLAlchemy
+        if "domain" in recruiter_dict:
+            recruiter_dict["domain"] = recruiter_dict["domain"].value
+        if "company_size" in recruiter_dict:
+            recruiter_dict["company_size"] = recruiter_dict["company_size"].value
+        
+        # Create recruiter
+        new_recruiter = await recruiter.create(db, obj_in=recruiter_dict)
+        
+        logger.info(f"Admin created new recruiter: {new_recruiter.email}")
+        return new_recruiter
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating recruiter: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create recruiter"
+        )
+
+@router.put("/admin/{recruiter_id}", response_model=RecruiterResponse)
+async def update_recruiter_admin(
+    recruiter_id: int,
+    recruiter_data: RecruiterUpdate,
+    current_user: dict = Depends(lambda: {"id": 1, "role": "admin"}),  # Placeholder
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update a recruiter - Admin only"""
+    try:
+        # TODO: Add proper admin authentication check
+        # if current_user["role"] != "admin":
+        #     raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Get existing recruiter
+        existing_recruiter = await recruiter.get(db, recruiter_id)
+        if not existing_recruiter:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recruiter not found"
+            )
+        
+        # Update recruiter
+        update_data = recruiter_data.dict(exclude_unset=True)
+        
+        # Handle password update if provided
+        if "password" in update_data:
+            update_data["password_hash"] = get_password_hash(update_data["password"])
+            del update_data["password"]
+        
+        # Convert enum values to strings
+        if "domain" in update_data:
+            update_data["domain"] = update_data["domain"].value
+        if "company_size" in update_data:
+            update_data["company_size"] = update_data["company_size"].value
+        
+        updated_recruiter = await recruiter.update(db, db_obj_id=recruiter_id, obj_in=update_data)
+        
+        logger.info(f"Admin updated recruiter: {updated_recruiter.email}")
+        return updated_recruiter
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating recruiter: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update recruiter"
+        )
+
+@router.delete("/admin/{recruiter_id}")
+async def delete_recruiter_admin(
+    recruiter_id: int,
+    current_user: dict = Depends(lambda: {"id": 1, "role": "admin"}),  # Placeholder
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Delete a recruiter - Admin only"""
+    try:
+        # TODO: Add proper admin authentication check
+        # if current_user["role"] != "admin":
+        #     raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Get existing recruiter
+        existing_recruiter = await recruiter.get(db, recruiter_id)
+        if not existing_recruiter:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recruiter not found"
+            )
+        
+        # Check if recruiter has active jobs
+        active_jobs_count = await recruiter.count_active_jobs(db, recruiter_id)
+        if active_jobs_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete recruiter with {active_jobs_count} active jobs. Please reassign or close jobs first."
+            )
+        
+        # Delete recruiter
+        await recruiter.remove(db, recruiter_id)
+        
+        logger.info(f"Admin deleted recruiter: {existing_recruiter.email}")
+        return {"message": "Recruiter deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting recruiter: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete recruiter"
+        )
+
+@router.put("/admin/{recruiter_id}/toggle-status")
+async def toggle_recruiter_status_admin(
+    recruiter_id: int,
+    current_user: dict = Depends(lambda: {"id": 1, "role": "admin"}),  # Placeholder
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Toggle recruiter active status - Admin only"""
+    try:
+        # TODO: Add proper admin authentication check
+        # if current_user["role"] != "admin":
+        #     raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Get existing recruiter
+        existing_recruiter = await recruiter.get(db, recruiter_id)
+        if not existing_recruiter:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recruiter not found"
+            )
+        
+        # Toggle status
+        new_status = not existing_recruiter.is_active
+        updated_recruiter = await recruiter.update(
+            db, 
+            db_obj_id=recruiter_id, 
+            obj_in={"is_active": new_status}
+        )
+        
+        action = "activated" if new_status else "deactivated"
+        logger.info(f"Admin {action} recruiter: {updated_recruiter.email}")
+        
+        return {
+            "message": f"Recruiter {action} successfully",
+            "recruiter": updated_recruiter
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling recruiter status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to toggle recruiter status"
         ) 

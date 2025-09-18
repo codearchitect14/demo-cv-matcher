@@ -37,6 +37,8 @@ class ApplicationResponse(BaseModel):
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     job: Optional[dict] = None  # Add job object for my-applications endpoint
+    candidate_score: Optional[float] = None
+    is_qualified: Optional[bool] = None
     
     model_config = {
         "from_attributes": True

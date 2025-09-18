@@ -3,6 +3,7 @@ from .job import Job, JobMandatorySkill
 from .application import Application
 from .interaction import InteractionLog
 from .recruiter import Recruiter
+from .company import Company
 from .audit import AuditLog
 from .skill import Skill
 from .job_skill import JobSkill
@@ -15,6 +16,7 @@ __all__ = [
     "Application",
     "InteractionLog",
     "Recruiter",
+    "Company",
     "AuditLog",
     "Skill",
     "JobSkill",

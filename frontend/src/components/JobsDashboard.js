@@ -31,17 +31,20 @@ const JobsDashboard = () => {
     domain: '',
     total_years_required: '',
     job_description: '',
+    recruiter_id: '',  // Add recruiter assignment
     skills: []  // Array for skill-specific experience
   });
   const [skillsData, setSkillsData] = useState({
     skill: '',
     min_experience: ''
   });
+  const [recruiters, setRecruiters] = useState([]);
+  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
 
   // Normalize a job record from the API into our local form shape
   const normalizeJobToForm = (jobObj) => {
     if (!jobObj) return {
-      title: '', company: '', location: '', salary_min: '', salary_max: '', domain: '', total_years_required: '', job_description: '', skills: []
+      title: '', company: '', location: '', salary_min: '', salary_max: '', domain: '', total_years_required: '', job_description: '', recruiter_id: '', skills: []
     };
     const mappedSkills = Array.isArray(jobObj.mandatory_skills)
       ? jobObj.mandatory_skills.map((s) => ({
@@ -58,6 +61,7 @@ const JobsDashboard = () => {
       domain: jobObj.domain || '',
       total_years_required: jobObj.total_years_required ?? '',
       job_description: jobObj.job_description || '',
+      recruiter_id: jobObj.recruiter_id || '',
       skills: mappedSkills || [],
     };
   };
@@ -82,6 +86,26 @@ const JobsDashboard = () => {
   useEffect(() => {
     fetchJobs();
   }, [filters]);
+
+  // Fetch recruiters on component mount
+  useEffect(() => {
+    const fetchRecruiters = async () => {
+      setLoadingRecruiters(true);
+      try {
+        const response = await fetch('http://localhost:8000/api/v1/jobs-fast/recruiters-fast');
+        if (response.ok) {
+          const data = await response.json();
+          setRecruiters(data);
+        }
+      } catch (error) {
+        console.error('Error fetching recruiters:', error);
+      } finally {
+        setLoadingRecruiters(false);
+      }
+    };
+
+    fetchRecruiters();
+  }, []);
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -201,12 +225,13 @@ const JobsDashboard = () => {
         salary_min: formData.salary_min ? parseInt(formData.salary_min) : null,
         salary_max: formData.salary_max ? parseInt(formData.salary_max) : null,
         total_years_required: formData.total_years_required ? parseInt(formData.total_years_required) : 0,
+        recruiter_id: formData.recruiter_id ? parseInt(formData.recruiter_id) : null,
         mandatory_skills: formData.skills  // Include skills data
       };
       
       console.log('Sending job data:', jobData);
       
-      const response = await fetch('http://localhost:8000/api/v1/jobs/public', {
+      const response = await fetch('http://localhost:8000/api/v1/jobs-fast/public-fast', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -228,6 +253,7 @@ const JobsDashboard = () => {
           domain: '',
           total_years_required: '',
           job_description: '',
+          recruiter_id: '',
           skills: []
         });
         setSelectedJob(null);
@@ -325,13 +351,22 @@ const JobsDashboard = () => {
           </h1>
         </div>
         <div className="header-actions">
+          <button className="btn-secondary" onClick={() => window.location.href = '/company-admin'}>
+            🏢 Company Admin
+          </button>
+          <button className="btn-secondary" onClick={() => window.location.href = '/job-assignments'}>
+            📋 View Assignments
+          </button>
           <button className="btn-back" onClick={() => window.location.href = '/recruiter/dashboard'}>
             ← Back to Dashboard
           </button>
           <button 
             className="btn-post-job"
             aria-label="Post new job"
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setSelectedJob(null);  // Clear selected job for new job creation
+              setShowForm(true);
+            }}
           >
             <span className="btn-icon">➕</span>
             Post New Job
@@ -505,7 +540,10 @@ const JobsDashboard = () => {
               <div className="empty-actions">
                 <button 
                   className="btn-primary"
-                  onClick={() => setShowForm(true)}
+                  onClick={() => {
+                    setSelectedJob(null);  // Clear selected job for new job creation
+                    setShowForm(true);
+                  }}
                 >
                   <span className="btn-icon">➕</span>
                   Post New Job
@@ -659,6 +697,29 @@ const JobsDashboard = () => {
                       placeholder="e.g., Software Development"
                       className="form-input"
                     />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Assigned Recruiter</label>
+                    <select
+                      value={formData.recruiter_id}
+                      onChange={(e) => setFormData({...formData, recruiter_id: e.target.value})}
+                      className="form-input"
+                    >
+                      <option value="">Select recruiter (optional)</option>
+                      {loadingRecruiters ? (
+                        <option disabled>Loading recruiters...</option>
+                      ) : (
+                        recruiters.map(recruiter => (
+                          <option key={recruiter.id} value={recruiter.id}>
+                            {recruiter.name} ({recruiter.email})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <small style={{color: '#666', fontSize: '12px', marginTop: '4px', display: 'block'}}>
+                      Leave empty to assign later or for admin assignment
+                    </small>
                   </div>
                 </div>
               </div>
@@ -821,6 +882,7 @@ const JobsDashboard = () => {
                       domain: '',
                       total_years_required: '',
                       job_description: '',
+                      recruiter_id: '',
                       skills: []
                     });
                   }}
