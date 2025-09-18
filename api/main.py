@@ -14,7 +14,7 @@ from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
 from middleware.timeout_middleware import timeout_middleware
 from middleware.performance_middleware import performance_middleware
-from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_optimized
+from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public
 from services.api_service import api_service
 from services.cache_service import cache_service
 from services.faiss_service import faiss_service
@@ -164,7 +164,7 @@ app.include_router(recruiter.router, prefix="/api/v1/recruiter", tags=["Recruite
 app.include_router(jobs_fast.router, prefix="/api/v1/jobs-fast", tags=["Jobs Fast"])
 app.include_router(recruiter_fast.router, prefix="/api/v1/recruiter-fast", tags=["Recruiter Fast"])
 app.include_router(job_assignments.router, prefix="/api/v1/jobs/assignments", tags=["Job Assignments"])
-app.include_router(applications_optimized.router, prefix="/api/v1/applications", tags=["Applications Optimized"])
+app.include_router(applications_public.router, prefix="/api/v1/applications-public", tags=["Applications Public"])
 app.include_router(company.router, prefix="/api/v1/company", tags=["Company"])
 app.include_router(company_public.router, prefix="/api/v1/company", tags=["Company Public"])
 

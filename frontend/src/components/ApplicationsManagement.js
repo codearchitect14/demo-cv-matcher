@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import './ApplicationsManagement.css';
+import './AssignedJobs.css';
 
 const ApplicationsManagement = () => {
   const [applications, setApplications] = useState([]);
+  const [assignedJobs, setAssignedJobs] = useState([]);
   const [selectedApplication, setSelectedApplication] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [jobsError, setJobsError] = useState('');
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
@@ -65,6 +69,7 @@ const ApplicationsManagement = () => {
     fetchCandidates();
     fetchJobs();
     fetchAllApplications();
+    fetchAssignedJobs(); // Also fetch assigned jobs for recruiters
   }, []);
 
   // Close suggestions when clicking outside
@@ -113,6 +118,63 @@ const ApplicationsManagement = () => {
     }
   };
 
+  const fetchAssignedJobs = async () => {
+    const recruiterUser = localStorage.getItem('recruiterUser');
+    if (!recruiterUser) {
+      setAssignedJobs([]);
+      setJobsError('');
+      return;
+    }
+    
+    const recruiterData = JSON.parse(recruiterUser);
+    if (recruiterData.role !== 'recruiter') {
+      // Admin or other roles - don't show assigned jobs section
+      setAssignedJobs([]);
+      setJobsError('');
+      return;
+    }
+    
+    setJobsLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/jobs-fast/public-fast?skip=0&limit=100`);
+      if (response.ok) {
+        const allJobs = await response.json();
+        const recruiterJobs = allJobs.filter(job => job.recruiter_id === recruiterData.id);
+        
+        // Add application count to each job
+        const jobsWithAppCount = await Promise.all(
+          recruiterJobs.map(async (job) => {
+            try {
+              const appResponse = await fetch(`http://localhost:8000/api/v1/applications-public/public-fast?recruiter_id=${recruiterData.id}&job_id=${job.id}&limit=1000`);
+              if (appResponse.ok) {
+                const apps = await appResponse.json();
+                return { ...job, applicationCount: apps.length };
+              }
+            } catch (err) {
+              console.error('Error fetching app count for job:', job.id, err);
+            }
+            return { ...job, applicationCount: 0 };
+          })
+        );
+        
+        setAssignedJobs(jobsWithAppCount);
+        
+        if (jobsWithAppCount.length === 0) {
+          setJobsError(`Currently no jobs are assigned to you by admin.`);
+        } else {
+          setJobsError('');
+        }
+      } else {
+        setJobsError('Failed to fetch assigned jobs');
+      }
+    } catch (err) {
+      console.error('Error fetching assigned jobs:', err);
+      setJobsError('Failed to fetch assigned jobs');
+    } finally {
+      setJobsLoading(false);
+    }
+  };
+
   const fetchAllApplications = async () => {
     setLoading(true);
     try {
@@ -120,19 +182,30 @@ const ApplicationsManagement = () => {
       const queryParams = new URLSearchParams();
       queryParams.append('limit', '100');
       
+      // Admin view - show all applications (no filtering by recruiter)
+      console.log('Admin view - showing all applications');
+      
       if (filters.qualification_filter) {
         queryParams.append('qualification_filter', filters.qualification_filter);
       }
       
-      const response = await fetch(`http://localhost:8000/api/v1/applications/public-fast?${queryParams.toString()}`);
+      const response = await fetch(`http://localhost:8000/api/v1/applications-public/public-fast?${queryParams.toString()}`);
       if (response.ok) {
         const data = await response.json();
         console.log('Fetched applications:', data);
-        console.log('First application qualification data:', {
-          candidate_score: data[0]?.candidate_score,
-          is_qualified: data[0]?.is_qualified,
-          threshold_score: data[0]?.job?.threshold_score
-        });
+        
+        // Admin view - show appropriate message
+        if (data.length === 0) {
+          setError('No applications found in the system');
+        } else {
+          setError(''); // Clear any previous error
+          console.log('First application qualification data:', {
+            candidate_score: data[0]?.candidate_score,
+            is_qualified: data[0]?.is_qualified,
+            threshold_score: data[0]?.job?.threshold_score
+          });
+        }
+        
         setApplications(data);
       } else {
         setError('Failed to fetch applications');
@@ -467,7 +540,7 @@ const ApplicationsManagement = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/applications/recruiter', {
+      const response = await fetch('http://localhost:8000/api/v1/applications/public-fast', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -653,8 +726,8 @@ const ApplicationsManagement = () => {
           ) : filteredApplications.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">📋</div>
-              <h3>No Applications Found</h3>
-              <p>Try adjusting your search criteria or create a new application.</p>
+              <h3>{error || "No Applications Found"}</h3>
+              {!error && <p>Try adjusting your search criteria or create a new application.</p>}
             </div>
           ) : viewMode === 'card' ? (
             <div className="applications-grid">
@@ -1101,6 +1174,7 @@ const ApplicationsManagement = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

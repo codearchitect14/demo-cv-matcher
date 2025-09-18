@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import './RecruiterLogin.css';
+import './RecruiterLogin.css'; // Reuse the same styling
 
-const RecruiterLogin = () => {
+const AdminLogin = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
@@ -67,13 +67,19 @@ const RecruiterLogin = () => {
       if (response.ok) {
         const data = await response.json();
         
-        // Store token and user info
-        localStorage.setItem('recruiterToken', data.access_token);
-        localStorage.setItem('recruiterUser', JSON.stringify(data.user));
+        // Check if user is actually an admin
+        if (data.user.role !== 'admin') {
+          alert('Access denied. Admin credentials required.');
+          return;
+        }
         
-        // Always redirect to recruiter dashboard (same UI for everyone)
-        alert('Login successful!');
-        navigate('/recruiter/dashboard');
+        // Store admin token and user info
+        localStorage.setItem('adminToken', data.access_token);
+        localStorage.setItem('adminUser', JSON.stringify(data.user));
+        localStorage.setItem('recruiterUser', JSON.stringify(data.user)); // For backward compatibility
+        
+        alert('Admin login successful!');
+        navigate('/admin-dashboard');
       } else {
         const errorData = await response.json();
         alert(`Login failed: ${typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail)}`);
@@ -90,65 +96,62 @@ const RecruiterLogin = () => {
     <div className="recruiter-login">
       <div className="login-container">
         <div className="login-header">
-          <h1>Recruiter Login</h1>
-          <p>Welcome back! Sign in to your account</p>
+          <h1 className="login-title">Admin Login</h1>
+          <p className="login-subtitle">Access the admin dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="email">Email Address</label>
+            <label htmlFor="email" className="form-label">
+              Email Address
+            </label>
             <input
               type="email"
               id="email"
               name="email"
               value={formData.email}
               onChange={handleInputChange}
-              className={errors.email ? 'error' : ''}
-              placeholder="Enter your email address"
+              className={`form-input ${errors.email ? 'error' : ''}`}
+              placeholder="Enter your admin email"
+              required
             />
-            {errors.email && <span className="error-message">{typeof errors.email === 'string' ? errors.email : JSON.stringify(errors.email)}</span>}
+            {errors.email && <span className="error-text">{errors.email}</span>}
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">Password:</label>
+            <label htmlFor="password" className="form-label">
+              Password
+            </label>
             <input
               type="password"
               id="password"
               name="password"
               value={formData.password}
               onChange={handleInputChange}
+              className={`form-input ${errors.password ? 'error' : ''}`}
               placeholder="Enter your password"
               required
-              className={errors.password ? 'error' : ''}
             />
-            {errors.password && <span className="error-message">{typeof errors.password === 'string' ? errors.password : JSON.stringify(errors.password)}</span>}
+            {errors.password && <span className="error-text">{errors.password}</span>}
           </div>
 
-          <div className="form-actions">
-            <button 
-              type="submit" 
-              className="btn-login"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Signing In...' : 'Sign In'}
-            </button>
-            
-            <button 
-              type="button" 
-              className="btn-back"
-              onClick={() => navigate('/')}
-            >
-              ← Back to Welcome
-            </button>
-          </div>
+          <button 
+            type="submit" 
+            className={`login-btn ${isLoading ? 'loading' : ''}`}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Signing in...' : 'Sign In as Admin'}
+          </button>
         </form>
 
-        <div className="register-link">
-          <p>Don't have an account? <button onClick={() => navigate('/recruiter/register')}>Register</button></p>
+        <div className="login-footer">
+          <p>
+            Need recruiter access? <a href="/recruiter/login">Recruiter Login</a>
+          </p>
         </div>
       </div>
     </div>
   );
 };
 
-export default RecruiterLogin; 
+export default AdminLogin;

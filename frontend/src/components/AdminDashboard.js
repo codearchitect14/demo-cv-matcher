@@ -1,11 +1,49 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiService from '../api';
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Navigation cards for admin
+  const adminNavigationCards = [
+    {
+      title: "Applications Management",
+      description: "Manage all job applications across the system",
+      action: () => navigate('/applications-management'),
+      color: "#3b82f6",
+      icon: "📝",
+      gradient: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
+    },
+    {
+      title: "Jobs Dashboard",
+      description: "Manage all job postings and assignments",
+      action: () => navigate('/jobs-dashboard'),
+      color: "#10b981",
+      icon: "💼",
+      gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+    },
+    {
+      title: "Company Management",
+      description: "Manage company settings and recruiters",
+      action: () => navigate('/company-admin'),
+      color: "#f59e0b",
+      icon: "🏢",
+      gradient: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
+    },
+    {
+      title: "Recruiter Admin",
+      description: "Manage recruiter accounts and permissions",
+      action: () => navigate('/recruiter-admin'),
+      color: "#ef4444",
+      icon: "👥",
+      gradient: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
+    }
+  ];
 
   const fetchStats = async () => {
     setLoading(true);
@@ -75,6 +113,41 @@ const AdminDashboard = () => {
   return (
     <div className="container">
       <h2>Admin Dashboard</h2>
+      
+      {/* Admin Navigation Cards */}
+      <div className="admin-navigation" style={{marginBottom: '32px'}}>
+        <h3>Quick Actions</h3>
+        <div className="navigation-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginTop: '16px'}}>
+          {adminNavigationCards.map((card, index) => (
+            <div 
+              key={index}
+              className="nav-card"
+              onClick={card.action}
+              style={{
+                background: card.gradient,
+                color: 'white',
+                padding: '20px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'translateY(0)';
+                e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+              }}
+            >
+              <div style={{fontSize: '2rem', marginBottom: '8px'}}>{card.icon}</div>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '1.1rem'}}>{card.title}</h4>
+              <p style={{margin: '0', fontSize: '0.875rem', opacity: '0.9'}}>{card.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
       
       {error && (
         <div className="error-message">

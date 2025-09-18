@@ -117,8 +117,25 @@ async def login_recruiter(
     start_time = time.time()
     
     try:
-        # Get recruiter by email using a module-level pool for faster reuse
-        recruiter_obj = await _fetch_recruiter_by_email(login_data.email)
+        # Get recruiter by email using direct connection (working version)
+        conn = None
+        try:
+            conn = await asyncpg.connect(
+                os.getenv('DATABASE_URL'), 
+                statement_cache_size=0,
+                command_timeout=5
+            )
+            recruiter_obj = await conn.fetchrow("""
+                SELECT id, full_name, email, password_hash, is_active, role
+                FROM recruiters 
+                WHERE email = $1
+            """, login_data.email)
+        finally:
+            if conn:
+                try:
+                    await conn.close()
+                except Exception as e:
+                    logger.warning(f"Error closing recruiter login connection: {e}")
         if not recruiter_obj:
             # Burn comparable CPU to mitigate enumeration timing
             simulate_constant_time_verify()
@@ -410,31 +427,113 @@ async def update_recruiter_admin(
         # if current_user["role"] != "admin":
         #     raise HTTPException(status_code=403, detail="Admin access required")
         
-        # Get existing recruiter
-        existing_recruiter = await recruiter.get(db, recruiter_id)
+        # Check if recruiter exists using global connection pool
+        from config.connection_pool import global_pool
+        
+        existing_recruiter = await global_pool.fetchrow(
+            "SELECT id FROM recruiters WHERE id = $1",
+            recruiter_id
+        )
         if not existing_recruiter:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Recruiter not found"
             )
         
-        # Update recruiter
+        # Update recruiter using direct SQL for better performance and error handling
         update_data = recruiter_data.dict(exclude_unset=True)
         
+        # Debug logging
+        logger.info(f"Received update data: {update_data}")
+        
+        # Remove password_confirm if present
+        if "password_confirm" in update_data:
+            del update_data["password_confirm"]
+        
         # Handle password update if provided
-        if "password" in update_data:
+        if "password" in update_data and update_data["password"]:
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
         
-        # Convert enum values to strings
-        if "domain" in update_data:
+        # Convert enum values to strings if they're enum objects
+        if "domain" in update_data and hasattr(update_data["domain"], 'value'):
             update_data["domain"] = update_data["domain"].value
-        if "company_size" in update_data:
+        if "company_size" in update_data and hasattr(update_data["company_size"], 'value'):
             update_data["company_size"] = update_data["company_size"].value
         
-        updated_recruiter = await recruiter.update(db, db_obj_id=recruiter_id, obj_in=update_data)
+        # Debug logging after processing
+        logger.info(f"Processed update data: {update_data}")
         
-        logger.info(f"Admin updated recruiter: {updated_recruiter.email}")
+        # Use direct SQL update for better control (global_pool already imported above)
+        
+        # Build update query dynamically
+        set_clauses = []
+        params = [recruiter_id]
+        param_count = 1
+        
+        for key, value in update_data.items():
+            if value is not None:
+                param_count += 1
+                set_clauses.append(f"{key} = ${param_count}")
+                params.append(value)
+        
+        if set_clauses:
+            param_count += 1
+            set_clauses.append(f"updated_at = NOW()")
+            
+            update_query = f"""
+                UPDATE recruiters 
+                SET {', '.join(set_clauses)}
+                WHERE id = $1
+                RETURNING id, full_name, email, phone_number, company_name, domain, 
+                         company_size, role, is_active, email_verified, created_at, updated_at
+            """
+            
+            updated_row = await global_pool.fetchrow(update_query, *params)
+            
+            if not updated_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recruiter not found"
+                )
+            
+            # Convert to response format
+            updated_recruiter = {
+                "id": updated_row['id'],
+                "full_name": updated_row['full_name'],
+                "email": updated_row['email'],
+                "phone_number": updated_row['phone_number'],
+                "company_name": updated_row['company_name'],
+                "domain": updated_row['domain'],
+                "company_size": updated_row['company_size'],
+                "role": updated_row['role'],
+                "is_active": updated_row['is_active'],
+                "email_verified": updated_row['email_verified'],
+                "created_at": updated_row['created_at'].isoformat(),
+                "updated_at": updated_row['updated_at'].isoformat()
+            }
+        else:
+            # No fields to update - get current data
+            current_row = await global_pool.fetchrow(
+                "SELECT id, full_name, email, phone_number, company_name, domain, company_size, role, is_active, email_verified, created_at, updated_at FROM recruiters WHERE id = $1",
+                recruiter_id
+            )
+            updated_recruiter = {
+                "id": current_row['id'],
+                "full_name": current_row['full_name'],
+                "email": current_row['email'],
+                "phone_number": current_row['phone_number'],
+                "company_name": current_row['company_name'],
+                "domain": current_row['domain'],
+                "company_size": current_row['company_size'],
+                "role": current_row['role'],
+                "is_active": current_row['is_active'],
+                "email_verified": current_row['email_verified'],
+                "created_at": current_row['created_at'].isoformat(),
+                "updated_at": current_row['updated_at'].isoformat()
+            }
+        
+        logger.info(f"Admin updated recruiter: {updated_recruiter['email']} - Role changed to: {updated_recruiter['role']}")
         return updated_recruiter
         
     except HTTPException:

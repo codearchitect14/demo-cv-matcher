@@ -80,7 +80,15 @@ const RecruiterDashboard = () => {
     {
       title: "Applications",
       description: "Manage and review job applications",
-      action: () => navigate('/applications-management'),
+      action: () => {
+        // Check if user is admin (db10@boolmind.com)
+        const user = JSON.parse(localStorage.getItem('recruiterUser') || '{}');
+        if (user.email === 'db10@boolmind.com') {
+          navigate('/applications-management');
+        } else {
+          navigate('/recruiter/applications');
+        }
+      },
       color: "#fd7e14",
       icon: "📝",
       gradient: "linear-gradient(135deg, #fd7e14 0%, #ff6b35 100%)"

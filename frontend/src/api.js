@@ -194,7 +194,17 @@ export const apiService = {
   },
 
   getApplications: async (filters = {}) => {
-    const response = await api.get('/applications/public-fast', { params: filters });
+    // Auto-add recruiter filter ONLY if logged in as regular recruiter (not admin)
+    const recruiterUser = localStorage.getItem('recruiterUser');
+    if (recruiterUser) {
+      const recruiterData = JSON.parse(recruiterUser);
+      // Only filter if user is a regular recruiter (not admin)
+      if (recruiterData.role === 'recruiter') {
+        filters.recruiter_id = recruiterData.id;
+      }
+    }
+    
+    const response = await api.get('/applications-public/public-fast', { params: filters });
     return response.data;
   },
 

@@ -77,6 +77,8 @@ class RecruiterUpdate(BaseModel):
     domain: Optional[Domain] = None
     company_size: Optional[CompanySize] = None
     company_description: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class RecruiterProfile(BaseModel):
     """Schema for recruiter profile with job statistics"""

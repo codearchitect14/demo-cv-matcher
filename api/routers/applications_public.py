@@ -1,16 +1,25 @@
 """
-Optimized applications endpoints for fast performance
+Public applications endpoints that don't require authentication
 """
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 import logging
 import time
 
-router = APIRouter(tags=["Applications Optimized"])
+router = APIRouter(tags=["Applications Public"])
 logger = logging.getLogger(__name__)
 
+@router.get("/test-fast")
+async def test_applications_endpoint():
+    """Test endpoint to verify the router is working"""
+    return {
+        "message": "Applications public router is working",
+        "status": "success",
+        "timestamp": time.time()
+    }
+
 @router.get("/public-fast", response_model=List[dict])
-async def get_applications_optimized(
+async def get_applications_public_fast(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     status_filter: Optional[str] = Query(None, description="Filter by status"),
@@ -18,7 +27,7 @@ async def get_applications_optimized(
     recruiter_id: Optional[int] = Query(None, description="Filter by assigned recruiter ID"),
     qualification_filter: Optional[str] = Query(None, description="Filter by qualification")
 ):
-    """Get applications with optimized performance using global connection pool"""
+    """Get applications with fast performance - no authentication required"""
     start_time = time.time()
     
     try:
@@ -36,7 +45,7 @@ async def get_applications_optimized(
             elif qualification_filter.lower() == "rejected":
                 where_conditions.append("a.is_qualified = false")
         
-        # Add recruiter filter
+        # Add recruiter filter (most important for job assignment)
         if recruiter_id is not None:
             param_count += 1
             where_conditions.append(f"j.recruiter_id = ${param_count}")
@@ -92,41 +101,6 @@ async def get_applications_optimized(
         # Convert to response format efficiently
         applications = []
         for row in rows:
-            # Build candidate object
-            candidate = {
-                "id": row['candidate_id'],
-                "name": row['candidate_name'],
-                "email": row['candidate_email'],
-                "location": row['candidate_location'],
-                "domain": row['candidate_domain'],
-                "expected_salary_min": row['expected_salary_min'],
-                "expected_salary_max": row['expected_salary_max']
-            }
-            
-            # Build job object
-            job = {
-                "id": row['job_id'],
-                "title": row['job_title'],
-                "company": row['company'],
-                "location": row['job_location'],
-                "domain": row['job_domain'],
-                "salary_min": row['salary_min'],
-                "salary_max": row['salary_max'],
-                "total_years_required": row['total_years_required'],
-                "threshold_score": row['threshold_score'],
-                "recruiter_id": row['recruiter_id']
-            }
-            
-            # Build recruiter object
-            recruiter = None
-            if row['recruiter_name']:
-                recruiter = {
-                    "id": row['recruiter_id'],
-                    "full_name": row['recruiter_name'],
-                    "email": row['recruiter_email']
-                }
-            
-            # Build application object
             app_data = {
                 "id": row['id'],
                 "job_id": row['job_id'],
@@ -136,20 +110,42 @@ async def get_applications_optimized(
                 "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None,
                 "candidate_score": row['candidate_score'],
                 "is_qualified": row['is_qualified'],
-                "candidate": candidate,
-                "job": job,
-                "recruiter": recruiter
+                "candidate": {
+                    "id": row['candidate_id'],
+                    "name": row['candidate_name'],
+                    "email": row['candidate_email'],
+                    "location": row['candidate_location'],
+                    "domain": row['candidate_domain'],
+                    "expected_salary_min": row['expected_salary_min'],
+                    "expected_salary_max": row['expected_salary_max']
+                },
+                "job": {
+                    "id": row['job_id'],
+                    "title": row['job_title'],
+                    "company": row['company'],
+                    "location": row['job_location'],
+                    "domain": row['job_domain'],
+                    "salary_min": row['salary_min'],
+                    "salary_max": row['salary_max'],
+                    "total_years_required": row['total_years_required'],
+                    "threshold_score": row['threshold_score'],
+                    "recruiter_id": row['recruiter_id']
+                },
+                "recruiter": {
+                    "id": row['recruiter_id'],
+                    "full_name": row['recruiter_name'],
+                    "email": row['recruiter_email']
+                } if row['recruiter_name'] else None
             }
-            
             applications.append(app_data)
         
         elapsed = time.time() - start_time
-        logger.info(f"Retrieved {len(applications)} applications (took {elapsed:.3f}s)")
+        logger.info(f"Retrieved {len(applications)} applications for recruiter {recruiter_id or 'all'} (took {elapsed:.3f}s)")
         return applications
         
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"Error getting applications: {e} (took {elapsed:.3f}s)")
+        logger.error(f"Error getting fast applications: {e} (took {elapsed:.3f}s)")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get applications"

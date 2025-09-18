@@ -10,11 +10,13 @@ import JobSearch from './components/JobSearch';
 import JobRecommendations from './components/JobRecommendations';
 import CandidateSearch from './components/CandidateSearch';
 import ApplicationsManagement from './components/ApplicationsManagement';
+import RecruiterApplications from './components/RecruiterApplications';
 import InteractionsAnalytics from './components/InteractionsAnalytics';
 import AdminDashboard from './components/AdminDashboard';
 import RecommendationsEngine from './components/RecommendationsEngine';
 import GDPRManagement from './components/GDPRManagement';
 import RecruiterLogin from './components/RecruiterLogin';
+import AdminLogin from './components/AdminLogin';
 import RecruiterRegistration from './components/RecruiterRegistration';
 import RecruiterDashboard from './components/RecruiterDashboard';
 import CandidateRecommendations from './components/CandidateRecommendations';
@@ -60,10 +62,12 @@ function App() {
           <Route path="/recruiter/login" element={<RecruiterLogin />} />
           <Route path="/recruiter/register" element={<RecruiterRegistration />} />
           <Route path="/recruiter/dashboard" element={<RecruiterDashboard />} />
+          <Route path="/recruiter/applications" element={<RecruiterApplications />} />
           <Route path="/recruiter-recommendations" element={<RecruiterRecommendations />} />
           <Route path="/enhanced-recruiter-recommendations" element={<EnhancedRecruiterRecommendations />} />
           
           {/* Admin Routes */}
+          <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/jobs-dashboard" element={<JobsDashboard />} />
           <Route path="/candidate-search" element={<CandidateSearch />} />
           <Route path="/applications-management" element={<ApplicationsManagement />} />
