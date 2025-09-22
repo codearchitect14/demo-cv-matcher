@@ -61,7 +61,12 @@ class SemanticSearchService:
             interaction_count = 0
             
             # Preferred path: FAISS recall -> filters -> (optional) ML ranking
-            faiss_results = await faiss_service.search_jobs_for_candidate(db, candidate_id, k=max(k * 5, 50))
+            # Guard FAISS with try/except to avoid cascading failures
+            try:
+                faiss_results = await faiss_service.search_jobs_for_candidate(db, candidate_id, k=max(k * 5, 50))
+            except Exception as e:
+                logger.warning(f"[WARNING] FAISS search failed: {e}; falling back to cold start")
+                faiss_results = []
             candidate_faiss_job_ids = [int(r['vector_id'].split(':', 1)[1]) for r in faiss_results if 'vector_id' in r and r['vector_id'].startswith('job:')]
 
             if candidate_faiss_job_ids:

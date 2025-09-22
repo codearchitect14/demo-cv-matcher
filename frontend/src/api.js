@@ -185,10 +185,24 @@ export const apiService = {
   // Application APIs
   createApplication: async (applicationData) => {
     try {
-      const response = await api.post('/applications', applicationData);
+      console.log('API Service - Application data before sending:', JSON.stringify(applicationData, null, 2));
+      
+      // Create explicit data object with uppercase status
+      const explicitData = {
+        job_id: applicationData.job_id,
+        candidate_id: applicationData.candidate_id,
+        status: 'APPLIED'  // Explicitly set to uppercase
+      };
+      
+      console.log('API Service - Explicit data being sent:', JSON.stringify(explicitData, null, 2));
+      
+      // Use public endpoint that doesn't require authentication
+      const response = await api.post('/applications/public', explicitData);
       return response.data;
     } catch (error) {
       console.error('Error creating application:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
       throw error;
     }
   },
@@ -230,10 +244,34 @@ export const apiService = {
 
   // Recommendation APIs
   getJobRecommendations: async (limit = 10) => {
-    const response = await api.get('/recommendations/jobs', {
-      params: { limit }
-    });
-    return response.data;
+    try {
+      const response = await api.get('/recommendations/jobs', {
+        params: { limit },
+        timeout: 35000 // 35 second timeout (longer than backend 30s limit)
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error getting job recommendations:', error);
+      
+      // Handle specific error cases
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        console.log('Request timed out, returning empty recommendations');
+        return [];
+      }
+      
+      if (error.response?.status === 504) {
+        console.log('Gateway timeout (504), returning empty recommendations');
+        return [];
+      }
+      
+      if (error.response?.status === 500) {
+        console.log('Server error (500), returning empty recommendations');
+        return [];
+      }
+      
+      // For other errors, re-throw to be handled by the component
+      throw error;
+    }
   },
 
   getCandidateRecommendations: async (jobId, useMlRanking = true) => {

@@ -218,3 +218,4 @@ async def fix_company_migration():
 if __name__ == "__main__":
     asyncio.run(fix_company_migration())
 
+

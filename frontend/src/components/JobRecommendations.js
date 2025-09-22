@@ -10,6 +10,10 @@ const JobRecommendations = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [matchPercentages, setMatchPercentages] = useState({});
+  const [retryCount, setRetryCount] = useState(0);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [applicationStatus, setApplicationStatus] = useState({});
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -129,9 +133,35 @@ const JobRecommendations = () => {
     try {
       const response = await apiService.getJobRecommendations(formData.limit);
       setRecommendations(response);
+      setRetryCount(0); // Reset retry count on success
+      
+      // Show success message if we got recommendations
+      if (response && response.length > 0) {
+        console.log(`Successfully loaded ${response.length} job recommendations`);
+      } else {
+        setError('No job recommendations found. Please try again or adjust your settings.');
+      }
     } catch (error) {
       console.error('Failed to get recommendations:', error);
-      setError('Failed to get recommendations. Please try again.');
+      
+      // Handle specific error cases with retry logic
+      if (error.response?.status === 504 || error.code === 'ECONNABORTED') {
+        if (retryCount < 2) {
+          setRetryCount(prev => prev + 1);
+          setError(`Request timed out. Retrying... (${retryCount + 1}/2)`);
+          // Auto-retry after a short delay
+          setTimeout(() => {
+            handleSubmit(e);
+          }, 2000);
+          return;
+        } else {
+          setError('Request timed out after multiple attempts. Please try with fewer recommendations or try again later.');
+        }
+      } else if (error.response?.status === 500) {
+        setError('Server error occurred. Please try again later.');
+      } else {
+        setError('Failed to get recommendations. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -149,6 +179,75 @@ const JobRecommendations = () => {
     const diffTime = Math.abs(now - date);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
+  };
+
+  const handleViewDetails = (job) => {
+    console.log('View Details clicked for job:', job);
+    setSelectedJob(job);
+    setShowJobModal(true);
+  };
+
+  const handleApplyNow = async (jobId) => {
+    try {
+      setLoading(true);
+      
+      console.log('Apply Now clicked for job:', jobId);
+      console.log('User profile:', userProfile);
+      
+      // Create application (candidate functionality only)
+      const applicationData = {
+        job_id: parseInt(jobId), // Ensure it's a number
+        candidate_id: parseInt(userProfile?.id), // Ensure it's a number
+        status: 'APPLIED'  // Must be uppercase as per API requirements
+      };
+      
+      console.log('Raw application data before any processing:', applicationData);
+
+      console.log('Application data being sent:', JSON.stringify(applicationData, null, 2));
+      
+      // Use public endpoint - no authentication required
+      const response = await apiService.createApplication(applicationData);
+      console.log('Application response:', response);
+      
+      // Update application status
+      setApplicationStatus(prev => ({
+        ...prev,
+        [jobId]: 'applied'
+      }));
+
+      // Show success message
+      alert('Your application has been submitted successfully!');
+      
+    } catch (error) {
+      console.error('Error applying to job:', error);
+      
+      if (error.response?.status === 400) {
+        // Handle "Already applied for this job" error
+        if (error.response.data?.detail?.includes('Already applied')) {
+          alert('You have already applied to this job.');
+          setApplicationStatus(prev => ({
+            ...prev,
+            [jobId]: 'applied'
+          }));
+        } else {
+          alert('Invalid application data. Please check your information.');
+          console.error('Application error:', error.response.data);
+        }
+      } else if (error.response?.status === 422) {
+        alert('Invalid application data. Please try again.');
+        console.error('Validation error:', error.response.data);
+      } else {
+        alert('Failed to submit application. Please try again.');
+        console.error('Application error:', error.response?.data);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const closeJobModal = () => {
+    setShowJobModal(false);
+    setSelectedJob(null);
   };
 
   if (!isAuthenticated) {
@@ -293,7 +392,18 @@ const JobRecommendations = () => {
             {error && (
               <div className="error-message">
                 <span className="error-text">{error}</span>
-                <button onClick={() => setError('')} className="error-close">×</button>
+                <div className="error-actions">
+                  {(error.includes('timed out') || error.includes('Server error')) && (
+                    <button 
+                      onClick={() => handleSubmit({preventDefault: () => {}})} 
+                      className="retry-btn"
+                      disabled={loading}
+                    >
+                      🔄 Retry
+                    </button>
+                  )}
+                  <button onClick={() => setError('')} className="error-close">×</button>
+                </div>
               </div>
             )}
 
@@ -409,17 +519,108 @@ const JobRecommendations = () => {
                 </div>
                 
                 <div className="card-actions">
-                  <button className="btn-view-details">
+                  <button 
+                    className="btn-view-details"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleViewDetails(recommendation.job);
+                    }}
+                  >
                     <span className="btn-icon-small">👁️</span>
                     View Details
                   </button>
-                  <button className="btn-apply-now">
+                  <button 
+                    className={`btn-apply-now ${applicationStatus[recommendation.job_id] === 'applied' ? 'applied' : ''}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleApplyNow(recommendation.job_id);
+                    }}
+                    disabled={applicationStatus[recommendation.job_id] === 'applied' || loading}
+                  >
                     <span className="btn-icon-small">📝</span>
-                    Apply Now
+                    {applicationStatus[recommendation.job_id] === 'applied' ? 'Applied' : 'Apply Now'}
                   </button>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Job Details Modal */}
+      {showJobModal && selectedJob && (
+        <div className="job-modal-overlay" onClick={closeJobModal}>
+          <div className="job-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="job-modal-header">
+              <h2>{selectedJob.title}</h2>
+              <button className="modal-close-btn" onClick={closeJobModal}>×</button>
+            </div>
+            
+            <div className="job-modal-content">
+              <div className="job-company-info">
+                <div className="company-logo-large">
+                  <div className="logo-placeholder-large">
+                    {selectedJob.company?.charAt(0) || 'C'}
+                  </div>
+                </div>
+                <div className="company-details">
+                  <h3>{selectedJob.company}</h3>
+                  <p className="job-location">📍 {selectedJob.location}</p>
+                </div>
+              </div>
+
+              <div className="job-details-grid">
+                <div className="detail-item">
+                  <span className="detail-label">Salary Range:</span>
+                  <span className="detail-value">
+                    {selectedJob.salary_min && selectedJob.salary_max 
+                      ? `$${selectedJob.salary_min.toLocaleString()} - $${selectedJob.salary_max.toLocaleString()}`
+                      : 'Not specified'}
+                  </span>
+                </div>
+                
+                <div className="detail-item">
+                  <span className="detail-label">Experience Required:</span>
+                  <span className="detail-value">{selectedJob.total_years_required} years</span>
+                </div>
+                
+                <div className="detail-item">
+                  <span className="detail-label">Domain:</span>
+                  <span className="detail-value">{selectedJob.domain}</span>
+                </div>
+                
+                <div className="detail-item">
+                  <span className="detail-label">Posted:</span>
+                  <span className="detail-value">{getDaysAgo(selectedJob.created_at)} days ago</span>
+                </div>
+              </div>
+
+              <div className="job-description-full">
+                <h4>Job Description</h4>
+                <p>{selectedJob.job_description || 'No description available.'}</p>
+              </div>
+            </div>
+
+            <div className="job-modal-footer">
+              <button 
+                className={`btn-apply-now ${applicationStatus[selectedJob.id] === 'applied' ? 'applied' : ''}`}
+                onClick={() => {
+                  handleApplyNow(selectedJob.id);
+                  closeJobModal();
+                }}
+                disabled={applicationStatus[selectedJob.id] === 'applied' || loading}
+              >
+                {applicationStatus[selectedJob.id] === 'applied' ? 'Applied' : 'Apply Now'}
+              </button>
+              <button 
+                className="btn-view-details"
+                onClick={closeJobModal}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

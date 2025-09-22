@@ -10,6 +10,8 @@ const CandidatesDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [showJobModal, setShowJobModal] = useState(false);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [showCVUpload, setShowCVUpload] = useState(false);
   const [cvFile, setCvFile] = useState(null);
@@ -210,24 +212,35 @@ const CandidatesDashboard = () => {
         return;
       }
       
-      const response = await fetch('http://localhost:8000/api/v1/applications/', {
+      const response = await fetch('http://localhost:8000/api/v1/applications/public', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ 
           job_id: jobId,
-          status: 'applied'
+          candidate_id: userProfile?.id,
+          status: 'APPLIED'
         })
       });
 
       if (response.ok) {
-        setMessage('Application submitted successfully!');
-        // Refresh applications list
-        fetchApplications();
-        // Remove the applied job from recommendations
-        setJobRecommendations(prev => prev.filter(job => job.id !== jobId));
+        const responseData = await response.json();
+        
+        // Check the message to determine if it's a new application or already applied
+        if (responseData.message === "You have already applied to this job!") {
+          setMessage('You have already applied to this job!');
+          // Update the job recommendation to show as applied
+          setJobRecommendations(prev => prev.map(job => 
+            job.id === jobId ? { ...job, applied: true } : job
+          ));
+        } else {
+          setMessage('Application submitted successfully!');
+          // Refresh applications list
+          fetchApplications();
+          // Remove the applied job from recommendations
+          setJobRecommendations(prev => prev.filter(job => job.id !== jobId));
+        }
       } else {
         const errorData = await response.json();
         // Handle validation errors properly
@@ -254,6 +267,16 @@ const CandidatesDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleViewJobDetails = (job) => {
+    setSelectedJob(job);
+    setShowJobModal(true);
+  };
+
+  const closeJobDetails = () => {
+    setShowJobModal(false);
+    setSelectedJob(null);
   };
 
   const handleUpdateProfile = async (e) => {
@@ -330,18 +353,28 @@ const CandidatesDashboard = () => {
   const handleApplyToJob = async (jobId) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('http://localhost:8000/api/v1/applications/', {
+      const response = await fetch('http://localhost:8000/api/v1/applications/public', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ job_id: jobId })
+        body: JSON.stringify({ 
+          job_id: jobId,
+          candidate_id: userProfile?.id,
+          status: 'APPLIED'
+        })
       });
 
       if (response.ok) {
-        setMessage('Application submitted successfully!');
-        fetchApplications();
+        const responseData = await response.json();
+        
+        // Check the message to determine if it's a new application or already applied
+        if (responseData.message === "You have already applied to this job!") {
+          setMessage('You have already applied to this job!');
+        } else {
+          setMessage('Application submitted successfully!');
+          fetchApplications();
+        }
       } else {
         const errorData = await response.json();
         // Handle validation errors properly
@@ -406,6 +439,9 @@ const CandidatesDashboard = () => {
           </div>
           
           <div className="header-right">
+            <button className="btn-secondary" onClick={() => navigate('/my-applications')}>
+              <span>My applications</span>
+            </button>
             <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
               <span>Profile</span>
             </button>
@@ -413,7 +449,7 @@ const CandidatesDashboard = () => {
               <span>Logout</span>
             </button>
           </div>
-        </div>
+      </div>
       </div>
 
       {/* Main Content */}
@@ -490,40 +526,7 @@ const CandidatesDashboard = () => {
           </div>
         </div>
 
-        {/* Recent Applications */}
-        <div className="recent-applications">
-          <h2 className="section-title">Recent Applications</h2>
-          {applications.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">📝</div>
-              <h3>No applications yet</h3>
-              <p>Start applying to jobs to see your applications here!</p>
-              <button 
-                className="cta-button" 
-                onClick={() => navigate('/job-search')}
-              >
-                🔍 Search Jobs Now
-              </button>
-            </div>
-          ) : (
-            <div className="applications-grid">
-              {applications.slice(0, 5).map((application, index) => (
-                <div key={index} className="application-card">
-                  <div className="application-header">
-                    <h3>{application.job_title || 'Job Application'}</h3>
-                    <span className={`status-badge ${application.status}`}>
-                      {getApplicationStatusText(application.status)}
-                    </span>
-                  </div>
-                  <div className="application-details">
-                    <p><strong>Company:</strong> {application.company || 'Unknown'}</p>
-                    <p><strong>Applied:</strong> {application.applied_at ? new Date(application.applied_at).toLocaleDateString() : new Date(application.created_at).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Recent Applications removed per requirements */}
 
         {/* Recommended Jobs */}
         <div className="recommended-jobs">
@@ -563,7 +566,7 @@ const CandidatesDashboard = () => {
                   <div className="job-actions">
                     <button 
                       className="btn-view-details"
-                      onClick={() => navigate(`/job-search?job=${job.id}`)}
+                      onClick={() => handleViewJobDetails(job)}
                     >
                       View Details
                     </button>
@@ -583,6 +586,30 @@ const CandidatesDashboard = () => {
       </div>
 
       {/* Profile Update Modal */}
+      {showJobModal && selectedJob && (
+        <div className="modal-overlay" onClick={closeJobDetails}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{selectedJob.title}</h3>
+            </div>
+            <div className="modal-body">
+              <p><strong>Company:</strong> {selectedJob.company || '—'}</p>
+              <p><strong>Location:</strong> {selectedJob.location || '—'}</p>
+              <p><strong>Salary:</strong> {selectedJob.salary_min && selectedJob.salary_max ? `${selectedJob.salary_min} - ${selectedJob.salary_max}` : '—'}</p>
+              {selectedJob.job_description && (
+                <div>
+                  <strong>Description:</strong>
+                  <p>{selectedJob.job_description}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-apply-now" onClick={() => handleApplyToRecommendedJob(selectedJob.id)}>Apply Now</button>
+              <button className="btn-secondary" onClick={closeJobDetails}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showProfileForm && (
         <div className="modal-overlay" onClick={() => setShowProfileForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

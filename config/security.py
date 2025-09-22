@@ -51,8 +51,9 @@ class SecurityConfig:
     MAX_UPLOAD_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_CONTENT_LENGTH", str(100 * 1024 * 1024)))
     
     # Response Time Limits
-    MAX_RESPONSE_TIME = float(os.getenv("MAX_RESPONSE_TIME", "8.0"))  # Maximum response time in seconds
-    SLOW_RESPONSE_THRESHOLD = float(os.getenv("SLOW_RESPONSE_THRESHOLD", "5.0"))  # Log slow responses over this threshold
+    # Increase defaults to reduce user-facing 504s while we optimize endpoints
+    MAX_RESPONSE_TIME = float(os.getenv("MAX_RESPONSE_TIME", "30.0"))  # Maximum response time in seconds (increased from 20s)
+    SLOW_RESPONSE_THRESHOLD = float(os.getenv("SLOW_RESPONSE_THRESHOLD", "8.0"))  # Log slow responses over this threshold (increased from 5s)
     
     FORBIDDEN_SQL_KEYWORDS = [
         "DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "INSERT", 

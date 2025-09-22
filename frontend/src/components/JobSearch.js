@@ -22,6 +22,7 @@ const JobSearch = () => {
   const [viewMode, setViewMode] = useState('grid');
   const [showFilters, setShowFilters] = useState(true);
   const [searchTags, setSearchTags] = useState(['python']);
+  const [userProfile, setUserProfile] = useState(null);
 
   useEffect(() => {
     const checkAuthentication = async () => {
@@ -48,6 +49,8 @@ const JobSearch = () => {
           navigate('/login');
         } else {
           console.log('JobSearch: Token validation successful, user:', user.email);
+          // Load user profile for application submissions
+          setUserProfile(user);
         }
       } catch (error) {
         console.error('JobSearch: Error validating token:', error);
@@ -165,34 +168,44 @@ const JobSearch = () => {
 
   const handleApplyNow = async (jobId) => {
     try {
-      await apiService.createApplication({ job_id: jobId });
+      // Ensure we have user profile before applying
+      if (!userProfile?.id) {
+        setError('User profile not loaded. Please refresh the page and try again.');
+        setIsSuccessMessage(false);
+        return;
+      }
+
+      const response = await apiService.createApplication({ 
+        job_id: jobId,
+        candidate_id: userProfile.id,
+        status: 'APPLIED'
+      });
+      
+      // Check the response message to determine if it's a new application or already applied
+      if (response.message && response.message.includes('already applied')) {
+        // Show friendly message for already applied case
+        setError('You have already applied for this job!');
+        setIsSuccessMessage(true);
+      } else {
+        // Show success message for new application
+        setError('Application submitted successfully!');
+        setIsSuccessMessage(true);
+      }
+      
+      // Mark as applied in the UI
       setApplicationStatus(prev => ({
         ...prev,
         [jobId]: 'applied'
       }));
+      
+      // Clear the message after 3 seconds
+      setTimeout(() => {
+        setError('');
+        setIsSuccessMessage(false);
+      }, 3000);
+      
     } catch (error) {
       console.error('Application error:', error);
-      
-      // Check if it's an "already applied" error
-      if (error.response && error.response.status === 400) {
-        const errorMessage = error.response.data?.detail || error.response.data?.message || '';
-        if (errorMessage.toLowerCase().includes('already applied')) {
-          // Mark as applied in the UI since the backend confirms it
-          setApplicationStatus(prev => ({
-            ...prev,
-            [jobId]: 'applied'
-          }));
-          // Show a success message instead of error
-          setError('You have already applied for this job!');
-          setIsSuccessMessage(true);
-          // Clear the error after 3 seconds
-          setTimeout(() => {
-            setError('');
-            setIsSuccessMessage(false);
-          }, 3000);
-          return;
-        }
-      }
       
       // For other errors, show the generic error message
       setError('Failed to apply for job. Please try again.');
@@ -348,7 +361,7 @@ const JobSearch = () => {
           <h1 className="header-title">Job Search</h1>
         </div>
         <div className="header-actions">
-          <button className="btn-back" onClick={() => navigate('/candidate-dashboard')}>
+          <button className="btn-back" onClick={() => navigate('/candidates-dashboard')}>
             ← Back to Dashboard
           </button>
           <button className="btn-logout" onClick={() => navigate('/login')}>

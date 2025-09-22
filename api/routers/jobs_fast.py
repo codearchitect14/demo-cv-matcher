@@ -44,59 +44,80 @@ mock_jobs_storage = [
 
 @router.post("/public-fast")
 async def create_job_public_fast(request_data: dict):
-    """Create a new job - Mock version that works instantly"""
+    """Create a new job - Now saves to real database"""
     try:
-        # Mock response - works instantly
-        current_time = time.time()
+        from config.connection_pool import global_pool
+        import asyncio
         
-        # Generate unique ID based on current time and existing jobs
-        max_id = max([job.get('id', 0) for job in mock_jobs_storage], default=0)
-        new_id = max_id + 1
+        # Extract data from request
+        title = request_data.get('title', 'New Job')
+        company = request_data.get('company', 'Test Company')
+        location = request_data.get('location', 'Remote')
+        salary_min = request_data.get('salary_min', 50000)
+        salary_max = request_data.get('salary_max', 80000)
+        domain = request_data.get('domain', 'IT')
+        total_years_required = request_data.get('total_years_required', 1)
+        job_description = request_data.get('job_description', 'Job description')
+        threshold_score = request_data.get('threshold_score', 70)
+        recruiter_id = request_data.get('recruiter_id', 1)
+        company_id = request_data.get('company_id', 1)
         
-        # Create new job
-        new_job = {
-            "id": new_id,
-            "title": request_data.get('title', 'New Job'),
-            "company": request_data.get('company', 'Test Company'),
-            "location": request_data.get('location', 'Remote'),
-            "salary_min": request_data.get('salary_min', 50000),
-            "salary_max": request_data.get('salary_max', 80000),
-            "domain": request_data.get('domain', 'IT'),
-            "total_years_required": request_data.get('total_years_required', 1),
-            "job_description": request_data.get('job_description', 'Job description'),
-            "threshold_score": request_data.get('threshold_score', 70),
-            "recruiter_id": request_data.get('recruiter_id', 1),
-            "company_id": 1,  # Always set company_id
-            "is_active": True,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
+        # Insert into real database using asyncpg
+        query = """
+            INSERT INTO jobs (
+                title, company, location, salary_min, salary_max, domain, 
+                total_years_required, job_description, threshold_score, 
+                recruiter_id, company_id, is_active, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+            RETURNING id, title, company, location, salary_min, salary_max, domain,
+                     total_years_required, job_description, threshold_score,
+                     recruiter_id, company_id, is_active, created_at
+        """
         
-        # Add to storage
-        mock_jobs_storage.append(new_job)
+        # Execute with timeout to prevent hanging
+        row = await asyncio.wait_for(
+            global_pool.fetchrow(
+                query, title, company, location, salary_min, salary_max, domain,
+                total_years_required, job_description, threshold_score,
+                recruiter_id, company_id, True  # is_active = True
+            ),
+            timeout=8.0  # 8 second timeout
+        )
         
-        logger.info(f"Mock job creation successful: {request_data.get('title', 'unknown')} (ID: {new_id})")
-        logger.info(f"Total jobs in storage: {len(mock_jobs_storage)}")
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create job in database"
+            )
+        
+        logger.info(f"Real job creation successful: {title} (ID: {row['id']})")
         
         return {
-            "id": new_job["id"],
-            "title": new_job["title"],
-            "company": new_job["company"],
-            "location": new_job["location"],
-            "salary_min": new_job["salary_min"],
-            "salary_max": new_job["salary_max"],
-            "domain": new_job["domain"],
-            "total_years_required": new_job["total_years_required"],
-            "job_description": new_job["job_description"],
-            "threshold_score": new_job["threshold_score"],
-            "recruiter_id": new_job["recruiter_id"],
-            "company_id": new_job["company_id"],
-            "is_active": new_job["is_active"],
-            "created_at": new_job["created_at"],
-            "message": f"Job created successfully (mock) - ID: {new_id}"
+            "id": row['id'],
+            "title": row['title'],
+            "company": row['company'],
+            "location": row['location'],
+            "salary_min": row['salary_min'],
+            "salary_max": row['salary_max'],
+            "domain": row['domain'],
+            "total_years_required": row['total_years_required'],
+            "job_description": row['job_description'],
+            "threshold_score": row['threshold_score'],
+            "recruiter_id": row['recruiter_id'],
+            "company_id": row['company_id'],
+            "is_active": row['is_active'],
+            "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+            "message": f"Job created successfully in database - ID: {row['id']}"
         }
         
+    except asyncio.TimeoutError:
+        logger.error(f"Job creation timeout for: {request_data.get('title', 'unknown')}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Job creation timed out. Please try again."
+        )
     except Exception as e:
-        logger.error(f"Error in mock job creation: {e}")
+        logger.error(f"Error in real job creation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create job"
@@ -108,29 +129,76 @@ async def list_jobs_public_fast(
     limit: int = 100,
     search: Optional[str] = None
 ):
-    """Get jobs list - Mock version that works instantly"""
+    """Get jobs list - Now uses real database"""
     try:
-        # Use storage data - works instantly
-        mock_jobs = mock_jobs_storage.copy()
+        from config.connection_pool import global_pool
+        import asyncio
         
-        # Apply search filter if provided
+        # Build query with optional search filter
+        where_clause = "WHERE is_active = true"
+        params = []
+        param_count = 0
+        
         if search:
-            search_lower = search.lower()
-            mock_jobs = [
-                j for j in mock_jobs 
-                if search_lower in j["title"].lower() or 
-                   search_lower in j["company"].lower() or 
-                   search_lower in j["location"].lower()
-            ]
+            param_count += 1
+            where_clause += f" AND (LOWER(title) LIKE LOWER(${param_count}) OR LOWER(company) LIKE LOWER(${param_count}) OR LOWER(location) LIKE LOWER(${param_count}))"
+            params.append(f"%{search}%")
         
-        # Apply pagination
-        result = mock_jobs[skip:skip + limit]
+        param_count += 1
+        limit_param_idx = param_count
+        param_count += 1
+        skip_param_idx = param_count
+        params.extend([limit, skip])
         
-        logger.info(f"Mock jobs list successful: {len(result)} jobs")
+        query = f"""
+            SELECT id, title, company, location, salary_min, salary_max, domain, 
+                   total_years_required, job_description, threshold_score, 
+                   recruiter_id, company_id, is_active, created_at, updated_at
+            FROM jobs 
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${limit_param_idx} OFFSET ${skip_param_idx}
+        """
+        
+        # Execute with timeout to prevent hanging
+        rows = await asyncio.wait_for(
+            global_pool.fetch(query, *params),
+            timeout=10.0  # 10 second timeout
+        )
+        
+        # Convert to response format
+        result = []
+        for row in rows:
+            job = {
+                "id": row['id'],
+                "title": row['title'],
+                "company": row['company'],
+                "location": row['location'],
+                "salary_min": row['salary_min'],
+                "salary_max": row['salary_max'],
+                "domain": row['domain'],
+                "total_years_required": row['total_years_required'],
+                "job_description": row['job_description'],
+                "threshold_score": row['threshold_score'],
+                "recruiter_id": row['recruiter_id'],
+                "company_id": row['company_id'],
+                "is_active": row['is_active'],
+                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
+            }
+            result.append(job)
+        
+        logger.info(f"Real jobs list successful: {len(result)} jobs")
         return result
         
+    except asyncio.TimeoutError:
+        logger.error("Jobs list timeout")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Jobs list timed out. Please try again."
+        )
     except Exception as e:
-        logger.error(f"Error in mock jobs list: {e}")
+        logger.error(f"Error in real jobs list: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get jobs"
@@ -177,50 +245,71 @@ async def get_recruiters_for_jobs_fast():
 
 @router.get("/assignments-fast")
 async def get_job_assignments_fast():
-    """Get job assignments - which jobs are assigned to which recruiters"""
+    """Get job assignments - which jobs are assigned to which recruiters - Now uses real database"""
     try:
-        # Get all jobs with their assigned recruiters
+        from config.connection_pool import global_pool
+        import asyncio
+        
+        # Query real database for jobs with their assigned recruiters
+        query = """
+            SELECT 
+                j.id as job_id,
+                j.title as job_title,
+                j.company,
+                j.location,
+                j.recruiter_id,
+                r.full_name as recruiter_name,
+                r.email as recruiter_email,
+                CASE 
+                    WHEN j.recruiter_id IS NOT NULL AND r.id IS NOT NULL THEN 'Assigned'
+                    ELSE 'Unassigned'
+                END as status
+            FROM jobs j
+            LEFT JOIN recruiters r ON j.recruiter_id = r.id
+            WHERE j.is_active = true
+            ORDER BY j.created_at DESC
+        """
+        
+        # Execute with timeout to prevent hanging
+        rows = await asyncio.wait_for(
+            global_pool.fetch(query),
+            timeout=10.0  # 10 second timeout
+        )
+        
         assignments = []
-        
-        logger.info(f"Processing {len(mock_jobs_storage)} jobs for assignments")
-        
-        for job in mock_jobs_storage:
-            # Find the assigned recruiter
-            assigned_recruiter = None
-            if job.get('recruiter_id'):
-                # Mock recruiter data
-                recruiters = [
-                    {"id": 1, "full_name": "John Smith", "email": "john@company.com"},
-                    {"id": 2, "full_name": "Sarah Johnson", "email": "sarah@company.com"},
-                    {"id": 3, "full_name": "Mike Wilson", "email": "mike@company.com"}
-                ]
-                assigned_recruiter = next((r for r in recruiters if r['id'] == job['recruiter_id']), None)
-                logger.info(f"Job {job['id']} ({job['title']}) assigned to recruiter {job['recruiter_id']}")
-            else:
-                logger.info(f"Job {job['id']} ({job['title']}) has no recruiter assigned")
-            
+        for row in rows:
             assignment = {
-                "job_id": job['id'],
-                "job_title": job['title'],
-                "company": job['company'],
-                "location": job['location'],
-                "recruiter_id": job.get('recruiter_id'),
-                "recruiter_name": assigned_recruiter['full_name'] if assigned_recruiter else "Unassigned",
-                "recruiter_email": assigned_recruiter['email'] if assigned_recruiter else "N/A",
-                "status": "Assigned" if assigned_recruiter else "Unassigned"
+                "job_id": row['job_id'],
+                "job_title": row['job_title'],
+                "company": row['company'],
+                "location": row['location'],
+                "recruiter_id": row['recruiter_id'],
+                "recruiter_name": row['recruiter_name'] if row['recruiter_name'] else "Unassigned",
+                "recruiter_email": row['recruiter_email'] if row['recruiter_email'] else "N/A",
+                "status": row['status']
             }
             assignments.append(assignment)
         
-        logger.info(f"Job assignments retrieved: {len(assignments)} assignments")
+        assigned_count = len([a for a in assignments if a['status'] == 'Assigned'])
+        unassigned_count = len([a for a in assignments if a['status'] == 'Unassigned'])
+        
+        logger.info(f"Real job assignments retrieved: {len(assignments)} assignments ({assigned_count} assigned, {unassigned_count} unassigned)")
+        
         return {
             "total_assignments": len(assignments),
-            "assigned_jobs": len([a for a in assignments if a['status'] == 'Assigned']),
-            "unassigned_jobs": len([a for a in assignments if a['status'] == 'Unassigned']),
+            "assigned_jobs": assigned_count,
+            "unassigned_jobs": unassigned_count,
             "assignments": assignments
         }
         
+    except asyncio.TimeoutError:
+        logger.error("Job assignments timeout")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Job assignments timed out. Please try again."
+        )
     except Exception as e:
-        logger.error(f"Error getting job assignments: {e}")
+        logger.error(f"Error getting job assignments from database: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get job assignments"

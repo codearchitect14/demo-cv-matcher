@@ -12,7 +12,7 @@ from config.logging import setup_logging, log_api_request, log_security_event
 from config.connection_pool import global_pool
 from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
-from middleware.timeout_middleware import timeout_middleware
+# timeout_middleware removed
 from middleware.performance_middleware import performance_middleware
 from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public
 from services.api_service import api_service
@@ -25,6 +25,7 @@ logger = loggers["api"]
 
 # Note: File size limit is configured via uvicorn command line arguments
 # Use: uvicorn api.main:app --host 0.0.0.0 --port 8000 --limit-request-line 0 --limit-request-field_size 0 --limit-request-fields 0
+# For timeout issues, use: uvicorn api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 30 --timeout-graceful-shutdown 10
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,10 +108,7 @@ async def security_middleware_handler(request: Request, call_next):
 async def performance_middleware_handler(request: Request, call_next):
     return await performance_middleware(request, call_next)
 
-# Add timeout middleware (should be second to catch slow requests early)
-@app.middleware("http")
-async def timeout_middleware_handler(request: Request, call_next):
-    return await timeout_middleware(request, call_next)
+# Timeout middleware removed - using database-level timeouts instead
 
 # Add rate limiting middleware
 @app.middleware("http")

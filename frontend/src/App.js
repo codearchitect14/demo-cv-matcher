@@ -7,6 +7,7 @@ import LoginNew from './components/LoginNew';
 import CandidatesDashboard from './components/CandidatesDashboard';
 import JobsDashboard from './components/JobsDashboard';
 import JobSearch from './components/JobSearch';
+import MyApplications from './components/MyApplications';
 import JobRecommendations from './components/JobRecommendations';
 import CandidateSearch from './components/CandidateSearch';
 import ApplicationsManagement from './components/ApplicationsManagement';
@@ -53,6 +54,7 @@ function App() {
           
           {/* Candidate Routes */}
           <Route path="/candidates-dashboard" element={<CandidatesDashboard />} />
+          <Route path="/my-applications" element={<MyApplications />} />
           <Route path="/job-search" element={<JobSearch />} />
           <Route path="/job-recommendations" element={<JobRecommendations />} />
           <Route path="/candidate-recommendations" element={<CandidateRecommendations />} />

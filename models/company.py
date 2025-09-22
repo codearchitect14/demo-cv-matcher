@@ -38,3 +38,4 @@ class Company(BaseModel):
     recruiters = relationship("Recruiter", back_populates="company", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="company", cascade="all, delete-orphan")
 
+

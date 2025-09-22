@@ -77,3 +77,4 @@ class CompanyStats(BaseModel):
     total_applications: int
     pending_applications: int
 
+

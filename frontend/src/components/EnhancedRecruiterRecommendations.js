@@ -91,8 +91,12 @@ const EnhancedRecruiterRecommendations = () => {
 
       if (response.ok) {
         const recommendations = await response.json();
-        setRecommendations(recommendations);
-        console.log('Recommendations:', recommendations);
+        // Sort by backend match_score (desc)
+        const sorted = Array.isArray(recommendations)
+          ? [...recommendations].sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+          : [];
+        setRecommendations(sorted);
+        console.log('Recommendations:', sorted);
         
         // Get job details for context
         const selectedJob = recruiterJobs.find(job => job.id === parseInt(jobId));
@@ -231,7 +235,12 @@ const EnhancedRecruiterRecommendations = () => {
     const skills = recommendation.skill_matches || [];
     const totalSkills = skills.length + (recommendation.missing_skills?.length || 0);
     
-    if (totalSkills === 0) return 25; // Base score when no skill data
+    if (totalSkills === 0) {
+      // Fallback to backend-provided score when no skill breakdown is available
+      const backendScore = typeof recommendation.match_score === 'number' ? recommendation.match_score : 0.25;
+      const clamped = Math.max(0.15, Math.min(backendScore, 1));
+      return Math.round(clamped * 100);
+    }
     
     let skillScore = 0;
     let experienceScore = 0;

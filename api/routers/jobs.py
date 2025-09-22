@@ -319,40 +319,54 @@ async def get_job_recommendations(
     db: AsyncSession = Depends(get_db_session),
     limit: int = Query(5, ge=1, le=20)
 ):
-    """Get job recommendations for the current candidate"""
+    """Get job recommendations for the current candidate - optimized to prevent greenlet_spawn errors"""
+    from config.connection_pool import global_pool
+    import asyncio
+    
     try:
-        # For now, return recent jobs as recommendations
-        # In a real implementation, this would use ML/AI to provide personalized recommendations
-        jobs = await job_crud.get_multi_with_filters(
-            db, 
-            skip=0, 
-            limit=limit
-        )
+        # Use direct asyncpg connection to avoid SQLAlchemy greenlet_spawn issues
+        async def fetch_recommendations():
+            rows = await global_pool.fetch(
+                """
+                SELECT id, title, company, location, salary_min, salary_max, 
+                       domain, total_years_required, job_description, created_at, updated_at
+                FROM jobs 
+                WHERE is_active = TRUE
+                ORDER BY created_at DESC 
+                LIMIT $1
+                """,
+                limit
+            )
+            
+            return [
+                {
+                    "id": r['id'],
+                    "title": r['title'],
+                    "company": r['company'],
+                    "location": r['location'],
+                    "salary_min": r['salary_min'],
+                    "salary_max": r['salary_max'],
+                    "domain": r['domain'],
+                    "total_years_required": r['total_years_required'],
+                    "job_description": r['job_description'] or "",  # Add missing field
+                    "created_at": r['created_at'].isoformat() if r['created_at'] else None,
+                    "updated_at": r['updated_at'].isoformat() if r['updated_at'] else None
+                }
+                for r in rows
+            ]
         
-        # Convert to simple response format
-        recommendations = []
-        for job in jobs:
-            recommendations.append({
-                "id": job.id,
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "salary_min": job.salary_min,
-                "salary_max": job.salary_max,
-                "domain": job.domain,
-                "total_years_required": job.total_years_required,
-                "created_at": job.created_at,
-                "updated_at": job.updated_at
-            })
-        
+        # Set timeout to prevent hanging requests
+        recommendations = await asyncio.wait_for(fetch_recommendations(), timeout=10.0)
         return recommendations
         
+    except asyncio.TimeoutError:
+        logger.warning("Job recommendations query timed out")
+        return []
+        
     except Exception as e:
-        print(f"Get job recommendations error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get job recommendations. Please try again later."
-        )
+        logger.error(f"Get job recommendations error: {e}")
+        # Return empty array instead of throwing error to prevent frontend crashes
+        return []
 
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
@@ -697,23 +711,34 @@ async def get_domain_suggestions(
 @router.get("/autocomplete/titles")
 async def get_title_suggestions(
     q: str = Query(..., min_length=1, description="Job title query string"),
-    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions"),
-    db: AsyncSession = Depends(get_db_session)
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of suggestions")
 ):
-    """Get job title autocomplete suggestions"""
+    """Get job title autocomplete suggestions - asyncpg to avoid PgBouncer timeouts"""
     try:
-        suggestions = await job_crud.get_title_suggestions(db, q, limit)
-        return {
-            "suggestions": suggestions,
-            "query": q,
-            "total": len(suggestions)
-        }
+        from config.connection_pool import global_pool
+        import asyncio
+
+        rows = await asyncio.wait_for(
+            global_pool.fetch(
+                """
+                SELECT DISTINCT title
+                FROM jobs
+                WHERE LOWER(title) LIKE LOWER($1)
+                ORDER BY title ASC
+                LIMIT $2
+                """,
+                f"%{q}%", limit
+            ),
+            timeout=5.0
+        )
+
+        suggestions = [r["title"] for r in rows]
+        return {"suggestions": suggestions, "query": q, "total": len(suggestions)}
+    except asyncio.TimeoutError:
+        return {"suggestions": [], "query": q, "total": 0}
     except Exception as e:
         logger.error(f"Error getting title suggestions: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get title suggestions"
-        )
+        return {"suggestions": [], "query": q, "total": 0}
 
 @router.get("/autocomplete/companies")
 async def get_company_suggestions(

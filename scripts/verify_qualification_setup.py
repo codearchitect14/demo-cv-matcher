@@ -79,3 +79,4 @@ if __name__ == "__main__":
     print("🔍 Verifying qualification setup...")
     asyncio.run(verify_setup())
 
+

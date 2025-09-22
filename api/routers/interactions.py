@@ -219,40 +219,64 @@ async def get_similar_users_public(
 
 @router.get("/recent/")
 async def get_recent_interactions(
-    db: AsyncSession = Depends(get_db_session),
     limit: int = Query(20, ge=1, le=100, description="Number of recent interactions")
 ):
-    """Get recent interactions across all candidates for dashboard view"""
+    """Get recent interactions across all candidates for dashboard view - uses direct asyncpg"""
     try:
-        # Get recent interactions from the database
-        recent_interactions = await interaction_service.get_recent_interactions(
-            db, limit=limit
+        from config.connection_pool import global_pool
+        import asyncio
+        
+        # Debug: Check if there are any interactions at all
+        debug_query = "SELECT COUNT(*) FROM interaction_log WHERE user_type = 'candidate'"
+        total_interactions = await global_pool.fetchval(debug_query)
+        logger.info(f"Total candidate interactions in database: {total_interactions}")
+        
+        # Use direct asyncpg query to get recent interactions
+        query = """
+            SELECT 
+                i.id,
+                i.user_id as candidate_id,
+                i.job_id,
+                i.interaction_type,
+                i.timestamp,
+                c.name as candidate_name,
+                c.email as candidate_email,
+                j.title as job_title,
+                j.company
+            FROM interaction_log i
+            LEFT JOIN candidates c ON i.user_id = c.id
+            LEFT JOIN jobs j ON i.job_id = j.id
+            WHERE i.user_type = 'candidate'
+            ORDER BY i.timestamp DESC
+            LIMIT $1
+        """
+        
+        rows = await asyncio.wait_for(
+            global_pool.fetch(query, limit),
+            timeout=5.0
         )
-        return recent_interactions
+        
+        interactions = []
+        for row in rows:
+            interaction = {
+                "id": row["id"],
+                "candidate_id": row["candidate_id"],
+                "job_id": row["job_id"],
+                "interaction_type": row["interaction_type"],
+                "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
+                "candidate_name": row["candidate_name"] or "Unknown",
+                "candidate_email": row["candidate_email"] or "",
+                "job_title": row["job_title"] or f"Job #{row['job_id']}",
+                "company": row["company"] or ""
+            }
+            interactions.append(interaction)
+        
+        logger.info(f"Retrieved {len(interactions)} recent interactions")
+        return interactions
+        
+    except asyncio.TimeoutError:
+        logger.error("Recent interactions query timeout")
+        return []
     except Exception as e:
         logger.error(f"Error in get_recent_interactions: {str(e)}")
-        # Return mock data for now since the service method might not exist
-        import datetime
-        mock_data = [
-            {
-                "id": 1,
-                "timestamp": datetime.datetime.now().isoformat(),
-                "interaction_type": "applied",
-                "candidate_name": "John Doe",
-                "candidate_email": "john@example.com",
-                "job_title": "Software Engineer",
-                "company": "Tech Corp",
-                "job_id": 1
-            },
-            {
-                "id": 2,
-                "timestamp": (datetime.datetime.now() - datetime.timedelta(days=1)).isoformat(),
-                "interaction_type": "viewed",
-                "candidate_name": "Jane Smith",
-                "candidate_email": "jane@example.com",
-                "job_title": "Product Manager",
-                "company": "Innovation Inc",
-                "job_id": 2
-            }
-        ]
-        return mock_data
+        return []

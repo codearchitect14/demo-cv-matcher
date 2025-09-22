@@ -185,3 +185,4 @@ async def create_application_public_fast(request_data: dict):
             detail="Failed to create application"
         )
 
+

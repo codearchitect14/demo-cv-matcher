@@ -10,6 +10,7 @@ from models.candidate import Candidate, CandidateExperience
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
+from config.connection_pool import global_pool
 from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse, CandidateResponseSimple, CandidateExperienceCreate, CandidateExperienceUpdate
 
 router = APIRouter(tags=["Candidates"])
@@ -123,11 +124,60 @@ async def get_my_profile(
     current_user: Candidate = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Get current user's profile"""
+    """Get current user's profile - use asyncpg for base fields, then load experiences."""
     try:
-        # Get the candidate with loaded relationships
-        candidate_with_relations = await candidate_crud.get_with_experiences(db, current_user.id)
-        return candidate_with_relations
+        # Fast path: load core candidate fields via asyncpg
+        row = await global_pool.fetchrow(
+            """
+            SELECT id, name, email, location, domain, expected_salary_min, expected_salary_max,
+                   summary, consent_given, role, created_at, updated_at
+            FROM candidates
+            WHERE id = $1
+            LIMIT 1
+            """,
+            current_user.id
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+        # Then load experiences via asyncpg for PgBouncer safety
+        exp_rows = await global_pool.fetch(
+            """
+            SELECT id, candidate_id, skill, years, description, created_at, updated_at
+            FROM candidate_experience
+            WHERE candidate_id = $1
+            ORDER BY created_at DESC
+            """,
+            current_user.id
+        )
+        experiences = [
+            {
+                "id": r['id'],
+                "candidate_id": r['candidate_id'],
+                "skill": r['skill'],
+                "years": r['years'],
+                "description": r['description'],
+                "created_at": r['created_at'],
+                "updated_at": r['updated_at']
+            }
+            for r in exp_rows
+        ]
+
+        return {
+            "id": row['id'],
+            "name": row['name'],
+            "email": row['email'],
+            "location": row['location'],
+            "domain": row['domain'],
+            "expected_salary_min": row['expected_salary_min'],
+            "expected_salary_max": row['expected_salary_max'],
+            "summary": row['summary'],
+            "consent_given": row['consent_given'],
+            "role": row['role'],
+            "created_at": row['created_at'],
+            "updated_at": row['updated_at'],
+            "experiences": experiences
+        }
     except Exception as e:
         print(f"Get my profile error: {e}")
         raise HTTPException(
@@ -138,16 +188,71 @@ async def get_my_profile(
 @router.put("/me", response_model=CandidateResponse)
 async def update_my_profile(
     candidate_data: CandidateUpdate,
-    current_user: Candidate = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session)
+    current_user: Candidate = Depends(get_current_user)
 ):
-    """Update current user's profile"""
+    """Update current user's profile - uses direct asyncpg to avoid PgBouncer/greenlet timeouts"""
     try:
-        # Update the candidate
-        updated_candidate = await candidate_crud.update(db, db_obj=current_user, obj_in=candidate_data)
-        # Get the updated candidate with loaded relationships
-        candidate_with_relations = await candidate_crud.get_with_experiences(db, current_user.id)
-        return candidate_with_relations
+        from config.connection_pool import global_pool
+        import asyncio
+
+        # Build dynamic update statement
+        set_clauses = []
+        params = []
+        param_idx = 0
+
+        data_dict = candidate_data.model_dump(exclude_unset=True)
+        for key, value in data_dict.items():
+            param_idx += 1
+            set_clauses.append(f"{key} = ${param_idx}")
+            params.append(value)
+
+        # If nothing to update, return current user quickly
+        if not set_clauses:
+            # Return minimal safe profile
+            return current_user
+
+        # Add updated_at timestamp
+        set_clauses.append("updated_at = NOW()")
+
+        # Candidate id param
+        param_idx += 1
+        params.append(current_user.id)
+
+        update_sql = f"""
+            UPDATE candidates
+            SET {', '.join(set_clauses)}
+            WHERE id = ${param_idx}
+            RETURNING id, name, email, location, domain, expected_salary_min, expected_salary_max
+        """
+
+        row = await asyncio.wait_for(global_pool.fetchrow(update_sql, *params), timeout=8.0)
+
+        # Retrieve timestamps without ORM
+        ts = await global_pool.fetchrow(
+            "SELECT created_at, updated_at FROM candidates WHERE id = $1",
+            current_user.id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+
+        # Return updated profile in the expected shape
+        # Fetch created_at and updated_at to satisfy response model
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "email": row["email"],
+            "location": row["location"],
+            "domain": row["domain"],
+            "expected_salary_min": row["expected_salary_min"],
+            "expected_salary_max": row["expected_salary_max"],
+            "created_at": ts["created_at"].isoformat() if ts and ts["created_at"] else None,
+            "updated_at": ts["updated_at"].isoformat() if ts and ts["updated_at"] else None,
+            "experiences": [],
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Profile update timed out, please try again")
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Update my profile error: {e}")
         raise HTTPException(

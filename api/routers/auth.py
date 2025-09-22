@@ -11,7 +11,8 @@ from config.security import (
     SecurityConfig, verify_password, get_password_hash, create_access_token, 
     create_refresh_token, verify_token, store_refresh_token, validate_refresh_token,
     revoke_refresh_token, store_user_session, validate_user_session, 
-    revoke_user_session, get_active_sessions_count, validate_password_with_feedback
+    revoke_user_session, get_active_sessions_count, validate_password_with_feedback,
+    simulate_constant_time_verify
 )
 from models.candidate import Candidate
 from models.recruiter import Recruiter
@@ -19,6 +20,7 @@ from db.crud.candidate import candidate as candidate_crud
 from db.crud.recruiter import recruiter as recruiter_crud
 from schemas.validation import UserRegistrationValidation, EmailValidation, PasswordValidation
 from fastapi.security import OAuth2PasswordBearer
+from config.connection_pool import global_pool
 
 router = APIRouter(tags=["Authentication"])
 
@@ -73,7 +75,7 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: AsyncSession = Depends(get_db_session)
 ) -> Candidate:
-    """Get current authenticated user - optimized for performance"""
+    """Get current authenticated user - optimized via asyncpg (no prepared statements)."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -86,12 +88,35 @@ async def get_current_user(
         if token_data is None:
             raise credentials_exception
         
-        # Get user from database with minimal fields
-        user = await candidate_crud.get_by_email(db, email=token_data.email)
-        if user is None:
+        # Get user from database using global asyncpg pool (pgbouncer safe)
+        row = await global_pool.fetchrow(
+            """
+            SELECT id, name, email, role, location, domain,
+                   expected_salary_min, expected_salary_max, summary, created_at, password_hash
+            FROM candidates
+            WHERE email = $1
+            LIMIT 1
+            """,
+            token_data.email
+        )
+        if row is None:
             raise credentials_exception
-        
-        return user
+
+        class SimpleCandidate:
+            def __init__(self, r):
+                self.id = r['id']
+                self.name = r['name']
+                self.email = r['email']
+                self.role = r['role']
+                self.location = r['location']
+                self.domain = r['domain']
+                self.expected_salary_min = r['expected_salary_min']
+                self.expected_salary_max = r['expected_salary_max']
+                self.summary = r['summary']
+                self.created_at = r['created_at']
+                self.password_hash = r['password_hash']
+
+        return SimpleCandidate(row)
         
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
@@ -101,7 +126,7 @@ async def get_current_recruiter(
     token: str = Depends(oauth2_scheme), 
     db: AsyncSession = Depends(get_db_session)
 ) -> Recruiter:
-    """Get current authenticated recruiter"""
+    """Get current authenticated recruiter - asyncpg lookup."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -114,12 +139,28 @@ async def get_current_recruiter(
         if token_data is None:
             raise credentials_exception
         
-        # Get recruiter from database
-        recruiter = await recruiter_crud.get_by_email(db, email=token_data.email)
-        if recruiter is None:
+        # Get recruiter from database using global pool
+        row = await global_pool.fetchrow(
+            """
+            SELECT id, full_name, email, role, is_active
+            FROM recruiters
+            WHERE email = $1
+            LIMIT 1
+            """,
+            token_data.email
+        )
+        if row is None:
             raise credentials_exception
-        
-        return recruiter
+
+        class SimpleRecruiter:
+            def __init__(self, r):
+                self.id = r['id']
+                self.full_name = r['full_name']
+                self.email = r['email']
+                self.role = r['role']
+                self.is_active = r['is_active']
+
+        return SimpleRecruiter(row)
         
     except Exception as e:
         logger.error(f"Recruiter authentication error: {str(e)}")
@@ -145,17 +186,35 @@ async def get_current_user_or_recruiter(
         
         logger.info(f"Token verified for email: {token_data.email}")
         
-        # Try to get candidate first
-        user = await candidate_crud.get_by_email(db, email=token_data.email)
-        if user is not None:
-            logger.info(f"Found candidate user: {user.id} - {user.email} with role: {getattr(user, 'role', 'N/A')}")
-            return user
+        # Try to get candidate first using global pool
+        cand_row = await global_pool.fetchrow(
+            "SELECT id, name, email, role FROM candidates WHERE email = $1 LIMIT 1",
+            token_data.email
+        )
+        if cand_row is not None:
+            logger.info(f"Found candidate user: {cand_row['id']} - {cand_row['email']} with role: {cand_row['role']}")
+            class SimpleCandidate:
+                def __init__(self, r):
+                    self.id = r['id']
+                    self.name = r.get('name')
+                    self.email = r['email']
+                    self.role = r['role']
+            return SimpleCandidate(cand_row)
         
-        # Try to get recruiter
-        recruiter = await recruiter_crud.get_by_email(db, email=token_data.email)
-        if recruiter is not None:
-            logger.info(f"Found recruiter user: {recruiter.id} - {recruiter.email} with role: {getattr(recruiter, 'role', 'N/A')}")
-            return recruiter
+        # Try to get recruiter via global pool
+        rec_row = await global_pool.fetchrow(
+            "SELECT id, full_name, email, role FROM recruiters WHERE email = $1 LIMIT 1",
+            token_data.email
+        )
+        if rec_row is not None:
+            logger.info(f"Found recruiter user: {rec_row['id']} - {rec_row['email']} with role: {rec_row['role']}")
+            class SimpleRecruiter:
+                def __init__(self, r):
+                    self.id = r['id']
+                    self.full_name = r.get('full_name')
+                    self.email = r['email']
+                    self.role = r['role']
+            return SimpleRecruiter(rec_row)
         
         # Neither found
         logger.error(f"No user found for email: {token_data.email}")
@@ -185,17 +244,35 @@ async def get_current_recruiter_or_user(
         
         logger.info(f"Token verified for email: {token_data.email}")
         
-        # Try to get recruiter FIRST (prioritize recruiters)
-        recruiter = await recruiter_crud.get_by_email(db, email=token_data.email)
-        if recruiter is not None:
-            logger.info(f"Found recruiter user: {recruiter.id} - {recruiter.email} with role: {getattr(recruiter, 'role', 'N/A')}")
-            return recruiter
+        # Try to get recruiter FIRST (prioritize recruiters) using global pool
+        rec_row = await global_pool.fetchrow(
+            "SELECT id, full_name, email, role FROM recruiters WHERE email = $1 LIMIT 1",
+            token_data.email
+        )
+        if rec_row is not None:
+            logger.info(f"Found recruiter user: {rec_row['id']} - {rec_row['email']} with role: {rec_row['role']}")
+            class SimpleRecruiter:
+                def __init__(self, r):
+                    self.id = r['id']
+                    self.full_name = r.get('full_name')
+                    self.email = r['email']
+                    self.role = r['role']
+            return SimpleRecruiter(rec_row)
         
-        # Try to get candidate as fallback
-        user = await candidate_crud.get_by_email(db, email=token_data.email)
-        if user is not None:
-            logger.info(f"Found candidate user: {user.id} - {user.email} with role: {getattr(user, 'role', 'N/A')}")
-            return user
+        # Try to get candidate as fallback via global pool
+        cand_row = await global_pool.fetchrow(
+            "SELECT id, name, email, role FROM candidates WHERE email = $1 LIMIT 1",
+            token_data.email
+        )
+        if cand_row is not None:
+            logger.info(f"Found candidate user: {cand_row['id']} - {cand_row['email']} with role: {cand_row['role']}")
+            class SimpleCandidate:
+                def __init__(self, r):
+                    self.id = r['id']
+                    self.name = r.get('name')
+                    self.email = r['email']
+                    self.role = r['role']
+            return SimpleCandidate(cand_row)
         
         # Neither found
         logger.error(f"No user found for email: {token_data.email}")
@@ -303,8 +380,10 @@ async def login(
     db: AsyncSession = Depends(get_db_session),
     request: Request = None
 ):
-    """Login user with optimized performance"""
+    """Login user fast using direct asyncpg (target < 2-3s)."""
     import time
+    import os
+    import asyncpg
     start_time = time.time()
     
     try:
@@ -315,90 +394,80 @@ async def login(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid email format"
             )
-        
-        # Get user with optimized raw SQL query
-        from sqlalchemy import text
-        
-        user_query = text("""
-            SELECT id, name, email, password_hash, role, location, domain, 
-                   expected_salary_min, expected_salary_max, summary, created_at
-            FROM candidates 
-            WHERE email = :email 
-            LIMIT 1
-        """)
-        
-        result = await db.execute(user_query, {"email": email})
-        user_row = result.fetchone()
-        
-        if not user_row:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password. Please check your credentials and try again.",
-                headers={"WWW-Authenticate": "Bearer"},
+
+        # Prepare DSN compatible with asyncpg
+        dsn = os.getenv('DATABASE_URL')
+        if dsn and dsn.startswith('postgresql+asyncpg://'):
+            dsn = dsn.replace('postgresql+asyncpg://', 'postgresql://', 1)
+
+        # Use direct connection per request for stability and speed
+        conn = await asyncpg.connect(
+            dsn=dsn,
+            command_timeout=5,
+            timeout=5,
+            statement_cache_size=0  # Disable prepared statements for PgBouncer compatibility
+        )
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, email, password_hash, role, location, domain,
+                       expected_salary_min, expected_salary_max, summary, created_at
+                FROM candidates
+                WHERE email = $1
+                LIMIT 1
+                """,
+                email
             )
-        
-        # Create a simple user object for password verification
-        class SimpleUser:
-            def __init__(self, row):
-                self.id = row[0]
-                self.name = row[1]
-                self.email = row[2]
-                self.password_hash = row[3]
-                self.role = row[4]
-                self.location = row[5]
-                self.domain = row[6]
-                self.expected_salary_min = row[7]
-                self.expected_salary_max = row[8]
-                self.summary = row[9]
-                self.created_at = row[10]
-        
-        user = SimpleUser(user_row)
-        
-        # Verify password
-        if not verify_password(user_credentials.password, user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password. Please check your credentials and try again.",
-                headers={"WWW-Authenticate": "Bearer"},
+
+            if not row:
+                # Constant-time verify to avoid timing side-channels
+                simulate_constant_time_verify()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect email or password. Please check your credentials and try again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Verify password
+            if not verify_password(user_credentials.password, row[3]):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect email or password. Please check your credentials and try again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            user_id = row[0]
+            user_email = row[2]
+            user_role = row[4]
+
+            # Create tokens efficiently
+            access_token_expires = timedelta(minutes=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = create_access_token(
+                data={"sub": user_email, "user_id": user_id, "role": user_role},
+                expires_delta=access_token_expires
             )
-        
-        # Skip session limit check for faster login (optional optimization)
-        # active_sessions = await get_active_sessions_count(user.id)
-        # if active_sessions >= SecurityConfig.MAX_SESSIONS_PER_USER:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail=f"Maximum sessions limit reached ({SecurityConfig.MAX_SESSIONS_PER_USER}). Please logout from other devices."
-        #     )
-        
-        # Create tokens efficiently
-        access_token_expires = timedelta(minutes=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": user.email, "user_id": user.id, "role": user.role},
-            expires_delta=access_token_expires
-        )
-        
-        refresh_token = create_refresh_token(
-            data={"sub": user.email, "user_id": user.id, "role": user.role}
-        )
-        
-        # Store tokens asynchronously (don't wait for completion)
-        # await store_refresh_token(user.id, refresh_token)
-        # session_id = secrets.token_urlsafe(32)
-        # await store_user_session(user.id, session_id)
-        
-        # Log login with performance metrics
-        elapsed = time.time() - start_time
-        logger.info(f"User logged in: {user.email} in {elapsed:.3f}s")
-        
-        return TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_type="bearer",
-            expires_in=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            user_id=user.id,
-            role=user.role
-        )
-        
+            refresh_token = create_refresh_token(
+                data={"sub": user_email, "user_id": user_id, "role": user_role}
+            )
+
+            elapsed = time.time() - start_time
+            logger.info(f"User logged in: {user_email} in {elapsed:.3f}s")
+
+            return TokenResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_type="bearer",
+                expires_in=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                user_id=user_id,
+                role=user_role
+            )
+        finally:
+            try:
+                await conn.close()
+            except Exception:
+                # Ignore close timeouts to avoid masking successful logins
+                pass
+
     except HTTPException:
         raise
     except Exception as e:

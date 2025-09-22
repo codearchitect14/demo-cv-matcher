@@ -36,3 +36,4 @@ FROM information_schema.columns
 WHERE table_name = 'jobs' 
 AND column_name = 'recruiter_id';
 
+

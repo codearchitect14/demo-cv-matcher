@@ -210,3 +210,4 @@ if __name__ == "__main__":
     else:
         print("\n❌ Qualification recalculation failed. Please check the error messages above.")
 
+

@@ -10,6 +10,7 @@ from models.candidate import Candidate
 from models.job import Job
 from db.crud.application import application as application_crud
 from api.routers.auth import get_current_user
+from config.connection_pool import global_pool
 from schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 from middleware.recruiter_auth import get_current_recruiter, RecruiterContext
 
@@ -174,10 +175,9 @@ async def get_all_applications_public(
             where_conditions.append(f"a.job_id = ${param_count}")
             params.append(job_id)
         
-        # Build the final query
+        # Build the final query (asyncpg positional params)
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
-        
-        query = text(f"""
+        query = f"""
             SELECT 
                 a.id, a.job_id, a.candidate_id, a.status, a.created_at, a.updated_at,
                 a.candidate_score, a.is_qualified,
@@ -192,58 +192,57 @@ async def get_all_applications_public(
             LEFT JOIN recruiters r ON j.recruiter_id = r.id
             WHERE {where_clause}
             ORDER BY a.created_at DESC
-            LIMIT :limit OFFSET :skip
-        """)
-        
-        result = await db.execute(query, params)
-        rows = result.fetchall()
+            LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+        """
+        params.extend([limit, skip])
+        rows = await global_pool.fetch(query, *params)
         
         response_applications = []
         for row in rows:
             app_data = {
-                "id": row[0],
-                "job_id": row[1],
-                "candidate_id": row[2],
-                "status": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
-                "candidate_score": float(row[6]) if row[6] else None,
-                "is_qualified": row[7]
+                "id": row['id'],
+                "job_id": row['job_id'],
+                "candidate_id": row['candidate_id'],
+                "status": row['status'],
+                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None,
+                "candidate_score": float(row['candidate_score']) if row['candidate_score'] is not None else None,
+                "is_qualified": row['is_qualified']
             }
             
             # Add candidate data if available
-            if row[8]:  # candidate_name exists
+            if row['candidate_name']:
                 app_data["candidate"] = {
-                    "id": row[2],  # candidate_id
-                    "name": row[8],
-                    "email": row[9],
-                    "location": row[10],
-                    "domain": row[11],
-                    "expected_salary_min": row[12],
-                    "expected_salary_max": row[13]
+                    "id": row['candidate_id'],
+                    "name": row['candidate_name'],
+                    "email": row['candidate_email'],
+                    "location": row['candidate_location'],
+                    "domain": row['candidate_domain'],
+                    "expected_salary_min": row['expected_salary_min'],
+                    "expected_salary_max": row['expected_salary_max']
                 }
             
             # Add job data if available
-            if row[14]:  # job_title exists
+            if row['job_title']:
                 app_data["job"] = {
-                    "id": row[1],  # job_id
-                    "title": row[14],
-                    "company": row[15],
-                    "location": row[16],
-                    "domain": row[17],
-                    "salary_min": row[18],
-                    "salary_max": row[19],
-                    "total_years_required": row[20],
-                    "threshold_score": row[21],
-                    "recruiter_id": row[22]
+                    "id": row['job_id'],
+                    "title": row['job_title'],
+                    "company": row['company'],
+                    "location": row['job_location'],
+                    "domain": row['job_domain'],
+                    "salary_min": row['salary_min'],
+                    "salary_max": row['salary_max'],
+                    "total_years_required": row['total_years_required'],
+                    "threshold_score": row['threshold_score'],
+                    "recruiter_id": row['recruiter_id']
                 }
                 
                 # Add recruiter data if available
-                if row[23]:  # recruiter_name exists
+                if row['recruiter_name']:
                     app_data["recruiter"] = {
-                        "id": row[22],  # recruiter_id
-                        "name": row[23],
-                        "email": row[24]
+                        "id": row['recruiter_id'],
+                        "name": row['recruiter_name'],
+                        "email": row['recruiter_email']
                     }
             
             response_applications.append(app_data)
@@ -450,12 +449,11 @@ async def update_application_status_public(
             detail=f"Failed to update application: {str(e)}"
         )
 
-@router.post("/public", response_model=ApplicationResponse)
+@router.post("/public")
 async def create_application_public(
-    application_data: ApplicationCreate,
-    db: AsyncSession = Depends(get_db_session)
+    application_data: ApplicationCreate
 ):
-    """Create application for testing (public endpoint)"""
+    """Create application for testing (public endpoint) - uses direct asyncpg to avoid greenlet issues"""
     try:
         print(f"DEBUG: Creating application - candidate_id: {application_data.candidate_id}, job_id: {application_data.job_id}")
         
@@ -466,32 +464,48 @@ async def create_application_public(
                 detail="candidate_id is required for public endpoint"
             )
         
-        # Check if already applied
-        existing_application = await application_crud.get_by_candidate_and_job(
-            db, candidate_id=application_data.candidate_id, job_id=application_data.job_id
+        # Check if already applied using direct query
+        existing_check = await global_pool.fetchrow(
+            "SELECT id FROM applications WHERE candidate_id = $1 AND job_id = $2",
+            application_data.candidate_id, application_data.job_id
         )
         
-        if existing_application:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Already applied for this job"
-            )
+        if existing_check:
+            # Return 200 OK with info message instead of error
+            return {
+                "id": existing_check['id'],
+                "candidate_id": application_data.candidate_id,
+                "job_id": application_data.job_id,
+                "status": "APPLIED",
+                "message": "You have already applied to this job!"
+            }
         
-        # Create application with proper status handling
-        application_data_dict = application_data.model_dump()
-        # Ensure status is properly set - convert enum to string value
-        if 'status' in application_data_dict and application_data_dict['status']:
-            # If status is an enum object, convert it to its value
-            if hasattr(application_data_dict['status'], 'value'):
-                application_data_dict['status'] = application_data_dict['status'].value
-            elif isinstance(application_data_dict['status'], ApplicationStatusEnum):
-                application_data_dict['status'] = application_data_dict['status'].value
-        else:
-            application_data_dict['status'] = ApplicationStatusEnum.APPLIED.value
+        # Prepare status value
+        status_value = 'APPLIED'
+        if hasattr(application_data.status, 'value'):
+            status_value = application_data.status.value
+        elif isinstance(application_data.status, str):
+            status_value = application_data.status.upper()
         
-        application = await application_crud.create(db, obj_in=application_data_dict)
+        # Create application using direct query
+        application_id = await global_pool.fetchval(
+            """
+            INSERT INTO applications (candidate_id, job_id, status, created_at, updated_at)
+            VALUES ($1, $2, $3, NOW(), NOW())
+            RETURNING id
+            """,
+            application_data.candidate_id, application_data.job_id, status_value
+        )
         
-        return application
+        # Return simple success response to avoid greenlet issues
+        return {
+            "id": application_id,
+            "candidate_id": application_data.candidate_id,
+            "job_id": application_data.job_id,
+            "status": status_value,
+            "message": "Application submitted successfully"
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -666,52 +680,45 @@ async def get_my_applications(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000)
 ):
-    """Get applications for the current authenticated user"""
+    """Get applications for the current authenticated user - asyncpg path for speed."""
     try:
-        # Use raw SQL to avoid enum issues
-        from sqlalchemy import text
-        
-        query = text("""
+        rows = await global_pool.fetch(
+            """
             SELECT 
                 a.id, a.job_id, a.candidate_id, a.status, a.created_at, a.updated_at,
                 j.title as job_title, j.company, j.location as job_location, j.domain as job_domain,
                 j.salary_min, j.salary_max, j.total_years_required
             FROM applications a
             LEFT JOIN jobs j ON a.job_id = j.id
-            WHERE a.candidate_id = :candidate_id
+            WHERE a.candidate_id = $1
             ORDER BY a.created_at DESC
-            LIMIT :limit OFFSET :skip
-        """)
-        
-        result = await db.execute(query, {
-            "candidate_id": current_user.id,
-            "limit": limit,
-            "skip": skip
-        })
-        rows = result.fetchall()
-        
+            LIMIT $2 OFFSET $3
+            """,
+            current_user.id, limit, skip
+        )
+
         applications = []
         for row in rows:
             app_data = {
-                "id": row[0],
-                "job_id": row[1],
-                "candidate_id": row[2],
-                "status": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
+                "id": row['id'],
+                "job_id": row['job_id'],
+                "candidate_id": row['candidate_id'],
+                "status": row['status'],
+                "created_at": row['created_at'],
+                "updated_at": row['updated_at'],
                 "job": {
-                    "id": row[1],
-                    "title": row[6],
-                    "company": row[7],
-                    "location": row[8],
-                    "domain": row[9],
-                    "salary_min": row[10],
-                    "salary_max": row[11],
-                    "total_years_required": row[12]
-                } if row[6] else None
+                    "id": row['job_id'],
+                    "title": row['job_title'],
+                    "company": row['company'],
+                    "location": row['job_location'],
+                    "domain": row['job_domain'],
+                    "salary_min": row['salary_min'],
+                    "salary_max": row['salary_max'],
+                    "total_years_required": row['total_years_required']
+                } if row['job_title'] else None
             }
             applications.append(app_data)
-        
+
         return applications
     except Exception as e:
         print(f"Get my applications error: {e}")
