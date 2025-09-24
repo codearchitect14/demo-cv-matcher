@@ -1,26 +1,43 @@
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import apiService from '../api';
 
 const CandidateRegistration = ({ onRegistrationSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm({
+    defaultValues: {
+      skills: [{ name: '', years: 0 }]
+    }
+  });
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "skills"
+  });
 
   const onSubmit = async (data) => {
     setLoading(true);
     setMessage('');
     
     try {
+      // Filter out empty skills
+      const skills = data.skills.filter(skill => skill.name && skill.name.trim() !== '');
+      
       const candidateData = {
         name: data.name,
         email: data.email,
+        password: data.password,
         location: data.location,
         domain: data.domain,
         expected_salary_min: parseFloat(data.expected_salary_min),
         expected_salary_max: parseFloat(data.expected_salary_max),
         summary: data.summary,
-        consent_given: data.consent_given || false
+        consent_given: data.consent_given || false,
+        total_experience_years: data.total_experience_years ? parseInt(data.total_experience_years) : null,
+        skills: skills.length > 0 ? skills.map(skill => ({
+          name: skill.name.trim(),
+          years: parseInt(skill.years) || 0
+        })) : null
       };
 
       const response = await apiService.createCandidate(candidateData);
@@ -74,6 +91,22 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
         </div>
 
         <div className="form-group">
+          <label>Password *</label>
+          <input
+            type="password"
+            {...register('password', { 
+              required: 'Password is required',
+              minLength: {
+                value: 8,
+                message: 'Password must be at least 8 characters'
+              }
+            })}
+            placeholder="Enter your password"
+          />
+          {errors.password && <span style={{color: 'red'}}>{typeof errors.password.message === 'string' ? errors.password.message : JSON.stringify(errors.password.message)}</span>}
+        </div>
+
+        <div className="form-group">
           <label>Location *</label>
           <input
             type="text"
@@ -84,19 +117,36 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
         </div>
 
         <div className="form-group">
-          <label>Domain *</label>
+          <label>Professional Domain *</label>
           <select {...register('domain', { required: 'Domain is required' })}>
             <option value="">Select domain</option>
-            <option value="Software Development">Software Development</option>
-            <option value="Data Science">Data Science</option>
+            <option value="IT">IT</option>
+            <option value="AI">AI</option>
+            <option value="Healthcare">Healthcare</option>
+            <option value="Education">Education</option>
+            <option value="Retail">Retail</option>
+            <option value="Finance">Finance</option>
             <option value="Marketing">Marketing</option>
             <option value="Sales">Sales</option>
-            <option value="Finance">Finance</option>
             <option value="HR">HR</option>
             <option value="Design">Design</option>
             <option value="Product Management">Product Management</option>
           </select>
           {errors.domain && <span style={{color: 'red'}}>{typeof errors.domain.message === 'string' ? errors.domain.message : JSON.stringify(errors.domain.message)}</span>}
+        </div>
+
+        <div className="form-group">
+          <label>Total Years of Experience *</label>
+          <input
+            type="number"
+            {...register('total_experience_years', { 
+              required: 'Total experience is required',
+              min: { value: 0, message: 'Experience must be 0 or more' },
+              max: { value: 50, message: 'Experience cannot exceed 50 years' }
+            })}
+            placeholder="Enter total years of professional experience"
+          />
+          {errors.total_experience_years && <span style={{color: 'red'}}>{typeof errors.total_experience_years.message === 'string' ? errors.total_experience_years.message : JSON.stringify(errors.total_experience_years.message)}</span>}
         </div>
 
         <div className="form-group">
@@ -126,7 +176,65 @@ const CandidateRegistration = ({ onRegistrationSuccess }) => {
         </div>
 
         <div className="form-group">
-          <label>Summary</label>
+          <label>Skills with Years of Experience</label>
+          {fields.map((field, index) => (
+            <div key={field.id} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="Skill name (e.g., Python)"
+                {...register(`skills.${index}.name`, { required: index === 0 ? 'At least one skill is required' : false })}
+                style={{ flex: 1 }}
+              />
+              <input
+                type="number"
+                placeholder="Years"
+                min="0"
+                max="20"
+                {...register(`skills.${index}.years`, { 
+                  required: index === 0 ? 'Years of experience is required' : false,
+                  min: { value: 0, message: 'Must be 0 or more' },
+                  max: { value: 20, message: 'Cannot exceed 20 years' }
+                })}
+                style={{ width: '80px' }}
+              />
+              {fields.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => remove(index)}
+                  style={{ 
+                    background: '#dc3545', 
+                    color: 'white', 
+                    border: 'none', 
+                    padding: '8px 12px', 
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => append({ name: '', years: 0 })}
+            style={{ 
+              background: '#28a745', 
+              color: 'white', 
+              border: 'none', 
+              padding: '8px 16px', 
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginTop: '10px'
+            }}
+          >
+            Add Another Skill
+          </button>
+          {errors.skills && <span style={{color: 'red'}}>Please fill in at least one skill</span>}
+        </div>
+
+        <div className="form-group">
+          <label>Professional Summary</label>
           <textarea
             {...register('summary')}
             placeholder="Enter your professional summary"

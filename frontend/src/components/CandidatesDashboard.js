@@ -15,11 +15,22 @@ const CandidatesDashboard = () => {
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [showCVUpload, setShowCVUpload] = useState(false);
   const [cvFile, setCvFile] = useState(null);
+  const [showSkillsManagement, setShowSkillsManagement] = useState(false);
+  const [skills, setSkills] = useState([]);
+  const [showAddSkillForm, setShowAddSkillForm] = useState(false);
+  const [editingSkill, setEditingSkill] = useState(null);
+  const [pendingSkills, setPendingSkills] = useState([]);
   
   const [profileData, setProfileData] = useState({
     name: '', email: '', location: '', domain: '',
     expected_salary_min: '', expected_salary_max: '', summary: '',
-    phone: '', linkedin_url: '', github_url: ''
+    phone: '', linkedin_url: '', github_url: '', total_experience_years: ''
+  });
+
+  const [skillFormData, setSkillFormData] = useState({
+    skill: '',
+    years: '',
+    description: ''
   });
 
   useEffect(() => {
@@ -33,6 +44,7 @@ const CandidatesDashboard = () => {
     fetchUserProfile();
     fetchApplications();
     fetchJobRecommendations();
+    fetchSkills();
   }, [navigate]);
 
   const fetchUserProfile = async () => {
@@ -73,7 +85,8 @@ const CandidatesDashboard = () => {
           summary: data.summary || '',
           phone: data.phone || '',
           linkedin_url: data.linkedin_url || '',
-          github_url: data.github_url || ''
+          github_url: data.github_url || '',
+          total_experience_years: data.total_experience_years || ''
         });
       } else if (response.status === 401) {
         console.log('Unauthorized - using default profile');
@@ -258,7 +271,7 @@ const CandidatesDashboard = () => {
           }
           setError(errorMessages.join(', ') || 'Validation error occurred');
         } else {
-          setError(errorData.detail || 'Failed to apply for job');
+          setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to apply for job');
         }
       }
     } catch (error) {
@@ -277,6 +290,200 @@ const CandidatesDashboard = () => {
   const closeJobDetails = () => {
     setShowJobModal(false);
     setSelectedJob(null);
+  };
+
+  // Skills Management Functions
+  const fetchSkills = async () => {
+    try {
+      console.log('Fetching skills...');
+      const token = localStorage.getItem('access_token');
+      
+      if (!token) {
+        console.log('No token found, using empty skills');
+        setSkills([]);
+        return;
+      }
+      
+      // Get skills from user profile (experiences)
+      const response = await fetch('http://localhost:8000/api/v1/candidates/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const profile = await response.json();
+        console.log('Profile with experiences:', profile);
+        setSkills(profile.experiences || []);
+      } else {
+        console.error('Failed to fetch skills:', response.status);
+        setSkills([]);
+      }
+    } catch (error) {
+      console.error('Error fetching skills:', error);
+      setSkills([]);
+    }
+  };
+
+  const handleAddSkillToPending = (e) => {
+    e.preventDefault();
+    
+    // Validate form data
+    if (!skillFormData.skill.trim() || !skillFormData.years) {
+      setError('Please fill in skill name and years of experience');
+      return;
+    }
+    
+    // Add to pending skills
+    const newSkill = {
+      id: Date.now(), // Temporary ID for frontend
+      skill: skillFormData.skill.trim(),
+      years: parseInt(skillFormData.years),
+      description: skillFormData.description.trim() || null,
+      isNew: true
+    };
+    
+    setPendingSkills([...pendingSkills, newSkill]);
+    setSkillFormData({ skill: '', years: '', description: '' });
+    setError('');
+  };
+
+  const handleRemovePendingSkill = (skillId) => {
+    setPendingSkills(pendingSkills.filter(skill => skill.id !== skillId));
+  };
+
+  const handleSaveAllSkills = async () => {
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const token = localStorage.getItem('access_token');
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Save each pending skill
+      for (const skill of pendingSkills) {
+        try {
+          const response = await fetch(`http://localhost:8000/api/v1/candidates/${userProfile.id}/experience`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              skill: skill.skill,
+              years: skill.years,
+              description: skill.description
+            })
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        setMessage(`${successCount} skill${successCount > 1 ? 's' : ''} added successfully!`);
+        setPendingSkills([]);
+        fetchSkills(); // Refresh skills list
+      }
+      
+      if (errorCount > 0) {
+        setError(`Failed to add ${errorCount} skill${errorCount > 1 ? 's' : ''}. Please try again.`);
+      }
+    } catch (error) {
+      setError('Failed to save skills. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditSkill = (skill) => {
+    setEditingSkill(skill);
+    setSkillFormData({
+      skill: skill.skill,
+      years: skill.years.toString(),
+      description: skill.description || ''
+    });
+    setShowAddSkillForm(true);
+  };
+
+  const handleUpdateSkill = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`http://localhost:8000/api/v1/candidates/${userProfile.id}/experience/${editingSkill.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          skill: skillFormData.skill,
+          years: parseInt(skillFormData.years),
+          description: skillFormData.description.trim() || null
+        })
+      });
+
+      if (response.ok) {
+        setMessage('Skill updated successfully!');
+        setSkillFormData({ skill: '', years: '', description: '' });
+        setEditingSkill(null);
+        setShowAddSkillForm(false);
+        fetchSkills(); // Refresh skills list
+      } else {
+        const errorData = await response.json();
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to update skill');
+      }
+    } catch (error) {
+      setError('Failed to update skill');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSkill = async (skillId) => {
+    if (!window.confirm('Are you sure you want to delete this skill?')) {
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`http://localhost:8000/api/v1/candidates/${userProfile.id}/experience/${skillId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        setMessage('Skill deleted successfully!');
+        fetchSkills(); // Refresh skills list
+      } else {
+        const errorData = await response.json();
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to delete skill');
+      }
+    } catch (error) {
+      setError('Failed to delete skill');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdateProfile = async (e) => {
@@ -302,7 +509,7 @@ const CandidatesDashboard = () => {
         fetchUserProfile();
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Failed to update profile');
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to update profile');
       }
     } catch (error) {
       setError('Failed to update profile');
@@ -341,7 +548,7 @@ const CandidatesDashboard = () => {
         setCvFile(null);
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Failed to upload CV');
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to upload CV');
       }
     } catch (error) {
       setError('Failed to upload CV');
@@ -392,7 +599,7 @@ const CandidatesDashboard = () => {
           }
           setError(errorMessages.join(', ') || 'Validation error occurred');
         } else {
-          setError(errorData.detail || 'Failed to apply for job');
+          setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to apply for job');
         }
       }
     } catch (error) {
@@ -441,6 +648,9 @@ const CandidatesDashboard = () => {
           <div className="header-right">
             <button className="btn-secondary" onClick={() => navigate('/my-applications')}>
               <span>My applications</span>
+            </button>
+            <button className="btn-secondary" onClick={() => setShowSkillsManagement(true)}>
+              <span>Manage Skills</span>
             </button>
             <button className="btn-profile" onClick={() => setShowProfileForm(true)}>
               <span>Profile</span>
@@ -661,6 +871,24 @@ const CandidatesDashboard = () => {
               
               <div className="form-row">
                 <div className="form-group">
+                  <label>Total Professional Experience (Years)</label>
+                  <input
+                    type="number"
+                    value={profileData.total_experience_years}
+                    onChange={(e) => setProfileData({...profileData, total_experience_years: e.target.value})}
+                    placeholder="0"
+                    min="0"
+                    max="50"
+                    step="0.5"
+                  />
+                </div>
+                <div className="form-group">
+                  {/* Empty div to maintain two-column layout */}
+                </div>
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
                   <label>Expected Salary (Min)</label>
                   <input
                     type="number"
@@ -792,6 +1020,179 @@ const CandidatesDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Skills Management Modal */}
+      {showSkillsManagement && (
+        <div className="modal-overlay" onClick={() => setShowSkillsManagement(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header"></div>
+            
+            {/* Skills List Section */}
+            <div className="skills-list-section">
+              <div className="skills-header">
+                <h3>Your Skills ({skills.length})</h3>
+                <button 
+                  className="btn-primary"
+                  onClick={() => {
+                    setShowAddSkillForm(true);
+                    setEditingSkill(null);
+                    setSkillFormData({ skill: '', years: '', description: '' });
+                  }}
+                >
+                  + Add New Skill
+                </button>
+              </div>
+              
+              {skills.length === 0 ? (
+                <div className="no-skills">
+                  <p>No skills added yet. Add your first skill to get started!</p>
+                </div>
+              ) : (
+                <div className="skills-list">
+                  {skills.map((skill) => (
+                    <div key={skill.id} className="skill-item">
+                      <div className="skill-info">
+                        <div className="skill-name">{skill.skill}</div>
+                        <div className="skill-years">{skill.years} year{skill.years !== 1 ? 's' : ''} experience</div>
+                        {skill.description && (
+                          <div className="skill-description">{skill.description}</div>
+                        )}
+                      </div>
+                      <div className="skill-actions">
+                        <button 
+                          className="btn-edit"
+                          onClick={() => handleEditSkill(skill)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn-delete"
+                          onClick={() => handleDeleteSkill(skill.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pending Skills Section */}
+            {pendingSkills.length > 0 && (
+              <div className="pending-skills-section">
+                <div className="pending-skills-header">
+                  <h4>Skills to Add ({pendingSkills.length})</h4>
+                  <button 
+                    className="btn-save-all"
+                    onClick={handleSaveAllSkills}
+                    disabled={loading}
+                  >
+                    {loading ? 'Saving...' : 'Save All Skills'}
+                  </button>
+                </div>
+                
+                <div className="pending-skills-list">
+                  {pendingSkills.map((skill) => (
+                    <div key={skill.id} className="pending-skill-item">
+                      <div className="pending-skill-info">
+                        <div className="pending-skill-name">{skill.skill}</div>
+                        <div className="pending-skill-years">{skill.years} year{skill.years !== 1 ? 's' : ''} experience</div>
+                        {skill.description && (
+                          <div className="pending-skill-description">{skill.description}</div>
+                        )}
+                      </div>
+                      <button 
+                        className="btn-remove-pending"
+                        onClick={() => handleRemovePendingSkill(skill.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Add/Edit Skill Form */}
+            {showAddSkillForm && (
+              <form onSubmit={editingSkill ? handleUpdateSkill : handleAddSkillToPending}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Skill Name *</label>
+                    <input
+                      type="text"
+                      value={skillFormData.skill}
+                      onChange={(e) => setSkillFormData({...skillFormData, skill: e.target.value})}
+                      placeholder="e.g., Python, JavaScript, React"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Years of Experience *</label>
+                    <input
+                      type="number"
+                      value={skillFormData.years}
+                      onChange={(e) => setSkillFormData({...skillFormData, years: e.target.value})}
+                      placeholder="0"
+                      min="0"
+                      max="20"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Description (Optional)</label>
+                  <textarea
+                    value={skillFormData.description}
+                    onChange={(e) => setSkillFormData({...skillFormData, description: e.target.value})}
+                    placeholder="Brief description of your experience with this skill..."
+                    rows="3"
+                  />
+                </div>
+                
+                <div className="modal-actions">
+                  <button 
+                    type="button" 
+                    className="btn-cancel"
+                    onClick={() => {
+                      setShowAddSkillForm(false);
+                      setEditingSkill(null);
+                      setSkillFormData({ skill: '', years: '', description: '' });
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-save"
+                    disabled={loading}
+                  >
+                    {loading ? 'Adding...' : (editingSkill ? 'Update Skill' : 'Add to List')}
+                  </button>
+                </div>
+              </form>
+            )}
+            
+            {/* Close Modal Button */}
+            <div className="modal-actions">
+              <button 
+                className="btn-cancel"
+                onClick={() => {
+                  setShowSkillsManagement(false);
+                  setShowAddSkillForm(false);
+                  setEditingSkill(null);
+                  setPendingSkills([]);
+                  setSkillFormData({ skill: '', years: '', description: '' });
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

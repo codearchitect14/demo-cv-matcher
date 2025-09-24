@@ -13,7 +13,9 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
     domain: '',
     expected_salary_min: '',
     expected_salary_max: '',
-    summary: ''
+    summary: '',
+    total_experience_years: '',
+    skills: [{ name: '', years: '' }]
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -31,8 +33,34 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
     });
   };
 
+  const handleSkillChange = (index, field, value) => {
+    const updatedSkills = [...formData.skills];
+    updatedSkills[index][field] = value;
+    setFormData({
+      ...formData,
+      skills: updatedSkills
+    });
+  };
+
+  const addSkill = () => {
+    setFormData({
+      ...formData,
+      skills: [...formData.skills, { name: '', years: '' }]
+    });
+  };
+
+  const removeSkill = (index) => {
+    if (formData.skills.length > 1) {
+      const updatedSkills = formData.skills.filter((_, i) => i !== index);
+      setFormData({
+        ...formData,
+        skills: updatedSkills
+      });
+    }
+  };
+
   const nextStep = () => {
-    if (currentStep < 3) {
+    if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -56,6 +84,9 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
     }
 
     try {
+      // Filter out empty skills
+      const skills = formData.skills.filter(skill => skill.name && skill.name.trim() !== '');
+      
       const requestBody = {
         name: formData.name,
         email: formData.email,
@@ -64,7 +95,13 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
         domain: formData.domain,
         expected_salary_min: parseInt(formData.expected_salary_min),
         expected_salary_max: parseInt(formData.expected_salary_max),
-        summary: formData.summary
+        summary: formData.summary,
+        total_experience_years: formData.total_experience_years ? parseInt(formData.total_experience_years) : null,
+        skills: skills.length > 0 ? skills.map(skill => ({
+          name: skill.name.trim(),
+          years: parseInt(skill.years) || 0,
+          description: null  // Description is optional for registration
+        })) : null
       };
 
       const response = await fetch('http://localhost:8000/api/v1/auth/register', {
@@ -83,7 +120,7 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
         navigate('/login-new');
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Registration failed');
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Registration failed');
       }
     } catch (err) {
       setError('Network error. Please try again.');
@@ -166,17 +203,43 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
       </div>
 
       <div className="form-group">
-        <input
-          type="text"
+        <select
           name="domain"
-          placeholder=" "
           value={formData.domain}
+          onChange={handleChange}
+          className="form-input"
+          required
+        >
+          <option value="">Select Professional Domain</option>
+          <option value="IT">IT</option>
+          <option value="AI">AI</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Education">Education</option>
+          <option value="Retail">Retail</option>
+          <option value="Finance">Finance</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Sales">Sales</option>
+          <option value="HR">HR</option>
+          <option value="Design">Design</option>
+          <option value="Product Management">Product Management</option>
+        </select>
+        <label className="form-label">Professional Domain</label>
+      </div>
+
+      <div className="form-group">
+        <input
+          type="number"
+          name="total_experience_years"
+          placeholder=" "
+          value={formData.total_experience_years}
           onChange={handleChange}
           className="form-input"
           autoComplete="off"
           required
+          min="0"
+          max="50"
         />
-        <label className="form-label">Professional Domain</label>
+        <label className="form-label">Total Years of Experience</label>
       </div>
 
       <div className="salary-group">
@@ -215,6 +278,73 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
 
   const renderStep3 = () => (
     <div className="form-step">
+      <h3 style={{ marginBottom: '20px', color: '#333' }}>Add Your Skills</h3>
+      {formData.skills.map((skill, index) => (
+        <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '15px', alignItems: 'center' }}>
+          <div className="form-group" style={{ flex: 1 }}>
+            <input
+              type="text"
+              placeholder=" "
+              value={skill.name}
+              onChange={(e) => handleSkillChange(index, 'name', e.target.value)}
+              className="form-input"
+              required={index === 0}
+            />
+            <label className="form-label">Skill Name (e.g., Python)</label>
+          </div>
+          <div className="form-group" style={{ width: '120px' }}>
+            <input
+              type="number"
+              placeholder=" "
+              value={skill.years}
+              onChange={(e) => handleSkillChange(index, 'years', e.target.value)}
+              className="form-input"
+              required={index === 0}
+              min="0"
+              max="20"
+            />
+            <label className="form-label">Years</label>
+          </div>
+          {formData.skills.length > 1 && (
+            <button
+              type="button"
+              onClick={() => removeSkill(index)}
+              style={{
+                background: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={addSkill}
+        style={{
+          background: '#28a745',
+          color: 'white',
+          border: 'none',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontSize: '14px',
+          marginTop: '10px'
+        }}
+      >
+        + Add Another Skill
+      </button>
+    </div>
+  );
+
+  const renderStep4 = () => (
+    <div className="form-step">
       <div className="form-group">
         <textarea
           name="summary"
@@ -251,10 +381,14 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           </div>
           <div className={`progress-step ${currentStep >= 2 ? 'active' : ''}`}>
             <div className="step-number">2</div>
-            <div className="step-label">Location & Domain</div>
+            <div className="step-label">Profile</div>
           </div>
           <div className={`progress-step ${currentStep >= 3 ? 'active' : ''}`}>
             <div className="step-number">3</div>
+            <div className="step-label">Skills</div>
+          </div>
+          <div className={`progress-step ${currentStep >= 4 ? 'active' : ''}`}>
+            <div className="step-number">4</div>
             <div className="step-label">Summary</div>
           </div>
         </div>
@@ -270,6 +404,7 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           {currentStep === 1 && renderStep1()}
           {currentStep === 2 && renderStep2()}
           {currentStep === 3 && renderStep3()}
+          {currentStep === 4 && renderStep4()}
 
           <div className="form-navigation">
             {currentStep > 1 && (
@@ -278,7 +413,7 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
               </button>
             )}
             
-            {currentStep < 3 ? (
+            {currentStep < 4 ? (
               <button type="button" className="nav-btn next-btn" onClick={nextStep}>
                 Next
               </button>

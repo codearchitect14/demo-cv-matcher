@@ -67,13 +67,14 @@ async def get_candidate_jobs_unified(
         # Fetch candidate data with skills
         candidate_query = """
             SELECT c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
+                   c.total_experience_years,
                    COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
                    COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
                    COALESCE(SUM(ce.years), 0) as total_experience
             FROM candidates c
             LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
             WHERE c.id = $1
-            GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max
+            GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max, c.total_experience_years
         """
         candidate_rows = await global_pool.fetch(candidate_query, current_user.id)
         if not candidate_rows:
@@ -90,7 +91,7 @@ async def get_candidate_jobs_unified(
             "name": c["name"],
             "domain": c["domain"],
             "location": c["location"],
-            "total_experience": c["total_experience"],
+            "total_experience_years": c["total_experience_years"],
             "expected_salary_min": c["expected_salary_min"],
             "expected_salary_max": c["expected_salary_max"],
             "skills": candidate_skills,
@@ -100,6 +101,16 @@ async def get_candidate_jobs_unified(
         results = []
         for row in job_rows:
             jd = dict(row)
+            
+            # Load job skills for proper scoring
+            job_skills_query = """
+                SELECT skill, min_experience
+                FROM job_mandatory_skills
+                WHERE job_id = $1
+            """
+            job_skills_rows = await global_pool.fetch(job_skills_query, jd.get("id"))
+            job_skills = [{"skill": row["skill"], "min_experience": row["min_experience"]} for row in job_skills_rows]
+            
             job_data = {
                 "id": jd.get("id"),
                 "title": jd.get("title", ""),
@@ -108,7 +119,7 @@ async def get_candidate_jobs_unified(
                 "total_years_required": jd.get("total_years_required", 0),
                 "salary_min": jd.get("salary_min"),
                 "salary_max": jd.get("salary_max"),
-                "skills": [],
+                "skills": job_skills,
                 "education_required": None
             }
             score, breakdown = calculate_match_score(candidate_data, job_data)
@@ -204,17 +215,18 @@ async def get_recruiter_candidate_recommendations(
             candidate_data AS (
                 SELECT 
                     c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
+                    c.total_experience_years,
                     COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
                     COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
                     COALESCE(SUM(ce.years), 0) as total_experience
                 FROM candidates c
                 LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
-                GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max
+                GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max, c.total_experience_years
                 LIMIT $2
             )
             SELECT 
                 cd.id, cd.name, cd.domain, cd.location, cd.expected_salary_min, cd.expected_salary_max,
-                cd.skills, cd.skill_years, cd.total_experience,
+                cd.total_experience_years, cd.skills, cd.skill_years, cd.total_experience,
                 j.id as job_id, j.title as job_title, j.domain as job_domain, j.location as job_location,
                 j.total_years_required, j.salary_min, j.salary_max, j.job_description
             FROM candidate_data cd
@@ -307,7 +319,7 @@ async def get_recruiter_candidate_recommendations(
                 "name": rd.get("name"),
                 "domain": rd.get("domain"),
                 "location": rd.get("location"),
-                "total_experience": rd.get("total_experience", 0),
+                "total_experience_years": rd.get("total_experience_years", 0),
                 "expected_salary_min": rd.get("expected_salary_min"),
                 "expected_salary_max": rd.get("expected_salary_max"),
                 "skills": candidate_skills,  # Already formatted correctly

@@ -20,7 +20,7 @@ async def create_candidate(
     candidate_data: CandidateCreate,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """Create a new candidate profile"""
+    """Create a new candidate profile with skills and total experience"""
     try:
         # Check if candidate with this email already exists
         existing_candidate = await candidate_crud.get_by_email(db, email=candidate_data.email)
@@ -30,11 +30,43 @@ async def create_candidate(
                 detail="This email is already in use. Please use a different email address."
             )
         
+        # Extract skills data before creating candidate
+        skills_data = candidate_data.skills or []
+        total_experience = candidate_data.total_experience_years
+        
+        # Create candidate data without skills (they'll be added separately)
+        candidate_create_data = candidate_data.model_dump(exclude={'skills'})
+        
         # Create the candidate
-        candidate = await candidate_crud.create(db, obj_in=candidate_data)
+        candidate = await candidate_crud.create(db, obj_in=candidate_create_data)
+        
+        # Add skills as experiences if provided
+        if skills_data:
+            await candidate_crud.bulk_create_experiences(db, candidate.id, skills_data)
+        
         # Get the candidate with loaded relationships
         candidate_with_relations = await candidate_crud.get_with_experiences(db, candidate.id)
-        return candidate_with_relations
+        
+        # Add total_experience_years and skills to response
+        response_data = {
+            "id": candidate_with_relations.id,
+            "name": candidate_with_relations.name,
+            "email": candidate_with_relations.email,
+            "location": candidate_with_relations.location,
+            "domain": candidate_with_relations.domain,
+            "expected_salary_min": candidate_with_relations.expected_salary_min,
+            "expected_salary_max": candidate_with_relations.expected_salary_max,
+            "summary": candidate_with_relations.summary,
+            "consent_given": candidate_with_relations.consent_given,
+            "role": candidate_with_relations.role,
+            "created_at": candidate_with_relations.created_at,
+            "updated_at": candidate_with_relations.updated_at,
+            "experiences": candidate_with_relations.experiences,
+            "total_experience_years": total_experience,
+            "skills": [{"name": exp.skill, "years": exp.years} for exp in candidate_with_relations.experiences]
+        }
+        
+        return response_data
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -130,7 +162,7 @@ async def get_my_profile(
         row = await global_pool.fetchrow(
             """
             SELECT id, name, email, location, domain, expected_salary_min, expected_salary_max,
-                   summary, consent_given, role, created_at, updated_at
+                   total_experience_years, summary, consent_given, role, created_at, updated_at
             FROM candidates
             WHERE id = $1
             LIMIT 1
@@ -171,6 +203,7 @@ async def get_my_profile(
             "domain": row['domain'],
             "expected_salary_min": row['expected_salary_min'],
             "expected_salary_max": row['expected_salary_max'],
+            "total_experience_years": row['total_experience_years'],
             "summary": row['summary'],
             "consent_given": row['consent_given'],
             "role": row['role'],
@@ -222,7 +255,7 @@ async def update_my_profile(
             UPDATE candidates
             SET {', '.join(set_clauses)}
             WHERE id = ${param_idx}
-            RETURNING id, name, email, location, domain, expected_salary_min, expected_salary_max
+            RETURNING id, name, email, location, domain, expected_salary_min, expected_salary_max, total_experience_years
         """
 
         row = await asyncio.wait_for(global_pool.fetchrow(update_sql, *params), timeout=8.0)
@@ -245,6 +278,7 @@ async def update_my_profile(
             "domain": row["domain"],
             "expected_salary_min": row["expected_salary_min"],
             "expected_salary_max": row["expected_salary_max"],
+            "total_experience_years": row["total_experience_years"],
             "created_at": ts["created_at"].isoformat() if ts and ts["created_at"] else None,
             "updated_at": ts["updated_at"].isoformat() if ts and ts["updated_at"] else None,
             "experiences": [],
@@ -474,7 +508,11 @@ async def add_candidate_experience(
         
         # Add experience using the CRUD method
         await candidate_crud.add_experience(
-            db, candidate_id=candidate_id, experience_data=experience_dict
+            db, 
+            candidate_id=candidate_id, 
+            skill=experience_dict["skill"],
+            years=experience_dict["years"],
+            description=experience_dict.get("description")
         )
         
         # Get the updated candidate and experiences separately
@@ -529,7 +567,11 @@ async def update_candidate_experience(
         experience_dict = experience_data.dict(exclude_unset=True)
         
         experience = await candidate_crud.update_experience(
-            db, candidate_id=candidate_id, experience_id=experience_id, experience_data=experience_dict
+            db, 
+            experience_id=experience_id, 
+            skill=experience_dict["skill"],
+            years=experience_dict["years"],
+            description=experience_dict.get("description")
         )
         return experience
     except HTTPException:
@@ -558,8 +600,8 @@ async def delete_candidate_experience(
                 detail="Can only delete own experience"
             )
         
-        await candidate_crud.remove_experience(
-            db, candidate_id=candidate_id, experience_id=experience_id
+        await candidate_crud.delete_experience(
+            db, experience_id=experience_id
         )
         
         return {"message": "Experience deleted successfully"}

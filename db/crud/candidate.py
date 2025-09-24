@@ -351,6 +351,57 @@ class CRUDCandidate(CRUDBase[Candidate, CandidateCreate, CandidateUpdate]):
         
         return experience_objects
     
+    async def add_experience(
+        self,
+        db: AsyncSession,
+        candidate_id: int,
+        skill: str,
+        years: int,
+        description: Optional[str] = None
+    ) -> CandidateExperience:
+        """Add a single experience for a candidate"""
+        experience = CandidateExperience(
+            candidate_id=candidate_id,
+            skill=skill,
+            years=years,
+            description=description
+        )
+        db.add(experience)
+        await db.commit()
+        await db.refresh(experience)
+        return experience
+    
+    async def update_experience(
+        self,
+        db: AsyncSession,
+        experience_id: int,
+        skill: str,
+        years: int,
+        description: Optional[str] = None
+    ) -> Optional[CandidateExperience]:
+        """Update an experience"""
+        experience = await db.get(CandidateExperience, experience_id)
+        if experience:
+            experience.skill = skill
+            experience.years = years
+            experience.description = description
+            await db.commit()
+            await db.refresh(experience)
+        return experience
+    
+    async def delete_experience(
+        self,
+        db: AsyncSession,
+        experience_id: int
+    ) -> bool:
+        """Delete an experience"""
+        experience = await db.get(CandidateExperience, experience_id)
+        if experience:
+            await db.delete(experience)
+            await db.commit()
+            return True
+        return False
+    
     async def get_candidates_by_skills(
         self, 
         db: AsyncSession, 

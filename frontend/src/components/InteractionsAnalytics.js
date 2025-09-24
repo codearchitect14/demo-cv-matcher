@@ -8,7 +8,8 @@ const InteractionsAnalytics = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('interactions');
-  const [search, setSearch] = useState('');
+  const [searchName, setSearchName] = useState('');
+  const [searchJobTitle, setSearchJobTitle] = useState('');
   const [sortBy, setSortBy] = useState({ key: 'timestamp', dir: 'desc' });
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -189,30 +190,43 @@ const InteractionsAnalytics = () => {
   };
 
   const filteredSorted = () => {
-    let rows = Array.isArray(interactions) ? [...interactions] : [];
-    // Search (by job_id, user_id, interaction_type)
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(r =>
-        String(r.job_id || '').includes(q) ||
-        String(r.user_id || '').includes(q) ||
-        (r.interaction_type || '').toLowerCase().includes(q)
-      );
-    }
-    // Sort
-    rows.sort((a, b) => {
-      const { key, dir } = sortBy;
-      const va = a[key];
-      const vb = b[key];
-      if (key === 'timestamp') {
-        const da = new Date(va).getTime();
-        const db = new Date(vb).getTime();
-        return dir === 'asc' ? da - db : db - da;
+    try {
+      let rows = Array.isArray(interactions) ? [...interactions] : [];
+      
+      // Apply independent filtering
+      if (searchName.trim()) {
+        const nameQuery = searchName.toLowerCase();
+        rows = rows.filter(r => 
+          (r.candidate_name || '').toLowerCase().includes(nameQuery)
+        );
       }
-      if (va === vb) return 0;
-      return dir === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
-    });
-    return rows;
+      
+      if (searchJobTitle.trim()) {
+        const titleQuery = searchJobTitle.toLowerCase();
+        rows = rows.filter(r => 
+          (r.job_title || '').toLowerCase().includes(titleQuery)
+        );
+      }
+      
+      // Sort
+      rows.sort((a, b) => {
+        const { key, dir } = sortBy;
+        const va = a[key];
+        const vb = b[key];
+        if (key === 'timestamp') {
+          const da = new Date(va).getTime();
+          const db = new Date(vb).getTime();
+          return dir === 'asc' ? da - db : db - da;
+        }
+        if (va === vb) return 0;
+        return dir === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+      });
+      return rows;
+    } catch (error) {
+      console.error("Filter failed:", error);
+      // Return full data as fallback
+      return Array.isArray(interactions) ? [...interactions] : [];
+    }
   };
 
   const paginated = () => {
@@ -398,6 +412,30 @@ const InteractionsAnalytics = () => {
   useEffect(() => {
     fetchRecentInteractions();
   }, []);
+
+  // Debug log for table column alignment
+  useEffect(() => {
+    const debugTableAlignment = () => {
+      try {
+        const table = document.querySelector('.interactions-table table');
+        if (table) {
+          const headerCount = table.querySelectorAll('thead tr th').length;
+          table.querySelectorAll('tbody tr').forEach((row, idx) => {
+            const cellCount = row.querySelectorAll('td').length;
+            if (cellCount !== headerCount) {
+              console.warn(`[TableMismatch] row ${idx+1} has ${cellCount} cells but headers=${headerCount}`, row);
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[TableDebugError]', e);
+      }
+    };
+
+    // Run debug check after table renders
+    const timer = setTimeout(debugTableAlignment, 100);
+    return () => clearTimeout(timer);
+  }, [interactions, recentInteractions, selectedCandidate, page]);
 
   // Auto-fetch behavior patterns when switching to behavior tab if candidate is selected
   useEffect(() => {
@@ -591,6 +629,33 @@ const InteractionsAnalytics = () => {
                   </div>
                 </div>
 
+                {/* Table Search Filters */}
+                <div className="filter-section">
+                  <div className="filter-section-title">Filter Table Results</div>
+                  <div className="search-grid">
+                    <div className="search-field">
+                      <label className="search-label">Search Candidate Name</label>
+                      <input
+                        type="text"
+                        value={searchName}
+                        onChange={(e) => setSearchName(e.target.value)}
+                        placeholder="Search by candidate name..."
+                        className="filter-input"
+                      />
+                    </div>
+                    <div className="search-field">
+                      <label className="search-label">Search Job Title</label>
+                      <input
+                        type="text"
+                        value={searchJobTitle}
+                        onChange={(e) => setSearchJobTitle(e.target.value)}
+                        placeholder="Search by job title..."
+                        className="filter-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {selectedCandidate && (
                   <div className="filter-actions">
                     <button 
@@ -638,53 +703,60 @@ const InteractionsAnalytics = () => {
 
               {/* Interactions Table */}
               {(selectedCandidate ? interactions.length > 0 : recentInteractions.length > 0) ? (
-                <div className="table-wrapper">
-                  <table className="interactions-table" role="table" aria-label="Interaction history">
-                    <thead>
-                      <tr>
-                        <th onClick={() => toggleSort('timestamp')} className="sortable-header">
-                          Date <span className="sort-indicator">{sortBy.key==='timestamp' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
-                        </th>
-                        <th onClick={() => toggleSort('interaction_type')} className="sortable-header">
-                          Type <span className="sort-indicator">{sortBy.key==='interaction_type' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
-                        </th>
-                        {!selectedCandidate && (
-                          <th onClick={() => toggleSort('candidate_name')} className="sortable-header">
-                            Candidate <span className="sort-indicator">{sortBy.key==='candidate_name' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                <div className="table-scroll">
+                  <div className="table-container">
+                    <table className="interactions-table" role="table" aria-label="Interaction history">
+                      <thead>
+                        <tr>
+                          <th scope="col" onClick={() => toggleSort('timestamp')} className="col-date">
+                            Date <span className="sort-indicator">{sortBy.key==='timestamp' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
                           </th>
-                        )}
-                        <th onClick={() => toggleSort('job_title')} className="sortable-header">
-                          Job Title <span className="sort-indicator">{sortBy.key==='job_title' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(selectedCandidate ? filteredSorted() : recentInteractions).slice((page-1)*perPage, page*perPage).map((row, idx) => (
-                        <tr key={row.id || idx}>
-                          <td>{new Date(row.timestamp).toLocaleDateString()}</td>
-                          <td>
-                            <span className={`status-badge ${row.interaction_type==='APPLIED'?'status-APPLIED': row.interaction_type==='REJECTED'?'status-REJECTED':'status-VIEWED'}`}>
-                              {row.interaction_type}
-                            </span>
-                          </td>
+                          <th scope="col" onClick={() => toggleSort('interaction_type')} className="col-type">
+                            Type <span className="sort-indicator">{sortBy.key==='interaction_type' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                          </th>
                           {!selectedCandidate && (
-                            <td>
-                              <div className="candidate-info">
-                                <strong>{row.candidate_name || 'Unknown'}</strong>
-                                <small>{row.candidate_email || ''}</small>
-                              </div>
-                            </td>
+                            <th scope="col" onClick={() => toggleSort('candidate_name')} className="col-candidate">
+                              Candidate <span className="sort-indicator">{sortBy.key==='candidate_name' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                            </th>
                           )}
-                                                     <td>
-                             <div className="job-info">
-                               <strong>{row.job_title || `Job #${row.job_id}`}</strong>
-                               <small>{row.company || ''}</small>
-                             </div>
-                           </td>
+                          <th scope="col" onClick={() => toggleSort('job_title')} className="col-job">
+                            Job Title <span className="sort-indicator">{sortBy.key==='job_title' ? (sortBy.dir==='asc'?'▲':'▼') : ''}</span>
+                          </th>
+                          <th scope="col" className="col-company">
+                            Company
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {(selectedCandidate ? filteredSorted() : recentInteractions).slice((page-1)*perPage, page*perPage).map((row, idx) => (
+                          <tr key={row.id || idx}>
+                            <td className="col-date">
+                              {new Date(row.timestamp).toLocaleDateString()}
+                            </td>
+                            <td className="col-type">
+                              <span className={`status-badge ${row.interaction_type==='APPLIED'?'status-APPLIED': row.interaction_type==='REJECTED'?'status-REJECTED':'status-VIEWED'}`}>
+                                {row.interaction_type}
+                              </span>
+                            </td>
+                            {!selectedCandidate && (
+                              <td className="col-candidate">
+                                <div>
+                                  <div className="candidate-name">{row.candidate_name || 'Unknown'}</div>
+                                  <div className="candidate-email">{row.candidate_email || ''}</div>
+                                </div>
+                              </td>
+                            )}
+                            <td className="col-job">
+                              {row.job_title || `Job #${row.job_id}`}
+                            </td>
+                            <td className="col-company">
+                              {row.company || 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
                 <div className="no-results">

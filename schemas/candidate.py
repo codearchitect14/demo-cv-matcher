@@ -23,9 +23,9 @@ class CandidateExperienceBase(BaseModel):
 
     @validator('description')
     def validate_description(cls, v):
-        if v is not None:
+        if v is not None and v.strip():  # Only validate if not None and not empty/whitespace
             return DescriptionValidation(description=v).description
-        return v
+        return None  # Return None for empty strings
 
 class CandidateExperienceCreate(CandidateExperienceBase):
     """Schema for creating candidate experience"""
@@ -124,6 +124,8 @@ class CandidateBase(BaseModel):
 class CandidateCreate(CandidateBase):
     """Schema for creating a candidate"""
     password: str = Field(..., min_length=8, max_length=128)
+    total_experience_years: Optional[int] = Field(None, ge=0, le=50, description="Total years of professional experience")
+    skills: Optional[List[dict]] = Field(None, description="List of skills with years of experience")
 
     @validator('password')
     def validate_password(cls, v):
@@ -131,6 +133,28 @@ class CandidateCreate(CandidateBase):
         is_valid, message = validate_password_with_feedback(v)
         if not is_valid:
             raise ValueError(message)
+        return v
+
+    @validator('total_experience_years')
+    def validate_total_experience(cls, v):
+        if v is not None and (v < 0 or v > 50):
+            raise ValueError('Total experience years must be between 0 and 50')
+        return v
+
+    @validator('skills')
+    def validate_skills(cls, v):
+        if v is not None:
+            if len(v) > 20:
+                raise ValueError('Maximum 20 skills allowed')
+            for skill in v:
+                if not isinstance(skill, dict):
+                    raise ValueError('Each skill must be a dictionary')
+                if 'name' not in skill or 'years' not in skill:
+                    raise ValueError('Each skill must have "name" and "years" fields')
+                if not isinstance(skill['name'], str) or len(skill['name'].strip()) == 0:
+                    raise ValueError('Skill name must be a non-empty string')
+                if not isinstance(skill['years'], int) or skill['years'] < 0 or skill['years'] > 20:
+                    raise ValueError('Skill years must be an integer between 0 and 20')
         return v
 
 class CandidateUpdate(BaseModel):
@@ -143,6 +167,8 @@ class CandidateUpdate(BaseModel):
     expected_salary_max: Optional[int] = Field(None, ge=0, le=1000000)
     summary: Optional[str] = Field(None, min_length=1, max_length=2000)
     role: Optional[str] = Field(None, max_length=20)
+    total_experience_years: Optional[int] = Field(None, ge=0, le=50, description="Total years of professional experience")
+    skills: Optional[List[dict]] = Field(None, description="List of skills with years of experience")
 
     @validator('name')
     def validate_name(cls, v):
@@ -197,12 +223,36 @@ class CandidateUpdate(BaseModel):
                 raise ValueError(f'Role must be one of: {allowed_roles}')
         return v
 
+    @validator('total_experience_years')
+    def validate_total_experience(cls, v):
+        if v is not None and (v < 0 or v > 50):
+            raise ValueError('Total experience years must be between 0 and 50')
+        return v
+
+    @validator('skills')
+    def validate_skills(cls, v):
+        if v is not None:
+            if len(v) > 20:
+                raise ValueError('Maximum 20 skills allowed')
+            for skill in v:
+                if not isinstance(skill, dict):
+                    raise ValueError('Each skill must be a dictionary')
+                if 'name' not in skill or 'years' not in skill:
+                    raise ValueError('Each skill must have "name" and "years" fields')
+                if not isinstance(skill['name'], str) or len(skill['name'].strip()) == 0:
+                    raise ValueError('Skill name must be a non-empty string')
+                if not isinstance(skill['years'], int) or skill['years'] < 0 or skill['years'] > 20:
+                    raise ValueError('Skill years must be an integer between 0 and 20')
+        return v
+
 class CandidateResponse(CandidateBase):
     """Schema for candidate response"""
     id: int
     created_at: datetime
     updated_at: datetime
     experiences: List[CandidateExperienceResponse] = []
+    total_experience_years: Optional[int] = None
+    skills: Optional[List[dict]] = None
     
     class Config:
         from_attributes = True

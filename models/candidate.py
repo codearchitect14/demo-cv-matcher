@@ -27,6 +27,7 @@ class Candidate(BaseModel):
     email = Column(String(255), nullable=False, unique=True, index=True)
     consent_given = Column(Boolean, nullable=False, default=False, index=True)
     role = Column(String(20), nullable=False, default="user", index=True)  # user, admin, moderator
+    total_experience_years = Column(Integer, nullable=True, index=True)  # Total years of professional experience
     
     # Relationships
     experiences = relationship("CandidateExperience", back_populates="candidate", cascade="all, delete-orphan")

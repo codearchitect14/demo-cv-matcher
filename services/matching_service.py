@@ -64,7 +64,7 @@ class MatchingService:
             
             # 4. Experience Score (15% weight)
             experience_score = self._calculate_experience_score(
-                candidate.get('total_experience', 0),
+                candidate.get('total_experience_years', 0),
                 job.get('total_years_required', 1)
             )
             
@@ -120,7 +120,7 @@ class MatchingService:
             domain_score = self._calculate_domain_score(candidate.get('domain'), job.get('domain'))
             location_score = self._calculate_location_score(candidate.get('location'), job.get('location'))
             experience_score = self._calculate_experience_score(
-                candidate.get('total_experience', 0), job.get('total_years_required', 1)
+                candidate.get('total_experience_years', 0), job.get('total_years_required', 1)
             )
             education_score = self._calculate_education_score(
                 candidate.get('education'), job.get('education_required')
@@ -140,11 +140,18 @@ class MatchingService:
             ) * 100
             final_score = max(0.0, min(100.0, final_score))
 
+            # Calculate experience details for explanation
+            candidate_exp = float(candidate.get('total_experience_years', 0))
+            job_required_exp = float(job.get('total_years_required', 1))
+            experience_percentage = round(experience_score * 100, 1)
+            experience_explanation = f"{candidate_exp}/{job_required_exp} years matched ({experience_percentage}%)"
+            
             breakdown = {
                 "skills_score": round(skills_score, 3),
                 "domain_score": round(domain_score, 3),
                 "location_score": round(location_score, 3),
                 "experience_score": round(experience_score, 3),
+                "experience_explanation": experience_explanation,
                 "education_score": round(education_score, 3),
                 "salary_score": round(salary_score, 3)
             }
@@ -163,10 +170,18 @@ class MatchingService:
         job_title: str = ""
     ) -> float:
         """
-        Calculate skills matching score with semantic matching
+        Calculate skills matching score using per-skill experience matching.
+        
+        Scoring logic:
+        1. For each job.mandatory_skill {name, required_years}, check candidate.skills for same name.
+        2. If candidate_years >= required_years → skill_score = 1.0
+        3. If candidate_years < required_years → skill_score = candidate_years / required_years
+        4. Missing skill → skill_score = 0
+        5. Overall skill_score = average of all mandatory skills.
+        6. Important: Surplus in one skill does NOT compensate for shortage in another.
         
         Args:
-            candidate_skills: [{"skill": "Python", "years": 3}, ...]
+            candidate_skills: [{"skill": "Python", "years": 3}, ...] or [{"name": "Python", "years": 3}, ...]
             job_skills: [{"skill": "Python", "min_experience": 2}, ...]
             job_title: Job title for skill inference if no explicit skills
             
@@ -202,17 +217,17 @@ class MatchingService:
                 # If no required skills, assume perfect match
                 return 1.0
             
-            # Create candidate skill map (safe string handling)
+            # Create candidate skill map (handle both old and new format)
             candidate_skill_map = {}
             for skill in candidate_skills:
-                skill_name = str(skill.get('skill', '')).lower().strip()
+                # Handle both formats: {"skill": "Python", "years": 3} and {"name": "Python", "years": 3}
+                skill_name = str(skill.get('skill') or skill.get('name', '')).lower().strip()
                 years = skill.get('years', 0)
                 if skill_name and isinstance(years, (int, float)) and years > 0:
                     candidate_skill_map[skill_name] = years
             
-            # Count matched skills using semantic similarity
-            matched_skills = 0
-            total_match_score = 0.0
+            # Calculate individual skill scores
+            individual_skill_scores = []
             
             for required_skill in required_skills:
                 skill_name = str(required_skill.get('skill', '')).lower().strip()
@@ -221,31 +236,36 @@ class MatchingService:
                 if not skill_name:
                     continue
                 
-                # Check for exact match first
-                if skill_name in candidate_skill_map:
-                    candidate_years = candidate_skill_map[skill_name]
+                candidate_years = candidate_skill_map.get(skill_name, 0)
+                
+                if candidate_years > 0:
+                    # Direct skill match
                     if candidate_years >= required_years:
-                        matched_skills += 1
-                        total_match_score += 1.0
+                        skill_score = 1.0  # Perfect match
                     else:
-                        # Partial credit for having the skill but less experience
-                        partial_score = candidate_years / required_years
-                        total_match_score += min(partial_score, 0.7)
+                        skill_score = candidate_years / required_years  # Partial match
+                    individual_skill_scores.append(skill_score)
                 else:
-                    # Check for semantic similarity (simplified)
+                    # Check for semantic match if no direct match
                     semantic_match = self._find_semantic_skill_match(skill_name, candidate_skill_map)
                     if semantic_match:
-                        candidate_years = candidate_skill_map[semantic_match]
-                        if candidate_years >= required_years:
-                            matched_skills += 1
-                            total_match_score += 0.8  # Slight penalty for semantic match
+                        candidate_years_sem = candidate_skill_map[semantic_match]
+                        if candidate_years_sem >= required_years:
+                            skill_score = 0.8  # Perfect semantic match (reduced score)
                         else:
-                            partial_score = candidate_years / required_years * 0.8
-                            total_match_score += min(partial_score, 0.6)
+                            skill_score = (candidate_years_sem / required_years) * 0.8  # Partial semantic match
+                        individual_skill_scores.append(skill_score)
+                    else:
+                        # Missing skill - score = 0
+                        individual_skill_scores.append(0.0)
             
-            # Calculate final skills score
-            skills_ratio = total_match_score / len(required_skills)
-            return min(1.0, skills_ratio)
+            # Calculate overall skills score as average of individual skill scores
+            if individual_skill_scores:
+                skills_score = sum(individual_skill_scores) / len(individual_skill_scores)
+            else:
+                skills_score = 0.0
+            
+            return min(1.0, skills_score)
             
         except Exception as e:
             logger.error(f"Error calculating skills score: {e}")
@@ -363,22 +383,50 @@ class MatchingService:
         return 0.0
     
     def _calculate_experience_score(self, candidate_experience: float, required_experience: float) -> float:
-        """Calculate experience matching score"""
-        if required_experience <= 0:
-            return 1.0  # No experience required
+        """
+        Calculate experience matching score based on total_experience_years
         
-        candidate_experience = float(candidate_experience or 0)
-        required_experience = float(required_experience)
-        
-        # Perfect match or overqualified
-        if candidate_experience >= required_experience:
-            # Slight bonus for being overqualified, but cap it
-            bonus = min((candidate_experience - required_experience) / required_experience * 0.1, 0.2)
-            return min(1.0 + bonus, 1.0)
-        
-        # Underqualified - linear decrease
-        experience_ratio = candidate_experience / required_experience
-        return max(0.0, experience_ratio)
+        Args:
+            candidate_experience: Candidate's total_experience_years
+            required_experience: Job's total_years_required
+            
+        Returns:
+            Experience score between 0-1 (15% weight in final score)
+        """
+        try:
+            if required_experience <= 0:
+                return 1.0  # No experience required
+            
+            # Handle None values properly
+            if candidate_experience is None:
+                candidate_experience = 0.0
+                logger.warning(f"Candidate has None total_experience_years, defaulting to 0")
+            else:
+                candidate_experience = float(candidate_experience)
+            
+            if required_experience is None:
+                required_experience = 1.0
+                logger.warning(f"Job has None total_years_required, defaulting to 1")
+            else:
+                required_experience = float(required_experience)
+            
+            # Log warning if candidate has no total_experience_years
+            if candidate_experience == 0:
+                logger.warning(f"Candidate has no total_experience_years, defaulting to 0")
+            
+            # Perfect match or overqualified
+            if candidate_experience >= required_experience:
+                # Slight bonus for being overqualified, but cap it
+                bonus = min((candidate_experience - required_experience) / required_experience * 0.1, 0.2)
+                return min(1.0 + bonus, 1.0)
+            
+            # Underqualified - linear decrease
+            experience_ratio = candidate_experience / required_experience
+            return max(0.0, experience_ratio)
+            
+        except Exception as e:
+            logger.error(f"Error calculating experience score: {e}")
+            return 0.0
     
     def _calculate_education_score(self, candidate_education: Optional[str], required_education: Optional[str]) -> float:
         """Calculate education matching score"""
