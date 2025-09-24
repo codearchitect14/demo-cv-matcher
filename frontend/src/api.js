@@ -332,73 +332,39 @@ export const apiService = {
   },
 
   searchJobs: async (searchData) => {
-    // Accept string or object; map to GET params
-    let params = {};
-    let queryString = undefined;
-    if (typeof searchData === 'string') {
-      params = { domain: searchData };
-      queryString = searchData;
-    } else if (searchData && typeof searchData === 'object') {
-      const { query, domain, location, salary_min, salary_max, limit } = searchData;
-      params = {
-        domain: domain ?? query ?? undefined,
-        location: location ?? undefined,
-        salary_min: salary_min ?? undefined,
-        salary_max: salary_max ?? undefined,
-        limit: limit ?? 10,
-      };
-      queryString = query ?? domain ?? '';
-    }
-    
-    console.log('Searching with params:', params);
-    console.log('Query string:', queryString);
-    
-    // Primary: semantic/filter search
+    // Use candidate unified recommendations with filtering and unified scoring
     try {
-      const primary = await api.get('/search/jobs', { params });
-      let results = primary.data || [];
-      if (Array.isArray(results) && results.length > 0) {
-        console.log('Primary search returned results:', results.length);
-        return results;
+      let params = {};
+      if (typeof searchData === 'string') {
+        params = { title: searchData, limit: 10 };
+      } else if (searchData && typeof searchData === 'object') {
+        const { query, location, limit } = searchData;
+        params = {
+          title: query,
+          location: location,
+          limit: limit || 10
+        };
+        Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
       }
+      const response = await api.get('/recommendations/candidate/jobs', { params, timeout: 35000 });
+      const jobs = response.data || [];
+      return jobs.map(j => ({
+        job_id: j.job_id || j.id,
+        title: j.title || 'Untitled Position',
+        company: j.company || 'Unknown Company',
+        location: j.location || 'Remote',
+        salary_min: j.salary_min,
+        salary_max: j.salary_max,
+        domain: j.domain || 'General',
+        match_score: typeof j.match_score === 'number' ? j.match_score : 0,
+        explanation: j.explanation || {},
+        is_valid: true,
+        validation_reasons: []
+      }));
     } catch (error) {
-      console.log('Primary search failed, trying fallback:', error);
+      console.error('Unified job search failed:', error);
+      return [];
     }
-
-    // Fallback: basic jobs search by title/company
-    if (queryString) {
-      try {
-        console.log('Trying fallback search for:', queryString);
-        const fallback = await api.get('/jobs', { params: { search: queryString, limit: params.limit || 10 } });
-        const jobs = fallback.data || [];
-        console.log('Fallback jobs found:', jobs.length);
-        
-        // Map basic jobs to JobRecommendation-like objects expected by UI
-        const mapped = jobs.map((j, idx) => ({
-          job_id: j.id,
-          title: j.title || 'Untitled Position',
-          company: j.company || 'Unknown Company',
-          location: j.location || 'Remote',
-          salary_min: j.salary_min,
-          salary_max: j.salary_max,
-          domain: j.domain || 'General',
-          similarity_score: 0.6 + (idx * 0.02),
-          combined_score: Math.max(0.3, Math.min(1, 0.6 + (idx * 0.03))),
-          filter_score: 0.5 + (idx * 0.01),
-          ml_score: 0.5 + (idx * 0.01),
-          is_valid: true,
-          validation_reasons: [],
-          explanation: `Job matches search criteria for "${queryString}"`
-        }));
-        console.log('Mapped jobs:', mapped.length);
-        return mapped;
-      } catch (error) {
-        console.error('Fallback search also failed:', error);
-      }
-    }
-
-    console.log('No results found from either search method');
-    return []; // empty array if both fail
   },
 
   searchCandidates: async (searchData) => {

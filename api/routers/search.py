@@ -92,41 +92,10 @@ async def search_jobs_get(
             timeout=10.0
         )
 
-        # Convert to response format with realistic scores
-        job_recommendations = []
-        import random
-        
-        # Process database results
+        # Convert to response format WITHOUT any scoring (deterministic)
+        job_recommendations: List[JobRecommendation] = []
         for row in rows:
             job_id, title, company, job_location, job_salary_min, job_salary_max, job_domain, total_years = row
-            
-            # Calculate varied scores based on job data
-            base_score = 0.6  # Base score
-            
-            # Adjust score based on domain match
-            if domain and job_domain and domain.lower() in job_domain.lower():
-                base_score += 0.2
-            
-            # Adjust score based on location match
-            if location and job_location and location.lower() in job_location.lower():
-                base_score += 0.1
-            
-            # Adjust score based on salary range
-            if salary_min and job_salary_min and job_salary_min >= salary_min:
-                base_score += 0.05
-            
-            if salary_max and job_salary_max and job_salary_max <= salary_max:
-                base_score += 0.05
-            
-            # Add some randomness for variety
-            random_factor = random.uniform(-0.1, 0.1)
-            final_score = min(1.0, max(0.3, base_score + random_factor))
-            
-            # Calculate individual scores
-            semantic_score = final_score * random.uniform(0.8, 1.0)
-            filter_score = final_score * random.uniform(0.7, 0.9)
-            ml_score = final_score * random.uniform(0.6, 0.8)
-            
             job_recommendations.append(JobRecommendation(
                 job_id=job_id,
                 title=title,
@@ -135,18 +104,11 @@ async def search_jobs_get(
                 salary_min=job_salary_min,
                 salary_max=job_salary_max,
                 domain=job_domain,
-                similarity_score=semantic_score,
-                combined_score=final_score,
-                filter_score=filter_score,
-                ml_score=ml_score,
+                match_score=None,
                 is_valid=True,
                 validation_reasons=[],
-                explanation=f"Job matches search criteria with {final_score*100:.0f}% relevance"
+                explanation="Search result (no scoring)"
             ))
-        
-        # Sort by combined score (highest first)
-        job_recommendations.sort(key=lambda x: x.combined_score, reverse=True)
-        
         logger.info(f"Found {len(job_recommendations)} jobs matching search criteria")
         return job_recommendations
         
@@ -213,41 +175,10 @@ async def search_jobs(
             timeout=10.0
         )
 
-        # Convert to response format with realistic scores
-        job_recommendations = []
-        import random
-        
-        # Process database results
+        # Convert to response format WITHOUT any scoring (deterministic)
+        job_recommendations: List[JobRecommendation] = []
         for row in rows:
             job_id, title, company, job_location, job_salary_min, job_salary_max, job_domain, total_years = row
-            
-            # Calculate varied scores based on job data
-            base_score = 0.6  # Base score
-            
-            # Adjust score based on domain match
-            if search_filter.domain and job_domain and search_filter.domain.lower() in job_domain.lower():
-                base_score += 0.2
-            
-            # Adjust score based on location match
-            if search_filter.location and job_location and search_filter.location.lower() in job_location.lower():
-                base_score += 0.1
-            
-            # Adjust score based on salary range
-            if search_filter.salary_min and job_salary_min and job_salary_min >= search_filter.salary_min:
-                base_score += 0.05
-            
-            if search_filter.salary_max and job_salary_max and job_salary_max <= search_filter.salary_max:
-                base_score += 0.05
-            
-            # Add some randomness for variety
-            random_factor = random.uniform(-0.1, 0.1)
-            final_score = min(1.0, max(0.3, base_score + random_factor))
-            
-            # Calculate individual scores
-            semantic_score = final_score * random.uniform(0.8, 1.0)
-            filter_score = final_score * random.uniform(0.7, 0.9)
-            ml_score = final_score * random.uniform(0.6, 0.8)
-            
             job_recommendations.append(JobRecommendation(
                 job_id=job_id,
                 title=title,
@@ -256,18 +187,11 @@ async def search_jobs(
                 salary_min=job_salary_min,
                 salary_max=job_salary_max,
                 domain=job_domain,
-                similarity_score=semantic_score,
-                combined_score=final_score,
-                filter_score=filter_score,
-                ml_score=ml_score,
+                match_score=None,
                 is_valid=True,
                 validation_reasons=[],
-                explanation=f"Job matches search criteria with {final_score*100:.0f}% relevance"
+                explanation="Search result (no scoring)"
             ))
-        
-        # Sort by combined score (highest first)
-        job_recommendations.sort(key=lambda x: x.combined_score, reverse=True)
-        
         logger.info(f"Found {len(job_recommendations)} jobs matching search criteria")
         return job_recommendations
         

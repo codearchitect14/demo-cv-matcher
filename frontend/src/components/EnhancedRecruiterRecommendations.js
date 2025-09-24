@@ -232,6 +232,13 @@ const EnhancedRecruiterRecommendations = () => {
   };
 
   const calculateRealisticScore = (recommendation) => {
+    // USE UNIFIED BACKEND SCORE DIRECTLY - NO FRONTEND OVERRIDE
+    const backendScore = typeof recommendation.match_score === 'number' ? recommendation.match_score : 25;
+    // Backend already returns 0-100 percentage, just ensure it's within bounds
+    return Math.round(Math.max(0, Math.min(100, backendScore)));
+    
+    // OLD FRONTEND CALCULATION REMOVED - We now trust the unified backend scoring
+    /*
     const skills = recommendation.skill_matches || [];
     const totalSkills = skills.length + (recommendation.missing_skills?.length || 0);
     
@@ -240,33 +247,7 @@ const EnhancedRecruiterRecommendations = () => {
       const backendScore = typeof recommendation.match_score === 'number' ? recommendation.match_score : 0.25;
       const clamped = Math.max(0.15, Math.min(backendScore, 1));
       return Math.round(clamped * 100);
-    }
-    
-    let skillScore = 0;
-    let experienceScore = 0;
-    
-    // Skills matching (45%)
-    const metRequirements = skills.filter(s => s.meets_requirement).length;
-    const partialMatch = skills.filter(s => !s.meets_requirement && s.candidate_years > 0).length;
-    skillScore = ((metRequirements * 1.0 + partialMatch * 0.5) / totalSkills) * 45;
-    
-    // Experience level (20%)
-    if (skills.length > 0) {
-      const avgExperienceRatio = skills.reduce((acc, skill) => {
-        return acc + Math.min(skill.candidate_years / Math.max(skill.required_years, 1), 1);
-      }, 0) / skills.length;
-      experienceScore = avgExperienceRatio * 20;
-    } else {
-      experienceScore = 10; // Base score
-    }
-    
-    // Other factors (35% - simplified for now)
-    const semanticScore = 15; // Could be improved with actual semantic analysis
-    const educationScore = 5;
-    const softSkillsScore = 5;
-    const domainScore = 10;
-    
-    return Math.round(skillScore + experienceScore + semanticScore + educationScore + softSkillsScore + domainScore);
+    */
   };
 
   return (

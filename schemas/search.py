@@ -65,7 +65,7 @@ class SearchFilter(BaseModel):
     min_experience: Optional[int] = None
 
 class JobRecommendation(BaseModel):
-    """Job recommendation from semantic search with filtering and ML ranking"""
+    """Job search/recommendation item with unified scoring only"""
     job_id: int
     title: str
     company: str
@@ -73,10 +73,8 @@ class JobRecommendation(BaseModel):
     salary_min: Optional[int]
     salary_max: Optional[int]
     domain: Optional[str]
-    similarity_score: float
-    combined_score: Optional[float] = None
-    filter_score: Optional[float] = None
-    ml_score: Optional[float] = None
+    # Unified scoring: only expose match_score when present; otherwise omitted
+    match_score: Optional[float] = None
     is_valid: Optional[bool] = True
     validation_reasons: Optional[List[str]] = []
     explanation: str

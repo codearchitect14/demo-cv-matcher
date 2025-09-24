@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from config.database import get_db_session
 from services.enhanced_recommendation_service import EnhancedRecommendationService
@@ -21,6 +24,116 @@ from models.candidate import Candidate
 from api.routers.auth import get_current_user
 
 router = APIRouter(tags=["Recommendations"])
+# New: Candidate-facing unified jobs endpoint using shared scorer
+@router.get("/candidate/jobs")
+async def get_candidate_jobs_unified(
+    current_user: Candidate = Depends(get_current_user),
+    title: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db_session),
+    debug: bool = Query(False)
+):
+    """List jobs filtered by optional criteria and score them for the current candidate using the unified scorer."""
+    try:
+        from config.connection_pool import global_pool
+        import asyncio
+        from services.scoring import calculate_match_score
+
+        where_conditions = []
+        params = []
+        param_count = 0
+        if title:
+            param_count += 1
+            where_conditions.append(f"title ILIKE ${param_count}")
+            params.append(f"%{title}%")
+        if location:
+            param_count += 1
+            where_conditions.append(f"location ILIKE ${param_count}")
+            params.append(f"%{location}%")
+        where_clause = " AND " . join(where_conditions) if where_conditions else "1=1"
+
+        jobs_query = f"""
+            SELECT id, title, company, location, salary_min, salary_max, domain, total_years_required, job_description
+            FROM jobs
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_count + 1}
+        """
+        params.append(limit)
+
+        job_rows = await asyncio.wait_for(global_pool.fetch(jobs_query, *params), timeout=6.0)
+
+        # Fetch candidate data with skills
+        candidate_query = """
+            SELECT c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
+                   COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
+                   COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
+                   COALESCE(SUM(ce.years), 0) as total_experience
+            FROM candidates c
+            LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
+            WHERE c.id = $1
+            GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max
+        """
+        candidate_rows = await global_pool.fetch(candidate_query, current_user.id)
+        if not candidate_rows:
+            return []
+        c = candidate_rows[0]
+        candidate_skills = []
+        if c["skills"] and c["skill_years"]:
+            candidate_skills = [
+                {"skill": skill, "years": years}
+                for skill, years in zip(c["skills"], c["skill_years"])
+            ]
+        candidate_data = {
+            "id": c["id"],
+            "name": c["name"],
+            "domain": c["domain"],
+            "location": c["location"],
+            "total_experience": c["total_experience"],
+            "expected_salary_min": c["expected_salary_min"],
+            "expected_salary_max": c["expected_salary_max"],
+            "skills": candidate_skills,
+            "education": None
+        }
+
+        results = []
+        for row in job_rows:
+            jd = dict(row)
+            job_data = {
+                "id": jd.get("id"),
+                "title": jd.get("title", ""),
+                "domain": jd.get("domain"),
+                "location": jd.get("location"),
+                "total_years_required": jd.get("total_years_required", 0),
+                "salary_min": jd.get("salary_min"),
+                "salary_max": jd.get("salary_max"),
+                "skills": [],
+                "education_required": None
+            }
+            score, breakdown = calculate_match_score(candidate_data, job_data)
+            logger.info(f"[Score] candidate_id={candidate_data.get('id')} job_id={job_data.get('id')} match_score={score}")
+            item = {
+                "job_id": jd.get("id"),
+                "title": jd.get("title"),
+                "company": jd.get("company"),
+                "location": jd.get("location"),
+                "salary_min": jd.get("salary_min"),
+                "salary_max": jd.get("salary_max"),
+                "domain": jd.get("domain"),
+                "match_score": score,
+                "explanation": breakdown if debug else {
+                    "note": "enable debug=true to see breakdown"
+                }
+            }
+            results.append(item)
+
+        # Sort by score desc
+        results.sort(key=lambda x: x["match_score"], reverse=True)
+        return results
+    except Exception as e:
+        logger.error(f"Error in candidate unified jobs: {e}")
+        return []
 
 # Initialize enhanced recommendation service
 recommendation_service = EnhancedRecommendationService()
@@ -71,96 +184,191 @@ async def get_candidate_job_recommendations(
 @router.post("/recruiter/candidates")
 async def get_recruiter_candidate_recommendations(
     request: RecruiterRecommendationRequest,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    debug: bool = Query(False)
 ):
     """Get candidate recommendations - SIMPLE VERSION"""
     try:
         from config.connection_pool import global_pool
         import asyncio
         
-        # Simple query - just get candidates
-        query = """
-            SELECT id, name, domain, location
-            FROM candidates
-            LIMIT $1
-        """
-        
         limit = min(max(request.limit or 10, 1), 20)
         
-        rows = await asyncio.wait_for(
-            global_pool.fetch(query, limit),
-            timeout=3.0
-        )
-        
-        # Ultra fast version - single query with everything
+        # Enhanced query with all necessary data for unified scoring
         query = """
             WITH job_info AS (
-                SELECT title, domain FROM jobs WHERE id = $1 LIMIT 1
+                SELECT id, title, domain, location, total_years_required, 
+                       salary_min, salary_max, job_description
+                FROM jobs WHERE id = $1 LIMIT 1
             ),
             candidate_data AS (
                 SELECT 
-                    c.id, c.name, c.domain,
+                    c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
                     COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
-                    COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years
+                    COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
+                    COALESCE(SUM(ce.years), 0) as total_experience
                 FROM candidates c
                 LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
-                GROUP BY c.id, c.name, c.domain
+                GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max
                 LIMIT $2
             )
             SELECT 
-                cd.id, cd.name, cd.domain, cd.skills, cd.skill_years,
-                j.title as job_title, j.domain as job_domain
+                cd.id, cd.name, cd.domain, cd.location, cd.expected_salary_min, cd.expected_salary_max,
+                cd.skills, cd.skill_years, cd.total_experience,
+                j.id as job_id, j.title as job_title, j.domain as job_domain, j.location as job_location,
+                j.total_years_required, j.salary_min, j.salary_max, j.job_description
             FROM candidate_data cd
             CROSS JOIN job_info j
         """
         
         rows = await asyncio.wait_for(
             global_pool.fetch(query, request.job_id, limit),
-            timeout=2.0
+            timeout=3.0
         )
         
-        # Fast processing
+        # Debug: Check if we got any results
+        logger.info(f"Found {len(rows)} candidates for job {request.job_id}")
+        
+        # If no results, try a simpler query
+        if not rows:
+            logger.info("No results from complex query, trying simple query...")
+            simple_query = "SELECT id, name, domain, location FROM candidates LIMIT $1"
+            rows = await asyncio.wait_for(
+                global_pool.fetch(simple_query, limit),
+                timeout=2.0
+            )
+            logger.info(f"Simple query found {len(rows)} candidates")
+            
+            # If still no results, check if candidates table exists and has data
+            if not rows:
+                logger.info("No candidates found, checking candidates table...")
+                count_query = "SELECT COUNT(*) FROM candidates"
+                candidate_count = await global_pool.fetchval(count_query)
+                logger.info(f"Total candidates in database: {candidate_count}")
+                
+                # If we have candidates but complex query failed, try basic query
+                if candidate_count > 0:
+                    logger.info("Candidates exist, trying basic query without joins...")
+                    basic_query = "SELECT id, name, domain, location FROM candidates LIMIT $1"
+                    rows = await global_pool.fetch(basic_query, limit)
+                    logger.info(f"Basic query found {len(rows)} candidates")
+        
+        # Get job skills for more accurate matching - check actual table structure
+        job_skills_query = """
+            SELECT skill, min_years_experience
+            FROM job_skills
+            WHERE job_id = $1
+        """
+        try:
+            job_skills_rows = await global_pool.fetch(job_skills_query, request.job_id)
+            job_skills = [{"skill": row["skill"], "min_experience": row["min_years_experience"]} for row in job_skills_rows]
+        except Exception as e:
+            logger.info(f"Job skills query failed: {e}, trying alternative table structure...")
+            # Try alternative table structure
+            try:
+                alt_query = """
+                    SELECT skill, min_experience
+                    FROM job_mandatory_skills
+                    WHERE job_id = $1
+                """
+                job_skills_rows = await global_pool.fetch(alt_query, request.job_id)
+                job_skills = [{"skill": row["skill"], "min_experience": row["min_experience"]} for row in job_skills_rows]
+            except Exception as e2:
+                logger.info(f"Alternative job skills query also failed: {e2}, using empty skills list")
+                job_skills = []
+        
+        # Import matching service
+        from services.matching_service import matching_service
+        
+        # Process candidates with unified scoring
         recommendations = []
+        
+        # Check if we have full data or simple data
+        has_full_data = len(rows) > 0 and 'total_experience' in rows[0]
+        
+        logger.info(f"Processing {len(rows)} candidates, has_full_data: {has_full_data}")
+        
         for i, row in enumerate(rows):
-            # Simple skill inference from job title
-            title = (row["job_title"] or "").lower()
-            domain = (row["job_domain"] or "").lower()
+            rd = dict(row)
+            logger.info(f"Processing candidate {i+1}/{len(rows)}: {rd.get('name', 'Unknown')} (ID: {rd.get('id', 'Unknown')})")
             
-            job_skills = []
-            if "python" in title or "python" in domain:
-                job_skills.append("Python")
-            if "react" in title or "frontend" in title:
-                job_skills.append("React")
-            if "javascript" in title or "js" in title:
-                job_skills.append("JavaScript")
-            if "node" in title or "backend" in title:
-                job_skills.append("Node.js")
-            if "sql" in title or "database" in title:
-                job_skills.append("SQL")
+            # Prepare candidate data
+            candidate_skills = []
+            if has_full_data and rd.get("skills") and rd.get("skill_years"):
+                candidate_skills = [
+                    {"skill": skill, "years": years} 
+                    for skill, years in zip(rd["skills"], rd["skill_years"])
+                ]
+                logger.info(f"Candidate {rd.get('id')} has {len(candidate_skills)} skills")
             
-            # If no skills inferred, use common skills
-            if not job_skills:
-                job_skills = ["Python", "JavaScript", "React"]
+            # Prepare candidate data for unified scoring
+            candidate_data = {
+                "id": rd.get("id"),
+                "name": rd.get("name"),
+                "domain": rd.get("domain"),
+                "location": rd.get("location"),
+                "total_experience": rd.get("total_experience", 0),
+                "expected_salary_min": rd.get("expected_salary_min"),
+                "expected_salary_max": rd.get("expected_salary_max"),
+                "skills": candidate_skills,  # Already formatted correctly
+                "education": rd.get("education")  # Add education if available
+            }
             
-            # Get candidate skills
-            candidate_skills = row["skills"] or []
-            candidate_years = row["skill_years"] or []
-            skill_map = dict(zip(candidate_skills, candidate_years))
+            # Prepare job data for unified scoring
+            job_data = {
+                "id": request.job_id,
+                "title": rd.get("job_title", ""),
+                "domain": rd.get("job_domain"),
+                "location": rd.get("job_location"),
+                "total_years_required": rd.get("total_years_required", 0),
+                "salary_min": rd.get("salary_min"),
+                "salary_max": rd.get("salary_max"),
+                "skills": job_skills,  # Already formatted correctly
+                "education_required": rd.get("education_required")  # Add if available
+            }
             
-            # Build skill matches
+            # Calculate unified match score via shared scorer
+            from services.scoring import calculate_match_score
+            match_score, breakdown = calculate_match_score(candidate_data, job_data)
+            logger.info(f"[Score] candidate_id={candidate_data.get('id')} job_id={job_data.get('id')} match_score={match_score}")
+            
+            # Build skill matches for display
             skill_matches = []
             missing_skills = []
             
-            for skill in job_skills[:3]:  # Limit to 3 skills for speed
-                required_years = 2
-                candidate_years = skill_map.get(skill, 0)
+            # Get required skills (from job_skills table or infer from title)
+            required_skills = [skill["skill"] for skill in job_skills] if job_skills else []
+            if not required_skills:
+                # Infer from title if no explicit skills
+                from services.matching_service import matching_service
+                required_skills = matching_service._infer_skills_from_title(rd.get("job_title", ""))
+            
+            # Create candidate skill map
+            candidate_skill_map = {}
+            for s in candidate_skills:
+                name = str((s.get("skill") if isinstance(s, dict) else getattr(s, "skill", "")) or "").lower()
+                years = (s.get("years") if isinstance(s, dict) else getattr(s, "years", 0)) or 0
+                if name:
+                    candidate_skill_map[name] = years
+             
+            for required_skill in required_skills[:5]:  # Limit to 5 skills for display
+                required_skill_lower = str(required_skill or "").lower()
+                candidate_years = candidate_skill_map.get(required_skill_lower, 0)
+                required_years = 2  # Default
+                
+                # Get actual required years from job_skills
+                for js in job_skills:
+                    js_name = str((js.get("skill") if isinstance(js, dict) else getattr(js, "skill", "")) or "").lower()
+                    if js_name == required_skill_lower:
+                        required_years = (js.get("min_experience") if isinstance(js, dict) else getattr(js, "min_experience", 2)) or 2
+                        break
                 
                 if candidate_years > 0:
                     meets = candidate_years >= required_years
                     prof = "expert" if candidate_years >= 4 else "intermediate" if candidate_years >= 2 else "beginner"
                     
                     skill_matches.append({
-                        "skill_name": skill,
+                        "skill_name": required_skill,
                         "required_years": required_years,
                         "candidate_years": candidate_years,
                         "match_score": round(min(candidate_years / required_years, 1.0), 2),
@@ -168,27 +376,53 @@ async def get_recruiter_candidate_recommendations(
                         "meets_requirement": meets
                     })
                 else:
-                    missing_skills.append(skill)
+                    missing_skills.append(required_skill)
             
-            # Calculate score
-            match_ratio = len(skill_matches) / len(job_skills) if job_skills else 0
-            score = 0.4 + (match_ratio * 0.4) + (i * 0.02)  # 40-80% range
+            # Build strengths from top candidate skills
+            strengths = []
+            if candidate_skills:
+                top_skills = sorted(candidate_skills, key=lambda x: x["years"], reverse=True)[:3]
+                strengths = [f"Experienced in {skill.get('skill')} ({skill.get('years', 0)} years)" for skill in top_skills]
+            else:
+                strengths = ["Strong technical background"]
             
-            recommendations.append({
-                "candidate_id": row["id"],
-                "candidate_name": row["name"] or f"Candidate #{row['id']}",
-                "job_id": request.job_id,
-                "match_score": round(min(score, 0.95), 2),
-                "explanation": f"Candidate has {len(skill_matches)} of {len(job_skills)} required skills",
-                "skill_matches": skill_matches,
-                "missing_skills": missing_skills,
-                "experience_gaps": [],
-                "strengths": [f"Experienced in {skill}" for skill in candidate_skills[:3]] if candidate_skills else ["Strong technical background"]
-            })
+            if has_full_data:
+                  rec_item = {
+                    "candidate_id": rd.get("id"),
+                    "candidate_name": rd.get("name") or f"Candidate #{rd.get('id')}",
+                    "job_id": request.job_id,
+                    "match_score": match_score,
+                    "explanation": f"Unified score based on skills, domain, location, experience, education, and salary compatibility",
+                    "skill_matches": skill_matches,
+                    "missing_skills": missing_skills,
+                    "experience_gaps": [],
+                    "strengths": strengths
+                  }
+                  if debug and breakdown:
+                      rec_item["debug_breakdown"] = breakdown
+                  recommendations.append(rec_item)
+            else:
+                # Simple fallback recommendation
+                recommendations.append({
+                    "candidate_id": rd.get("id"),
+                    "candidate_name": rd.get("name") or f"Candidate #{rd.get('id')}",
+                    "job_id": request.job_id,
+                    "match_score": match_score,
+                    "explanation": "Basic score - full scoring requires complete candidate data",
+                    "skill_matches": [],
+                    "missing_skills": [],
+                    "experience_gaps": [],
+                    "strengths": ["Available for consideration"]
+                })
         
+        # Sort by match score descending
+        recommendations.sort(key=lambda x: x["match_score"], reverse=True)
+        
+        logger.info(f"Returning {len(recommendations)} recommendations")
         return recommendations
         
     except Exception as e:
+        logger.error(f"Error in recruiter recommendations: {e}")
         return []  # Return empty on any error
 
 @router.post("/cv/upload")

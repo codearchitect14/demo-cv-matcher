@@ -106,11 +106,11 @@ const JobSearch = () => {
       filtered = filtered.filter(j => (j.company || '').toLowerCase().includes(q));
     }
 
-    // Sort by match score (highest first)
+    // Sort by match score (highest first) using unified match_score when present
     filtered.sort((a, b) => {
-      const scoreA = a.combined_score || 0;
-      const scoreB = b.combined_score || 0;
-      return scoreB - scoreA; // Descending order (highest first)
+      const scoreA = (typeof a.match_score === 'number' ? a.match_score : (a.combined_score || 0))
+      const scoreB = (typeof b.match_score === 'number' ? b.match_score : (b.combined_score || 0))
+      return scoreB - scoreA;
     });
 
     console.log('Final filtered count:', filtered.length);
@@ -130,7 +130,8 @@ const JobSearch = () => {
     try {
       console.log('Searching for:', formData.query.trim());
       const params = {
-        domain: formData.query.trim(),
+        query: formData.query.trim(), // Use query instead of domain for title search
+        domain: undefined, // Don't filter by domain unless specified
         location: filters.location || undefined,
         limit: 10,
       };
@@ -235,8 +236,8 @@ const JobSearch = () => {
   };
 
   const renderJobCard = (job, index) => {
-    const matchScore = Math.round(job.combined_score * 100);
-    const matchClass = getMatchScoreClass(matchScore);
+    const matchScorePct = typeof job.match_score === 'number' ? Math.round(job.match_score) : Math.round((job.combined_score || 0) * 100);
+    const matchClass = getMatchScoreClass(matchScorePct);
 
     return (
       <div key={job.job_id} className={`job-card ${matchClass}-match`}>
@@ -245,7 +246,7 @@ const JobSearch = () => {
             <div className="job-title">{job.title}</div>
             <div className="company-name">{job.company}</div>
           </div>
-          <div className={`match-score ${matchClass}`}>{matchScore}% Match</div>
+          <div className={`match-score ${matchClass}`}>{matchScorePct}% Match</div>
         </div>
         
         <div className="card-content">
@@ -295,7 +296,7 @@ const JobSearch = () => {
   };
 
   const renderJobListItem = (job, index) => {
-    const matchScore = Math.round(job.combined_score * 100);
+    const matchScore = typeof job.match_score === 'number' ? Math.round(job.match_score) : Math.round((job.combined_score || 0) * 100);
     const matchClass = getMatchScoreClass(matchScore);
 
     return (

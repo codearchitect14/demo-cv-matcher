@@ -4,6 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 from models.candidate import Candidate
 from models.recruiter import Recruiter
 from config.database import get_db_session
@@ -317,46 +320,159 @@ async def list_jobs_public(
 async def get_job_recommendations(
     current_user: Candidate = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
-    limit: int = Query(5, ge=1, le=20)
+    limit: int = Query(5, ge=1, le=20),
+    debug: bool = Query(False)
 ):
-    """Get job recommendations for the current candidate - optimized to prevent greenlet_spawn errors"""
+    """Get job recommendations for the current candidate using unified scoring"""
     from config.connection_pool import global_pool
     import asyncio
     
     try:
-        # Use direct asyncpg connection to avoid SQLAlchemy greenlet_spawn issues
-        async def fetch_recommendations():
-            rows = await global_pool.fetch(
-                """
-                SELECT id, title, company, location, salary_min, salary_max, 
-                       domain, total_years_required, job_description, created_at, updated_at
-                FROM jobs 
-                WHERE is_active = TRUE
-                ORDER BY created_at DESC 
-                LIMIT $1
-                """,
-                limit
-            )
-            
-            return [
-                {
-                    "id": r['id'],
-                    "title": r['title'],
-                    "company": r['company'],
-                    "location": r['location'],
-                    "salary_min": r['salary_min'],
-                    "salary_max": r['salary_max'],
-                    "domain": r['domain'],
-                    "total_years_required": r['total_years_required'],
-                    "job_description": r['job_description'] or "",  # Add missing field
-                    "created_at": r['created_at'].isoformat() if r['created_at'] else None,
-                    "updated_at": r['updated_at'].isoformat() if r['updated_at'] else None
-                }
-                for r in rows
+        # Get candidate data with skills
+        candidate_query = """
+            SELECT c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
+                   COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
+                   COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
+                   COALESCE(SUM(ce.years), 0) as total_experience
+            FROM candidates c
+            LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
+            WHERE c.id = $1
+            GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max
+        """
+        
+        candidate_rows = await global_pool.fetch(candidate_query, current_user.id)
+        if not candidate_rows:
+            return []
+        
+        candidate_row = candidate_rows[0]
+        
+        # Prepare candidate data for unified scoring
+        candidate_skills = []
+        if candidate_row["skills"] and candidate_row["skill_years"]:
+            candidate_skills = [
+                {"skill": skill, "years": years} 
+                for skill, years in zip(candidate_row["skills"], candidate_row["skill_years"])
             ]
         
-        # Set timeout to prevent hanging requests
-        recommendations = await asyncio.wait_for(fetch_recommendations(), timeout=10.0)
+        candidate_data = {
+            "id": candidate_row["id"],
+            "name": candidate_row["name"],
+            "domain": candidate_row["domain"],
+            "location": candidate_row["location"],
+            "total_experience": candidate_row["total_experience"],
+            "expected_salary_min": candidate_row["expected_salary_min"],
+            "expected_salary_max": candidate_row["expected_salary_max"],
+            "skills": candidate_skills,
+            "education": candidate_row.get("education")  # Add education if available
+        }
+        
+        # Get jobs with their skills
+        jobs_query = """
+            SELECT j.id, j.title, j.company, j.location, j.salary_min, j.salary_max, 
+                   j.domain, j.total_years_required, j.job_description, j.created_at, j.updated_at
+            FROM jobs j
+            WHERE j.is_active = TRUE
+            ORDER BY j.created_at DESC 
+            LIMIT $1
+        """
+        
+        job_rows = await asyncio.wait_for(
+            global_pool.fetch(jobs_query, min(limit * 2, 20)),  # Max 20 jobs to prevent timeout
+            timeout=8.0
+        )
+        
+        # Import matching service
+        from services.matching_service import matching_service
+        
+        # Get all job skills in one query for efficiency
+        job_ids = [row["id"] for row in job_rows]
+        all_job_skills_query = """
+            SELECT job_id, skill, min_years_experience
+            FROM job_skills
+            WHERE job_id = ANY($1::int[])
+        """
+        try:
+            all_job_skills_rows = await global_pool.fetch(all_job_skills_query, job_ids)
+        except:
+            # Try alternative table
+            try:
+                alt_all_skills_query = """
+                    SELECT job_id, skill, min_experience as min_years_experience
+                    FROM job_mandatory_skills
+                    WHERE job_id = ANY($1::int[])
+                """
+                all_job_skills_rows = await global_pool.fetch(alt_all_skills_query, job_ids)
+            except:
+                all_job_skills_rows = []
+        
+        # Group skills by job_id
+        job_skills_map = {}
+        for skill_row in all_job_skills_rows:
+            job_id = skill_row["job_id"]
+            if job_id not in job_skills_map:
+                job_skills_map[job_id] = []
+            job_skills_map[job_id].append({
+                "skill": skill_row["skill"],
+                "min_experience": skill_row["min_years_experience"]
+            })
+        
+        # Calculate scores for each job
+        scored_jobs = []
+        for job_row in job_rows:
+            jd = dict(job_row)  # Convert asyncpg Record to dict
+            
+            # Get job skills from map
+            job_skills = job_skills_map.get(jd["id"], [])
+            
+            # Prepare job data for unified scoring
+            job_data = {
+                "id": jd.get("id"),
+                "title": jd.get("title", ""),
+                "domain": jd.get("domain"),
+                "location": jd.get("location"),
+                "total_years_required": jd.get("total_years_required", 0),
+                "salary_min": jd.get("salary_min"),
+                "salary_max": jd.get("salary_max"),
+                "skills": job_skills,  # Already formatted correctly
+                "education_required": jd.get("education_required")  # Add if available
+            }
+            # Calculate unified match score via shared scorer
+            from services.scoring import calculate_match_score
+            match_score, breakdown = calculate_match_score(candidate_data, job_data)
+            logger.info(f"[Score] candidate_id={candidate_data.get('id')} job_id={job_data.get('id')} match_score={match_score}")
+
+            scored_jobs.append({
+                "job_data": jd,
+                "match_score": match_score,
+                **({"breakdown": breakdown} if debug and breakdown is not None else {})
+            })
+        
+        # Sort by match score descending and take top results
+        scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
+        top_jobs = scored_jobs[:limit]
+        
+        # Format response
+        recommendations = []
+        for item in top_jobs:
+            job = item["job_data"]
+            rec = {
+                "id": job['id'],
+                "title": job['title'],
+                "company": job['company'],
+                "location": job['location'],
+                "salary_min": job['salary_min'],
+                "salary_max": job['salary_max'],
+                "domain": job['domain'],
+                "total_years_required": job['total_years_required'],
+                "job_description": job['job_description'] or "",
+                "created_at": job['created_at'].isoformat() if job['created_at'] else None,
+                "updated_at": job['updated_at'].isoformat() if job['updated_at'] else None,
+                "match_score": item["match_score"]  # Include match score in response
+            }
+            if debug and 'breakdown' in item:
+                rec['debug_breakdown'] = item['breakdown']
+            recommendations.append(rec)
+        
         return recommendations
         
     except asyncio.TimeoutError:
@@ -365,7 +481,6 @@ async def get_job_recommendations(
         
     except Exception as e:
         logger.error(f"Get job recommendations error: {e}")
-        # Return empty array instead of throwing error to prevent frontend crashes
         return []
 
 @router.get("/{job_id}", response_model=JobResponse)
