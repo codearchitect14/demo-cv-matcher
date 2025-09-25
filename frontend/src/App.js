@@ -29,6 +29,8 @@ import CompanyAdminDashboard from './components/CompanyAdminDashboard';
 import CompanyManagement from './components/CompanyManagement';
 import RecruiterAdmin from './components/RecruiterAdmin';
 import JobAssignments from './components/JobAssignments';
+import CandidateAssessment from './components/CandidateAssessment';
+import AssessmentAnalytics from './components/AssessmentAnalytics';
 // import Navigation from './components/Navigation';
 import './App.css';
 
@@ -56,6 +58,7 @@ function App() {
           <Route path="/candidates-dashboard" element={<CandidatesDashboard />} />
           <Route path="/my-applications" element={<MyApplications />} />
           <Route path="/job-search" element={<JobSearch />} />
+          <Route path="/assessment/:applicationId" element={<CandidateAssessment />} />
           <Route path="/job-recommendations" element={<JobRecommendations />} />
           <Route path="/candidate-recommendations" element={<CandidateRecommendations />} />
           <Route path="/enhanced-candidate-recommendations" element={<EnhancedCandidateRecommendations />} />
@@ -83,6 +86,7 @@ function App() {
             <Route path="/company-management" element={<CompanyManagement />} />
             <Route path="/recruiter-admin" element={<RecruiterAdmin />} />
             <Route path="/job-assignments" element={<JobAssignments />} />
+            <Route path="/assessment-analytics" element={<AssessmentAnalytics />} />
         </Routes>
       </div>
     </Router>

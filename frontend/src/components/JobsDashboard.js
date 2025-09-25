@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './JobsDashboard.css';
+import RecruiterMCQEditor from './RecruiterMCQEditor';
 
 const JobsDashboard = () => {
   const [jobs, setJobs] = useState([]);
@@ -8,6 +9,7 @@ const JobsDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showMCQEditor, setShowMCQEditor] = useState(false);
   const [showSkillsForm, setShowSkillsForm] = useState(false);
   const [filters, setFilters] = useState({
     location: '',
@@ -607,6 +609,17 @@ const JobsDashboard = () => {
                         ✏️ Edit
                       </button>
                       <button 
+                        className="btn-mcq"
+                        aria-label={`Manage MCQs for ${job.title || 'job'}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedJob(job);
+                          setShowMCQEditor(true);
+                        }}
+                      >
+                        📝 MCQs
+                      </button>
+                      <button 
                         className="btn-delete"
                         aria-label={`Delete job ${job.title || 'job'}`}
                         onClick={(e) => {
@@ -891,6 +904,35 @@ const JobsDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MCQ Editor Modal */}
+      {showMCQEditor && selectedJob && (
+        <div className="modal-overlay" onClick={() => setShowMCQEditor(false)}>
+          <div className="modern-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">
+                Assessment Questions - {selectedJob.title}
+              </h2>
+              <button 
+                className="modal-close"
+                onClick={() => setShowMCQEditor(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="modal-content">
+              <RecruiterMCQEditor 
+                jobId={selectedJob.id} 
+                onSaved={() => {
+                  setShowMCQEditor(false);
+                  setSelectedJob(null);
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

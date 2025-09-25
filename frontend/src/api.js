@@ -182,6 +182,13 @@ export const apiService = {
     return response.data;
   },
 
+  logJobView: async (candidateId, jobId) => {
+    const response = await api.get(`/jobs/${jobId}`, {
+      params: { candidate_id: candidateId }
+    });
+    return response.data;
+  },
+
   // Application APIs
   createApplication: async (applicationData) => {
     try {

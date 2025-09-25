@@ -14,6 +14,64 @@ from config.connection_pool import global_pool
 from schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 from middleware.recruiter_auth import get_current_recruiter, RecruiterContext
 
+async def auto_update_application_statuses(rows):
+    """Automatically update application status based on assessment scores"""
+    try:
+        updates_needed = []
+        
+        for row in rows:
+            # Only update status if assessment exists, is completed, and has a valid score
+            if (row["assessment_status"] is not None and 
+                row["assessment_status"] == "completed" and 
+                row["assessment_score"] is not None and
+                row["assessment_score"] >= 0):  # Ensure score is valid (not negative)
+                
+                application_id = row["id"]
+                current_status = row["status"]
+                assessment_score = row["assessment_score"]
+                
+                # Determine new status based on assessment score
+                if assessment_score >= 50 and current_status == "APPLIED":
+                    new_status = "INTERVIEW_SCHEDULED"
+                    updates_needed.append((application_id, new_status, assessment_score))
+                elif assessment_score < 50 and current_status == "APPLIED":
+                    new_status = "REJECTED"
+                    updates_needed.append((application_id, new_status, assessment_score))
+        
+        # Batch update applications
+        if updates_needed:
+            for app_id, new_status, score in updates_needed:
+                # Get candidate_id and job_id for interaction logging
+                app_details = await global_pool.fetchrow("""
+                    SELECT candidate_id, job_id FROM applications WHERE id = $1
+                """, app_id)
+                
+                if app_details:
+                    candidate_id = app_details['candidate_id']
+                    job_id = app_details['job_id']
+                    
+                    # Update application status
+                    await global_pool.execute("""
+                        UPDATE applications 
+                        SET status = $1, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $2 AND status = 'APPLIED'
+                    """, new_status, app_id)
+                    
+                    # Log the status change interaction
+                    try:
+                        await global_pool.execute("""
+                            INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
+                            VALUES ($1, 'candidate', $2, $3, NOW())
+                        """, candidate_id, job_id, new_status)
+                        print(f"✅ Auto-updated application {app_id}: {new_status} (assessment score: {score}%) - logged interaction")
+                    except Exception as log_error:
+                        print(f"⚠️ Failed to log status change interaction: {log_error}")
+                else:
+                    print(f"⚠️ Could not find application details for ID {app_id}")
+                
+    except Exception as e:
+        print(f"⚠️ Error auto-updating application statuses: {e}")
+
 router = APIRouter(tags=["Applications"])
 
 @router.get("/recruiter", response_model=List[dict])
@@ -302,10 +360,51 @@ async def get_recruiter_applications(
             where_conditions.append("a.job_id = :job_id")
             params["job_id"] = job_id
         
-        # Build the final query
+        # Build the final query with optimized parameters
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
         
-        query = text(f"""
+        # Convert to global_pool format with positional parameters
+        final_params = []
+        param_count = 0
+        
+        # Rebuild params for global_pool
+        if qualification_filter:
+            # Already added to where_conditions
+            pass
+        if recruiter_id is not None:
+            final_params.append(recruiter_id)
+            param_count += 1
+        if status_filter:
+            final_params.append(status_filter)
+            param_count += 1
+        if candidate_id:
+            final_params.append(candidate_id)
+            param_count += 1
+        if job_id:
+            final_params.append(job_id)
+            param_count += 1
+        if location:
+            final_params.append(f"%{location.lower()}%")
+            param_count += 1
+        if search:
+            search_term = f"%{search.lower()}%"
+            final_params.extend([search_term, search_term, search_term, search_term])
+            param_count += 4
+        if experience_range:
+            if experience_range == "0-2":
+                final_params.extend([0, 2])
+            elif experience_range == "3-5":
+                final_params.extend([3, 5])
+            elif experience_range == "6-8":
+                final_params.extend([6, 8])
+            elif experience_range == "9+":
+                final_params.append(9)
+            param_count += 2 if experience_range != "9+" else 1
+        
+        # Add limit and offset
+        final_params.extend([limit, skip])
+        
+        query = f"""
             SELECT 
                 a.id, a.job_id, a.candidate_id, a.status, a.created_at, a.updated_at,
                 a.candidate_score, a.is_qualified,
@@ -313,65 +412,72 @@ async def get_recruiter_applications(
                 c.domain as candidate_domain, c.expected_salary_min, c.expected_salary_max,
                 j.title as job_title, j.company, j.location as job_location, j.domain as job_domain,
                 j.salary_min, j.salary_max, j.total_years_required, j.threshold_score, j.recruiter_id,
-                r.full_name as recruiter_name, r.email as recruiter_email
+                r.full_name as recruiter_name, r.email as recruiter_email,
+                ass.status as assessment_status, ass.score as assessment_score, ass.completion_time as assessment_completion_time
             FROM applications a
             LEFT JOIN candidates c ON a.candidate_id = c.id
             LEFT JOIN jobs j ON a.job_id = j.id
             LEFT JOIN recruiters r ON j.recruiter_id = r.id
+            LEFT JOIN assessments ass ON a.id = ass.application_id
             WHERE {where_clause}
             ORDER BY a.created_at DESC
-            LIMIT :limit OFFSET :skip
-        """)
+            LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+        """
         
-        result = await db.execute(query, params)
-        rows = result.fetchall()
+        rows = await global_pool.fetch(query, *final_params)
+        
+        # Auto-update application status based on assessment scores
+        await auto_update_application_statuses(rows)
         
         response_applications = []
         for row in rows:
             app_data = {
-                "id": row[0],
-                "job_id": row[1],
-                "candidate_id": row[2],
-                "status": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
-                "candidate_score": float(row[6]) if row[6] else None,
-                "is_qualified": row[7]
+                "id": row["id"],
+                "job_id": row["job_id"],
+                "candidate_id": row["candidate_id"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "candidate_score": float(row["candidate_score"]) if row["candidate_score"] else None,
+                "is_qualified": row["is_qualified"],
+                "assessment_status": row["assessment_status"],
+                "assessment_score": float(row["assessment_score"]) if row["assessment_score"] else None,
+                "assessment_completion_time": row["assessment_completion_time"]
             }
             
             # Add candidate data if available
-            if row[8]:  # candidate_name exists
+            if row["candidate_name"]:
                 app_data["candidate"] = {
-                    "id": row[2],  # candidate_id
-                    "name": row[8],
-                    "email": row[9],
-                    "location": row[10],
-                    "domain": row[11],
-                    "expected_salary_min": row[12],
-                    "expected_salary_max": row[13]
+                    "id": row["candidate_id"],
+                    "name": row["candidate_name"],
+                    "email": row["candidate_email"],
+                    "location": row["candidate_location"],
+                    "domain": row["candidate_domain"],
+                    "expected_salary_min": row["expected_salary_min"],
+                    "expected_salary_max": row["expected_salary_max"]
                 }
             
             # Add job data if available
-            if row[14]:  # job_title exists
+            if row["job_title"]:
                 app_data["job"] = {
-                    "id": row[1],  # job_id
-                    "title": row[14],
-                    "company": row[15],
-                    "location": row[16],
-                    "domain": row[17],
-                    "salary_min": row[18],
-                    "salary_max": row[19],
-                    "total_years_required": row[20],
-                    "threshold_score": row[21],
-                    "recruiter_id": row[22]
+                    "id": row["job_id"],
+                    "title": row["job_title"],
+                    "company": row["company"],
+                    "location": row["job_location"],
+                    "domain": row["job_domain"],
+                    "salary_min": row["salary_min"],
+                    "salary_max": row["salary_max"],
+                    "total_years_required": row["total_years_required"],
+                    "threshold_score": row["threshold_score"],
+                    "recruiter_id": row["recruiter_id"]
                 }
                 
                 # Add recruiter data if available
-                if row[23]:  # recruiter_name exists
+                if row["recruiter_name"]:
                     app_data["recruiter"] = {
-                        "id": row[22],  # recruiter_id
-                        "name": row[23],
-                        "email": row[24]
+                        "id": row["recruiter_id"],
+                        "name": row["recruiter_name"],
+                        "email": row["recruiter_email"]
                     }
             
             response_applications.append(app_data)
@@ -496,6 +602,19 @@ async def create_application_public(
             """,
             application_data.candidate_id, application_data.job_id, status_value
         )
+        
+        # Log the interaction
+        try:
+            await global_pool.execute(
+                """
+                INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
+                VALUES ($1, 'candidate', $2, 'APPLIED', NOW())
+                """,
+                application_data.candidate_id, application_data.job_id
+            )
+            print(f"✅ Logged APPLIED interaction for candidate {application_data.candidate_id} to job {application_data.job_id}")
+        except Exception as log_error:
+            print(f"⚠️ Failed to log interaction: {log_error}")
         
         # Return simple success response to avoid greenlet issues
         return {
@@ -864,72 +983,8 @@ async def update_application_status(
             detail="Failed to update application status. Please try again later."
         )
 
-@router.post("/{application_id}/recalculate-qualification")
-async def recalculate_qualification(
-    application_id: int,
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Manually trigger qualification recalculation for an application"""
-    try:
-        from sqlalchemy import text
-        from services.qualification_service import qualification_service
-        
-        # Get application data
-        app_query = text("""
-            SELECT id, candidate_id, job_id 
-            FROM applications WHERE id = :application_id
-        """)
-        result = await db.execute(app_query, {"application_id": application_id})
-        application = result.fetchone()
-        
-        if not application:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Application not found"
-            )
-        
-        # Recalculate qualification
-        success = await qualification_service.update_application_qualification(
-            db, application_id, application[1], application[2]
-        )
-        
-        if success:
-            # Get updated application data
-            updated_query = text("""
-                SELECT id, job_id, candidate_id, status, candidate_score, is_qualified, created_at, updated_at
-                FROM applications WHERE id = :application_id
-            """)
-            
-            result = await db.execute(updated_query, {"application_id": application_id})
-            updated_row = result.fetchone()
-            
-            if updated_row:
-                return {
-                    "id": updated_row[0],
-                    "job_id": updated_row[1],
-                    "candidate_id": updated_row[2],
-                    "status": updated_row[3],
-                    "candidate_score": float(updated_row[4]) if updated_row[4] else None,
-                    "is_qualified": updated_row[5],
-                    "created_at": updated_row[6],
-                    "updated_at": updated_row[7],
-                    "message": "Qualification recalculated successfully"
-                }
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to recalculate qualification"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Recalculate qualification error: {e}")
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to recalculate qualification: {str(e)}"
-        )
+# Legacy recalculate-qualification endpoint removed - replaced by assessment-based system
+# Status updates now happen automatically based on MCQ assessment scores
 
 @router.get("/recruiters/public")
 async def get_available_recruiters(

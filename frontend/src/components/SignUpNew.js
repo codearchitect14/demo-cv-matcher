@@ -4,7 +4,10 @@ import './SignUpNew.css';
 
 const SignUpNew = ({ onSwitchToSignIn }) => {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0); // Start with CV upload step
+  const [cvUploaded, setCvUploaded] = useState(false);
+  const [cvParsing, setCvParsing] = useState(false);
+  const [cvFile, setCvFile] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -133,6 +136,126 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
     console.log(`${provider} signup clicked`);
   };
 
+  const handleCvUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Please upload a PDF or Word document');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return;
+    }
+
+    setCvFile(file);
+    setCvParsing(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('cv_file', file);
+
+      const response = await fetch('http://localhost:8000/api/v1/recommendations/cv/parse', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Auto-fill extractable fields
+        const extractedData = data.cv_analysis || {};
+        setFormData(prev => ({
+          ...prev,
+          name: extractedData.name || prev.name,
+          email: extractedData.email || prev.email,
+          location: extractedData.location || prev.location,
+          summary: extractedData.summary || prev.summary,
+          total_experience_years: extractedData.total_experience || prev.total_experience_years,
+          skills: extractedData.skills && extractedData.skills.length > 0 
+            ? extractedData.skills.map(skill => ({ name: skill.skill, years: skill.years }))
+            : prev.skills
+        }));
+        
+        setCvUploaded(true);
+        setCurrentStep(1); // Move to form step
+      } else {
+        const errorData = await response.json();
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to parse CV');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setCvParsing(false);
+    }
+  };
+
+  const skipCvUpload = () => {
+    setCurrentStep(1);
+  };
+
+  const renderCvUploadStep = () => (
+    <div className="form-step">
+      <div className="cv-upload-section">
+        <h3 className="cv-upload-title">Quick Registration with CV</h3>
+        <p className="cv-upload-description">
+          Upload your CV to automatically fill in your details, or skip to fill manually.
+        </p>
+        
+        <div className="cv-upload-area">
+          <input
+            type="file"
+            id="cv-upload"
+            accept=".pdf,.doc,.docx"
+            onChange={handleCvUpload}
+            className="cv-upload-input"
+            disabled={cvParsing}
+          />
+          <label htmlFor="cv-upload" className="cv-upload-label">
+            {cvParsing ? (
+              <div className="cv-upload-loading">
+                <div className="spinner"></div>
+                <span>Parsing CV...</span>
+              </div>
+            ) : (
+              <div className="cv-upload-content">
+                <div className="cv-upload-icon">📄</div>
+                <div className="cv-upload-text">
+                  <strong>Upload CV</strong>
+                  <span>PDF, DOC, or DOCX (max 5MB)</span>
+                </div>
+              </div>
+            )}
+          </label>
+        </div>
+
+        {cvFile && (
+          <div className="cv-file-info">
+            <span>📄 {cvFile.name}</span>
+            {cvUploaded && <span className="cv-success">✅ Parsed successfully!</span>}
+          </div>
+        )}
+
+        <div className="cv-upload-actions">
+          <button
+            type="button"
+            onClick={skipCvUpload}
+            className="skip-cv-btn"
+            disabled={cvParsing}
+          >
+            Skip & Fill Manually
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderStep1 = () => (
     <div className="form-step">
       <div className="form-group">
@@ -146,7 +269,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           autoComplete="name"
           required
         />
-        <label className="form-label">Full Name</label>
+        <label className="form-label">
+          Full Name
+          {cvUploaded && formData.name && <span className="auto-filled-indicator">(Auto-filled from CV)</span>}
+        </label>
       </div>
 
       <div className="form-group">
@@ -160,7 +286,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           autoComplete="email"
           required
         />
-        <label className="form-label">Email Address</label>
+        <label className="form-label">
+          Email Address
+          {cvUploaded && formData.email && <span className="auto-filled-indicator">(Auto-filled from CV)</span>}
+        </label>
       </div>
 
       <div className="form-group">
@@ -199,7 +328,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           autoComplete="off"
           required
         />
-        <label className="form-label">Location</label>
+        <label className="form-label">
+          Location
+          {cvUploaded && formData.location && <span className="auto-filled-indicator">(Auto-filled from CV)</span>}
+        </label>
       </div>
 
       <div className="form-group">
@@ -356,7 +488,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
           required
           rows="4"
         />
-        <label className="form-label">Professional Summary</label>
+        <label className="form-label">
+          Professional Summary
+          {cvUploaded && formData.summary && <span className="auto-filled-indicator">(Auto-filled from CV)</span>}
+        </label>
       </div>
     </div>
   );
@@ -375,6 +510,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
         </div>
 
         <div className="progress-indicator">
+          <div className={`progress-step ${currentStep >= 0 ? 'active' : ''}`}>
+            <div className="step-number">0</div>
+            <div className="step-label">CV Upload</div>
+          </div>
           <div className={`progress-step ${currentStep >= 1 ? 'active' : ''}`}>
             <div className="step-number">1</div>
             <div className="step-label">Basic Info</div>
@@ -401,6 +540,7 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
         )}
 
         <form className="signup-new-form" onSubmit={handleSubmit}>
+          {currentStep === 0 && renderCvUploadStep()}
           {currentStep === 1 && renderStep1()}
           {currentStep === 2 && renderStep2()}
           {currentStep === 3 && renderStep3()}
@@ -413,7 +553,10 @@ const SignUpNew = ({ onSwitchToSignIn }) => {
               </button>
             )}
             
-            {currentStep < 4 ? (
+            {currentStep === 0 ? (
+              // CV upload step - no navigation buttons (handled within the step)
+              null
+            ) : currentStep < 4 ? (
               <button type="button" className="nav-btn next-btn" onClick={nextStep}>
                 Next
               </button>

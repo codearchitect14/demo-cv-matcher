@@ -199,11 +199,7 @@ const ApplicationsManagement = () => {
           setError('No applications found in the system');
         } else {
           setError(''); // Clear any previous error
-          console.log('First application qualification data:', {
-            candidate_score: data[0]?.candidate_score,
-            is_qualified: data[0]?.is_qualified,
-            threshold_score: data[0]?.job?.threshold_score
-          });
+          // Scoring-based qualification removed from Applications Management UI
         }
         
         setApplications(data);
@@ -504,37 +500,7 @@ const ApplicationsManagement = () => {
     }
   };
 
-  const handleRecalculateQualification = async (applicationId) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/v1/applications/${applicationId}/recalculate-qualification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setMessage('Qualification recalculated successfully');
-        fetchAllApplications();
-        if (selectedApplication?.id === applicationId) {
-          setSelectedApplication({ 
-            ...selectedApplication, 
-            candidate_score: data.candidate_score,
-            is_qualified: data.is_qualified,
-            status: data.status
-          });
-        }
-      } else {
-        setError('Failed to recalculate qualification');
-      }
-    } catch (err) {
-      setError('Failed to recalculate qualification');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Legacy recalculate qualification function removed - replaced by assessment-based system
 
   const handleCreateApplication = async (e) => {
     e.preventDefault();
@@ -562,6 +528,33 @@ const ApplicationsManagement = () => {
         setCandidateSearch('');
         setJobSearch('');
         fetchAllApplications();
+
+        // Auto-assign assessment for the created application (mock fast path)
+        try {
+          const created = await response.json();
+          console.log('Created application:', created);
+          
+          // Check if job has MCQs configured
+          const mcqsRes = await fetch(`http://localhost:8000/api/v1/assessments-fast/mcqs/${created.job_id}`);
+          if (mcqsRes.ok) {
+            const mcqsData = await mcqsRes.json();
+            if (mcqsData.mcqs && mcqsData.mcqs.length > 0) {
+              // Assign assessment only if MCQs exist
+              const assignRes = await fetch(`http://localhost:8000/api/v1/assessments-fast/assign?application_id=${created.id}&candidate_id=${created.candidate_id}&job_id=${created.job_id}&validity_hours=24`, { method: 'POST' });
+              if (assignRes.ok) {
+                console.log('Assessment assigned successfully');
+              } else {
+                console.warn('Assessment assignment failed:', await assignRes.text());
+              }
+            } else {
+              console.warn('No MCQs configured for this job');
+            }
+          } else {
+            console.warn('Failed to check MCQs for job');
+          }
+        } catch (e) {
+          console.warn('Assessment assignment error', e);
+        }
       } else {
         const errorData = await response.json();
         setError(`Failed to create application: ${errorData.detail}`);
@@ -746,19 +739,19 @@ const ApplicationsManagement = () => {
                       >
                         {application.status.replace('_', ' ').toUpperCase()}
                       </span>
-                      {application.candidate_score !== null && application.candidate_score !== undefined && (
+                      {application.assessment && (
                         <span 
                           className="qualification-badge"
                           style={{ 
-                            backgroundColor: application.is_qualified ? '#10b981' : '#ef4444',
-                            color: 'white',
+                            backgroundColor: (application.assessment.status === 'completed' && (application.assessment.score || 0) >= 50) ? '#10b981' : '#e5e7eb',
+                            color: (application.assessment.status === 'completed' && (application.assessment.score || 0) >= 50) ? 'white' : '#374151',
                             padding: '4px 8px',
                             borderRadius: '12px',
                             fontSize: '12px',
                             fontWeight: 'bold'
                           }}
                         >
-                          {application.is_qualified ? '✅' : '❌'} {application.candidate_score}%
+                          {application.assessment.status?.toUpperCase()} {application.assessment.score != null ? `· ${application.assessment.score}%` : ''}
                         </span>
                       )}
                     </div>
@@ -782,11 +775,7 @@ const ApplicationsManagement = () => {
                         <p className="job-title">{application.job?.title || 'N/A'}</p>
                         <p className="job-company">{application.job?.company || 'N/A'}</p>
                         <p className="job-location">{application.job?.location || 'N/A'}</p>
-                        {application.job?.threshold_score && (
-                          <p className="job-threshold" style={{ fontSize: '12px', color: '#666' }}>
-                            Threshold: {application.job.threshold_score}%
-                          </p>
-                        )}
+                        {/* Threshold/legacy scoring removed from this page */}
                         {application.recruiter && (
                           <div className="recruiter-info" style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
                             <p style={{ fontSize: '12px', color: '#666', margin: '0 0 2px 0' }}>Assigned Recruiter:</p>
@@ -808,22 +797,7 @@ const ApplicationsManagement = () => {
                     </div>
                   </div>
 
-                  <div className="card-actions">
-                    <select
-                      value={application.status}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleUpdateApplicationStatus(application.id, e.target.value);
-                      }}
-                      className="status-select"
-                    >
-                      {statusOptions.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Manual status changes disabled - status updates occur after assessment evaluation */}
                 </div>
               ))}
             </div>
@@ -839,12 +813,13 @@ const ApplicationsManagement = () => {
                     <th>Job Title</th>
                     <th>Company</th>
                     <th>Job Location</th>
-                    <th>Score</th>
-                    <th>Qualified</th>
+                    <th>Assessment Score</th>
+                    <th>Assessment Status</th>
+                    <th>Cheating Attempts</th>
                     <th>Recruiter</th>
                     <th>Status</th>
                     <th>Applied Date</th>
-                    <th>Actions</th>
+                    {/* Actions removed; status driven by assessments */}
                   </tr>
                 </thead>
                 <tbody>
@@ -857,30 +832,9 @@ const ApplicationsManagement = () => {
                       <td>{application.job?.title || 'N/A'}</td>
                       <td>{application.job?.company || 'N/A'}</td>
                       <td>{application.job?.location || 'N/A'}</td>
-                      <td>
-                        {application.candidate_score !== null && application.candidate_score !== undefined ? (
-                          <span style={{ 
-                            fontWeight: 'bold',
-                            color: application.candidate_score >= (application.job?.threshold_score || 70) ? '#10b981' : '#ef4444'
-                          }}>
-                            {application.candidate_score}%
-                          </span>
-                        ) : (
-                          <span style={{ color: '#999' }}>N/A</span>
-                        )}
-                      </td>
-                      <td>
-                        {application.is_qualified !== null && application.is_qualified !== undefined ? (
-                          <span style={{ 
-                            color: application.is_qualified ? '#10b981' : '#ef4444',
-                            fontWeight: 'bold'
-                          }}>
-                            {application.is_qualified ? '✅ Yes' : '❌ No'}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#999' }}>N/A</span>
-                        )}
-                      </td>
+                      <td>{application.assessment?.score != null ? `${application.assessment.score}%` : 'N/A'}</td>
+                      <td>{application.assessment?.status ? application.assessment.status.replace('_',' ') : 'N/A'}</td>
+                      <td>{application.assessment?.cheat_attempts != null ? application.assessment.cheat_attempts : 0}</td>
                       <td>
                         {application.recruiter ? (
                           <div style={{ fontSize: '12px' }}>
@@ -904,19 +858,7 @@ const ApplicationsManagement = () => {
                         </span>
                       </td>
                       <td>{new Date(application.created_at).toLocaleDateString()}</td>
-                      <td>
-                        <select
-                          value={application.status}
-                          onChange={(e) => handleUpdateApplicationStatus(application.id, e.target.value)}
-                          className="status-select"
-                        >
-                          {statusOptions.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+                      {/* Manual status changes disabled */}
                     </tr>
                   ))}
                 </tbody>
@@ -954,33 +896,19 @@ const ApplicationsManagement = () => {
                     <p><strong>Applied Date:</strong> {new Date(selectedApplication.created_at).toLocaleDateString()}</p>
                     <p><strong>Last Updated:</strong> {new Date(selectedApplication.updated_at).toLocaleDateString()}</p>
                     
-                    {/* Qualification Information */}
+                    {/* Assessment summary */}
                     <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-                      <h4 style={{ margin: '0 0 8px 0', color: '#333' }}>Qualification Assessment</h4>
-                      {selectedApplication.candidate_score !== null ? (
-                        <>
-                          <p><strong>Candidate Score:</strong> 
-                            <span style={{ 
-                              fontWeight: 'bold',
-                              color: selectedApplication.candidate_score >= (selectedApplication.job?.threshold_score || 70) ? '#10b981' : '#ef4444',
-                              marginLeft: '8px'
-                            }}>
-                              {selectedApplication.candidate_score}%
-                            </span>
-                          </p>
-                          <p><strong>Job Threshold:</strong> {selectedApplication.job?.threshold_score || 70}%</p>
-                          <p><strong>Qualified:</strong> 
-                            <span style={{ 
-                              color: selectedApplication.is_qualified ? '#10b981' : '#ef4444',
-                              fontWeight: 'bold',
-                              marginLeft: '8px'
-                            }}>
-                              {selectedApplication.is_qualified ? '✅ Yes' : '❌ No'}
-                            </span>
-                          </p>
-                        </>
-                      ) : (
-                        <p style={{ color: '#666', fontStyle: 'italic' }}>Qualification assessment not available</p>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#333' }}>Assessment</h4>
+                      <p><strong>Status:</strong> {selectedApplication.assessment?.status || 'N/A'}</p>
+                      <p><strong>Score:</strong> {selectedApplication.assessment?.score != null ? `${selectedApplication.assessment.score}%` : 'N/A'}</p>
+                      {selectedApplication.assessment?.start_time && (
+                        <p><strong>Started:</strong> {new Date(selectedApplication.assessment.start_time).toLocaleString()}</p>
+                      )}
+                      {selectedApplication.assessment?.completion_time && (
+                        <p><strong>Completed:</strong> {new Date(selectedApplication.assessment.completion_time).toLocaleString()}</p>
+                      )}
+                      {selectedApplication.assessment?.cheat_attempts != null && (
+                        <p><strong>Cheating Attempts:</strong> {selectedApplication.assessment.cheat_attempts}</p>
                       )}
                     </div>
                   </div>
@@ -1023,39 +951,7 @@ const ApplicationsManagement = () => {
                 </div>
               </div>
 
-              <div className="detail-actions">
-                <h3>Update Status</h3>
-                <div className="status-update">
-                  <select
-                    value={selectedApplication.status}
-                    onChange={(e) => handleUpdateApplicationStatus(selectedApplication.id, e.target.value)}
-                    className="status-select"
-                  >
-                    {statusOptions.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button 
-                    className="btn btn-primary"
-                    onClick={() => handleUpdateApplicationStatus(selectedApplication.id, selectedApplication.status)}
-                  >
-                    Update Status
-                  </button>
-                </div>
-                
-                <div style={{ marginTop: '16px' }}>
-                  <h4>Qualification Actions</h4>
-                  <button 
-                    className="btn btn-secondary"
-                    onClick={() => handleRecalculateQualification(selectedApplication.id)}
-                    style={{ marginRight: '8px' }}
-                  >
-                    🔄 Recalculate Qualification
-                  </button>
-                </div>
-              </div>
+              {/* Manual status update and legacy qualification actions removed */}
             </div>
           </div>
         </div>

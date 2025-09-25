@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,119 @@ from models.candidate import Candidate
 from api.routers.auth import get_current_user
 
 router = APIRouter(tags=["Recommendations"])
+
+async def parse_cv_content(file_path: str) -> dict:
+    """Simple CV parsing function - extract basic information from CV text"""
+    try:
+        import PyPDF2
+        import docx
+        
+        # Determine file type and extract text
+        if file_path.lower().endswith('.pdf'):
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text()
+        elif file_path.lower().endswith(('.doc', '.docx')):
+            doc = docx.Document(file_path)
+            text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+        else:
+            # Fallback for other formats
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read()
+        
+        # Extract information using regex patterns
+        extracted_data = {
+            "name": "",
+            "email": "",
+            "location": "",
+            "summary": "",
+            "total_experience": "",
+            "skills": []
+        }
+        
+        # Extract email
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        email_match = re.search(email_pattern, text)
+        if email_match:
+            extracted_data["email"] = email_match.group()
+        
+        # Extract name (first line that looks like a name)
+        lines = text.split('\n')
+        for line in lines[:5]:  # Check first 5 lines
+            line = line.strip()
+            if len(line) > 2 and len(line) < 50 and not line.lower().startswith(('curriculum', 'vitae', 'resume')):
+                if not re.search(r'[@\d]', line):  # No email or numbers
+                    extracted_data["name"] = line
+                    break
+        
+        # Extract location (look for city, country patterns)
+        location_patterns = [
+            r'(?:lives? in|located in|based in|from)\s+([A-Za-z\s,]+)',
+            r'([A-Za-z]+),\s*([A-Za-z\s]+)',
+        ]
+        for pattern in location_patterns:
+            location_match = re.search(pattern, text, re.IGNORECASE)
+            if location_match:
+                extracted_data["location"] = location_match.group(1).strip()
+                break
+        
+        # Extract summary (look for objective, summary, profile sections)
+        summary_patterns = [
+            r'(?:objective|summary|profile|about)\s*:?\s*([^\n]+(?:\n(?!\n)[^\n]+)*)',
+        ]
+        for pattern in summary_patterns:
+            summary_match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if summary_match:
+                extracted_data["summary"] = summary_match.group(1).strip()[:500]  # Limit length
+                break
+        
+        # Extract experience (look for years of experience)
+        exp_patterns = [
+            r'(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\s*(?:of\s*)?(?:experience|exp)',
+            r'(?:experience|exp)\s*:?\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?)',
+        ]
+        for pattern in exp_patterns:
+            exp_match = re.search(pattern, text, re.IGNORECASE)
+            if exp_match:
+                extracted_data["total_experience"] = exp_match.group(1)
+                break
+        
+        # Extract skills (common technical skills)
+        common_skills = [
+            'Python', 'Java', 'JavaScript', 'React', 'Node.js', 'SQL', 'HTML', 'CSS',
+            'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Swift', 'Kotlin', 'TypeScript',
+            'Django', 'Flask', 'Spring', 'Angular', 'Vue.js', 'Express.js',
+            'MySQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Docker', 'Kubernetes',
+            'AWS', 'Azure', 'GCP', 'Git', 'Linux', 'Windows', 'macOS'
+        ]
+        
+        skills_found = []
+        for skill in common_skills:
+            if re.search(rf'\b{re.escape(skill)}\b', text, re.IGNORECASE):
+                # Try to extract years of experience for this skill
+                skill_exp_pattern = rf'{re.escape(skill)}.*?(\d+(?:\.\d+)?)\s*(?:years?|yrs?)'
+                exp_match = re.search(skill_exp_pattern, text, re.IGNORECASE)
+                years = exp_match.group(1) if exp_match else "1"
+                skills_found.append({"skill": skill, "years": years})
+        
+        extracted_data["skills"] = skills_found[:10]  # Limit to 10 skills
+        
+        return extracted_data
+        
+    except Exception as e:
+        logger.error(f"Error parsing CV content: {e}")
+        # Return basic structure even if parsing fails
+        return {
+            "name": "",
+            "email": "",
+            "location": "",
+            "summary": "",
+            "total_experience": "",
+            "skills": []
+        }
+
 # New: Candidate-facing unified jobs endpoint using shared scorer
 @router.get("/candidate/jobs")
 async def get_candidate_jobs_unified(
@@ -39,46 +153,77 @@ async def get_candidate_jobs_unified(
         from config.connection_pool import global_pool
         import asyncio
         from services.scoring import calculate_match_score
+        import time
+        start_time = time.time()
 
+        # Build flexible search conditions for semantic matching
         where_conditions = []
         params = []
         param_count = 0
+        
         if title:
-            param_count += 1
-            where_conditions.append(f"title ILIKE ${param_count}")
-            params.append(f"%{title}%")
+            # Enhanced search: match partial words, handle hyphens, spaces, etc.
+            search_terms = title.lower().replace('-', ' ').replace('_', ' ').split()
+            title_conditions = []
+            for term in search_terms:
+                param_count += 1
+                param1 = param_count
+                param_count += 1
+                param2 = param_count
+                param_count += 1
+                param3 = param_count
+                
+                title_conditions.append(f"(LOWER(title) ILIKE ${param1} OR LOWER(title) ILIKE ${param2} OR LOWER(company) ILIKE ${param3})")
+                params.extend([f"%{term}%", f"%{term.replace(' ', '-')}%", f"%{term}%"])
+            where_conditions.append(f"({' OR '.join(title_conditions)})")
+            
         if location:
             param_count += 1
-            where_conditions.append(f"location ILIKE ${param_count}")
-            params.append(f"%{location}%")
-        where_clause = " AND " . join(where_conditions) if where_conditions else "1=1"
+            where_conditions.append(f"LOWER(location) ILIKE ${param_count}")
+            params.append(f"%{location.lower()}%")
+            
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 
-        jobs_query = f"""
-            SELECT id, title, company, location, salary_min, salary_max, domain, total_years_required, job_description
-            FROM jobs
-            WHERE {where_clause}
-            ORDER BY created_at DESC
-            LIMIT ${param_count + 1}
-        """
+        # Add limit parameter
+        param_count += 1
+        limit_param = param_count
         params.append(limit)
 
-        job_rows = await asyncio.wait_for(global_pool.fetch(jobs_query, *params), timeout=6.0)
+        # Optimized single query with all job data and skills
+        jobs_query = f"""
+            SELECT 
+                j.id, j.title, j.company, j.location, j.salary_min, j.salary_max, 
+                j.domain, j.total_years_required, j.job_description,
+                COALESCE(ARRAY_AGG(jms.skill), ARRAY[]::text[]) as job_skills,
+                COALESCE(ARRAY_AGG(jms.min_experience), ARRAY[]::int[]) as skill_experience
+            FROM jobs j
+            LEFT JOIN job_mandatory_skills jms ON jms.job_id = j.id
+            WHERE {where_clause}
+            GROUP BY j.id, j.title, j.company, j.location, j.salary_min, j.salary_max, 
+                     j.domain, j.total_years_required, j.job_description
+            ORDER BY j.created_at DESC
+            LIMIT ${limit_param}
+        """
 
-        # Fetch candidate data with skills
+        job_rows = await asyncio.wait_for(global_pool.fetch(jobs_query, *params), timeout=3.0)
+
+        # Optimized candidate query - single query with skills
         candidate_query = """
-            SELECT c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
-                   c.total_experience_years,
-                   COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
-                   COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years,
-                   COALESCE(SUM(ce.years), 0) as total_experience
+            SELECT 
+                c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max,
+                c.total_experience_years,
+                COALESCE(ARRAY_AGG(ce.skill), ARRAY[]::text[]) as skills,
+                COALESCE(ARRAY_AGG(ce.years), ARRAY[]::int[]) as skill_years
             FROM candidates c
             LEFT JOIN candidate_experience ce ON ce.candidate_id = c.id
             WHERE c.id = $1
             GROUP BY c.id, c.name, c.domain, c.location, c.expected_salary_min, c.expected_salary_max, c.total_experience_years
         """
-        candidate_rows = await global_pool.fetch(candidate_query, current_user.id)
+        candidate_rows = await asyncio.wait_for(global_pool.fetch(candidate_query, current_user.id), timeout=2.0)
+        
         if not candidate_rows:
             return []
+            
         c = candidate_rows[0]
         candidate_skills = []
         if c["skills"] and c["skill_years"]:
@@ -86,6 +231,7 @@ async def get_candidate_jobs_unified(
                 {"skill": skill, "years": years}
                 for skill, years in zip(c["skills"], c["skill_years"])
             ]
+            
         candidate_data = {
             "id": c["id"],
             "name": c["name"],
@@ -98,18 +244,18 @@ async def get_candidate_jobs_unified(
             "education": None
         }
 
+        # Process jobs with pre-loaded skills (no N+1 queries)
         results = []
         for row in job_rows:
             jd = dict(row)
             
-            # Load job skills for proper scoring
-            job_skills_query = """
-                SELECT skill, min_experience
-                FROM job_mandatory_skills
-                WHERE job_id = $1
-            """
-            job_skills_rows = await global_pool.fetch(job_skills_query, jd.get("id"))
-            job_skills = [{"skill": row["skill"], "min_experience": row["min_experience"]} for row in job_skills_rows]
+            # Use pre-loaded job skills
+            job_skills = []
+            if jd["job_skills"] and jd["skill_experience"]:
+                job_skills = [
+                    {"skill": skill, "min_experience": exp}
+                    for skill, exp in zip(jd["job_skills"], jd["skill_experience"])
+                ]
             
             job_data = {
                 "id": jd.get("id"),
@@ -122,8 +268,10 @@ async def get_candidate_jobs_unified(
                 "skills": job_skills,
                 "education_required": None
             }
+            
             score, breakdown = calculate_match_score(candidate_data, job_data)
             logger.info(f"[Score] candidate_id={candidate_data.get('id')} job_id={job_data.get('id')} match_score={score}")
+            
             item = {
                 "job_id": jd.get("id"),
                 "title": jd.get("title"),
@@ -141,6 +289,10 @@ async def get_candidate_jobs_unified(
 
         # Sort by score desc
         results.sort(key=lambda x: x["match_score"], reverse=True)
+        
+        elapsed = time.time() - start_time
+        logger.info(f"Job search completed in {elapsed:.2f}s, returned {len(results)} results")
+        
         return results
     except Exception as e:
         logger.error(f"Error in candidate unified jobs: {e}")
@@ -436,6 +588,39 @@ async def get_recruiter_candidate_recommendations(
     except Exception as e:
         logger.error(f"Error in recruiter recommendations: {e}")
         return []  # Return empty on any error
+
+@router.post("/cv/parse")
+async def parse_cv_for_registration(
+    cv_file: UploadFile = File(...)
+):
+    """Parse CV for candidate registration - extract data without requiring existing candidate"""
+    try:
+        # Save uploaded file temporarily
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(cv_file.filename)[1]) as tmp_file:
+            content = await cv_file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+        
+        # Simple CV parsing logic (you can enhance this with proper CV parsing library)
+        parsed_data = await parse_cv_content(tmp_file_path)
+        
+        # Clean up temporary file
+        os.unlink(tmp_file_path)
+        
+        return {
+            "success": True,
+            "cv_analysis": parsed_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error parsing CV: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to parse CV. Please try again or fill the form manually."
+        }
 
 @router.post("/cv/upload")
 async def upload_cv_and_get_recommendations(

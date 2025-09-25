@@ -450,4 +450,184 @@
   .nav-btn {
     width: 100%;
   }
+}
+
+/* CV Upload Styles */
+.cv-upload-section {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.cv-upload-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.cv-upload-description {
+  color: #666;
+  margin-bottom: 30px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.cv-upload-area {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.cv-upload-input {
+  display: none;
+}
+
+.cv-upload-label {
+  display: block;
+  border: 2px dashed #ddd;
+  border-radius: 12px;
+  padding: 40px 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #fafafa;
+  position: relative;
+}
+
+.cv-upload-label:hover {
+  border-color: #667eea;
+  background: #f0f4ff;
+}
+
+.cv-upload-label:active {
+  transform: scale(0.98);
+}
+
+.cv-upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.cv-upload-icon {
+  font-size: 48px;
+  opacity: 0.7;
+}
+
+.cv-upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cv-upload-text strong {
+  font-size: 16px;
+  color: #333;
+  font-weight: 600;
+}
+
+.cv-upload-text span {
+  font-size: 14px;
+  color: #666;
+}
+
+.cv-upload-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.cv-file-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 1px solid #e1e8ff;
+  font-size: 14px;
+  color: #333;
+}
+
+.cv-success {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.cv-upload-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.skip-cv-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.skip-cv-btn:hover {
+  background: #5a6268;
+  transform: translateY(-1px);
+}
+
+.skip-cv-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.auto-filled-indicator {
+  font-size: 12px;
+  color: #28a745;
+  font-weight: 500;
+  margin-left: 8px;
+  font-style: italic;
+}
+
+/* Responsive CV Upload */
+@media (max-width: 768px) {
+  .cv-upload-label {
+    padding: 30px 15px;
+  }
+  
+  .cv-upload-icon {
+    font-size: 36px;
+  }
+  
+  .cv-upload-title {
+    font-size: 20px;
+  }
+  
+  .cv-upload-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .skip-cv-btn {
+    width: 100%;
+    max-width: 200px;
+  }
 } 

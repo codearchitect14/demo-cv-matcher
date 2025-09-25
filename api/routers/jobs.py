@@ -486,6 +486,7 @@ async def get_job_recommendations(
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: int,
+    candidate_id: Optional[int] = Query(None, description="Candidate ID to log view interaction"),
     db: AsyncSession = Depends(get_db_session)
 ):
     """Get job details by ID"""
@@ -496,6 +497,22 @@ async def get_job(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Job not found"
             )
+        
+        # Log the view interaction if candidate_id is provided
+        if candidate_id:
+            try:
+                from config.connection_pool import global_pool
+                await global_pool.execute(
+                    """
+                    INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
+                    VALUES ($1, 'candidate', $2, 'VIEWED', NOW())
+                    """,
+                    candidate_id, job_id
+                )
+                print(f"✅ Logged VIEWED interaction for candidate {candidate_id} viewing job {job_id}")
+            except Exception as log_error:
+                print(f"⚠️ Failed to log view interaction: {log_error}")
+        
         return job
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted

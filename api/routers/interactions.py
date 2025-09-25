@@ -227,7 +227,7 @@ async def get_recent_interactions(
         import asyncio
         
         # Debug: Check if there are any interactions at all
-        debug_query = "SELECT COUNT(*) FROM interaction_log WHERE user_type = 'candidate'"
+        debug_query = "SELECT COUNT(*) FROM interaction_log WHERE user_type = 'candidate' OR user_type IS NULL"
         total_interactions = await global_pool.fetchval(debug_query)
         logger.info(f"Total candidate interactions in database: {total_interactions}")
         
@@ -246,7 +246,7 @@ async def get_recent_interactions(
             FROM interaction_log i
             LEFT JOIN candidates c ON i.user_id = c.id
             LEFT JOIN jobs j ON i.job_id = j.id
-            WHERE i.user_type = 'candidate'
+            WHERE i.user_type = 'candidate' OR i.user_type IS NULL
             ORDER BY i.timestamp DESC
             LIMIT $1
         """

@@ -159,8 +159,18 @@ const JobSearch = () => {
     setSearchTags(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
-  const handleViewDetails = (job) => {
+  const handleViewDetails = async (job) => {
     setSelectedJob(job);
+    
+    // Log the view interaction
+    if (userProfile?.id) {
+      try {
+        await apiService.logJobView(userProfile.id, job.job_id);
+        console.log(`✅ Logged VIEWED interaction for job ${job.job_id}`);
+      } catch (error) {
+        console.warn('⚠️ Failed to log view interaction:', error);
+      }
+    }
   };
 
   const closeJobModal = () => {

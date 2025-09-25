@@ -15,6 +15,7 @@ from middleware.security import security_middleware
 # timeout_middleware removed
 from middleware.performance_middleware import performance_middleware
 from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public
+from api.routers.assessments_fast import router as assessments_fast_router
 from services.api_service import api_service
 from services.cache_service import cache_service
 from services.faiss_service import faiss_service
@@ -165,6 +166,7 @@ app.include_router(job_assignments.router, prefix="/api/v1/jobs/assignments", ta
 app.include_router(applications_public.router, prefix="/api/v1/applications-public", tags=["Applications Public"])
 app.include_router(company.router, prefix="/api/v1/company", tags=["Company"])
 app.include_router(company_public.router, prefix="/api/v1/company", tags=["Company Public"])
+app.include_router(assessments_fast_router, prefix="/api/v1", tags=["Assessments Fast"])
 
 # Health check endpoint
 @app.get("/health")
