@@ -105,7 +105,7 @@ const RecruiterDashboard = () => {
               <i className="fa-solid fa-building"></i>
             </div>
             <div className="header-text">
-              <h1 className="header-title">Recruiter Dashboard</h1>
+              <h1 className="header-title">Boolmind</h1>
               <p className="header-subtitle">Welcome back, {recruiterData?.full_name || 'Recruiter'}!</p>
             </div>
           </div>

@@ -74,6 +74,7 @@ const CandidatesDashboard = () => {
       if (response.ok) {
         const data = await response.json();
         console.log('User profile data:', data);
+        console.log('User profile ID:', data.id);
         setUserProfile(data);
         setProfileData({
           name: data.name || '',
@@ -224,6 +225,14 @@ const CandidatesDashboard = () => {
         setError('Please log in to apply for jobs');
         return;
       }
+
+      console.log('User profile:', userProfile);
+      console.log('Candidate ID:', userProfile?.id);
+      
+      if (!userProfile?.id) {
+        setError('User profile not loaded. Please refresh the page and try again.');
+        return;
+      }
       
       const response = await fetch('http://localhost:8000/api/v1/applications/public', {
         method: 'POST',
@@ -232,7 +241,7 @@ const CandidatesDashboard = () => {
         },
         body: JSON.stringify({ 
           job_id: jobId,
-          candidate_id: userProfile?.id,
+          candidate_id: userProfile.id,
           status: 'APPLIED'
         })
       });

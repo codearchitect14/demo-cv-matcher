@@ -1,5 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './InteractionsAnalytics.css';
+// Charts
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const InteractionsAnalytics = () => {
   const [interactions, setInteractions] = useState([]);
@@ -22,6 +48,74 @@ const InteractionsAnalytics = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentInteractions, setRecentInteractions] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Chart filters - default to show recent data (last 30 days from today)
+  const [chartFilters, setChartFilters] = useState({
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Last 30 days
+    endDate: new Date().toISOString().split('T')[0], // Today
+    types: { VIEWED: true, APPLIED: true, REJECTED: true, INTERVIEW_SCHEDULED: true },
+    jobTitle: ''
+  });
+
+  // Chart visibility - only show when clicked
+  const [activeChart, setActiveChart] = useState('daily-trends'); // null, 'daily-trends', 'job-wise', 'distribution', 'funnel'
+  
+  // Keyboard navigation for carousel
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.key === 'ArrowLeft') {
+        const charts = ['daily-trends', 'job-wise', 'funnel'];
+        const currentIndex = charts.indexOf(activeChart);
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : charts.length - 1;
+        setActiveChart(charts[prevIndex]);
+      } else if (e.key === 'ArrowRight') {
+        const charts = ['daily-trends', 'job-wise', 'funnel'];
+        const currentIndex = charts.indexOf(activeChart);
+        const nextIndex = currentIndex < charts.length - 1 ? currentIndex + 1 : 0;
+        setActiveChart(charts[nextIndex]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [activeChart]);
+
+  // Touch/swipe support for mobile
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe || isRightSwipe) {
+      const charts = ['daily-trends', 'job-wise', 'funnel'];
+      const currentIndex = charts.indexOf(activeChart);
+      
+      if (isLeftSwipe) {
+        // Swipe left - go to next chart
+        const nextIndex = currentIndex < charts.length - 1 ? currentIndex + 1 : 0;
+        setActiveChart(charts[nextIndex]);
+      } else if (isRightSwipe) {
+        // Swipe right - go to previous chart
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : charts.length - 1;
+        setActiveChart(charts[prevIndex]);
+      }
+    }
+  };
   
   // Interaction history params
   const [interactionParams, setInteractionParams] = useState({
@@ -246,6 +340,127 @@ const InteractionsAnalytics = () => {
     });
   };
 
+  // ===== Charts: derive data from interactions (same source as table) =====
+  const interactionsForCharts = useMemo(() => {
+    const list = Array.isArray(recentInteractions) ? recentInteractions : [];
+    console.log('📊 Chart data calculation - Total interactions:', list.length);
+    console.log('📊 Chart filters:', chartFilters);
+    
+    // Date range filter
+    const start = chartFilters.startDate ? new Date(chartFilters.startDate) : null;
+    const end = chartFilters.endDate ? new Date(chartFilters.endDate) : null;
+    const jobFilter = (chartFilters.jobTitle || '').toLowerCase();
+
+    const filtered = list.filter(it => {
+      // type filter
+      if (it.interaction_type && chartFilters.types[it.interaction_type] === false) {
+        return false;
+      }
+      // date filter
+      if (it.timestamp) {
+        const d = new Date(it.timestamp);
+        if (start && d < start) return false;
+        if (end) {
+          // Include the end date by setting to end-of-day
+          const endDay = new Date(end);
+          endDay.setHours(23, 59, 59, 999);
+          if (d > endDay) return false;
+        }
+      }
+      // job title filter
+      if (jobFilter) {
+        const jt = (it.job_title || '').toLowerCase();
+        if (!jt.includes(jobFilter)) return false;
+      }
+      return true;
+    });
+    
+    console.log('📊 Filtered interactions for charts:', filtered.length);
+    return filtered;
+  }, [recentInteractions, chartFilters]);
+
+  // KPI cards (today)
+  const kpis = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+    let applied = 0, viewed = 0, rejected = 0;
+    interactionsForCharts.forEach(it => {
+      if (!it.timestamp) return;
+      const t = new Date(it.timestamp);
+      if (t.getFullYear() === y && t.getMonth() === m && t.getDate() === d) {
+        if (it.interaction_type === 'APPLIED') applied += 1;
+        else if (it.interaction_type === 'VIEWED') viewed += 1;
+        else if (it.interaction_type === 'REJECTED') rejected += 1;
+      }
+    });
+    return { applied, viewed, rejected };
+  }, [interactionsForCharts]);
+
+  // Daily trends (per date per type)
+  const dailyTrends = useMemo(() => {
+    const map = {}; // dateKey -> { VIEWED, APPLIED, REJECTED }
+    interactionsForCharts.forEach(it => {
+      if (!it.timestamp) return;
+      const d = new Date(it.timestamp);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (!map[key]) map[key] = { VIEWED: 0, APPLIED: 0, REJECTED: 0, INTERVIEW_SCHEDULED: 0 };
+      const t = it.interaction_type || '';
+      if (map[key][t] !== undefined) map[key][t] += 1;
+    });
+    const labels = Object.keys(map).sort();
+    console.log(' Daily trends data:', { labels, map });
+    return {
+      labels,
+      VIEWED: labels.map(l => map[l].VIEWED),
+      APPLIED: labels.map(l => map[l].APPLIED),
+      REJECTED: labels.map(l => map[l].REJECTED),
+      INTERVIEW_SCHEDULED: labels.map(l => map[l].INTERVIEW_SCHEDULED)
+    };
+  }, [interactionsForCharts]);
+
+  // Job-wise applications (counts by job_title and type)
+  const jobWise = useMemo(() => {
+    const map = {}; // job_title -> { VIEWED, APPLIED, REJECTED }
+    interactionsForCharts.forEach(it => {
+      const title = it.job_title || 'Untitled Job';
+      if (!map[title]) map[title] = { VIEWED: 0, APPLIED: 0, REJECTED: 0 };
+      const t = it.interaction_type || '';
+      if (map[title][t] !== undefined) map[title][t] += 1;
+    });
+    // Sort by total ascending and take top 5 (reverse order)
+    const entries = Object.entries(map)
+      .map(([title, v]) => ({ title, total: v.VIEWED + v.APPLIED + v.REJECTED, ...v }))
+      .sort((a, b) => a.total - b.total)
+      .slice(0, 5);
+    console.log(' Job-wise data:', entries);
+    return entries;
+  }, [interactionsForCharts]);
+
+  // Distribution donut
+  const distribution = useMemo(() => {
+    let viewed = 0, applied = 0, rejected = 0;
+    interactionsForCharts.forEach(it => {
+      if (it.interaction_type === 'VIEWED') viewed += 1;
+      else if (it.interaction_type === 'APPLIED') applied += 1;
+      else if (it.interaction_type === 'REJECTED') rejected += 1;
+    });
+    console.log('🍩 Distribution data:', { viewed, applied, rejected });
+    return { viewed, applied, rejected };
+  }, [interactionsForCharts]);
+
+  // Funnel data (Viewed -> Applied -> Interview -> Rejected)
+  const funnel = useMemo(() => {
+    let viewed = 0, applied = 0, interview = 0, rejected = 0;
+    interactionsForCharts.forEach(it => {
+      if (it.interaction_type === 'VIEWED') viewed += 1;
+      if (it.interaction_type === 'APPLIED') applied += 1;
+      if (it.interaction_type === 'INTERVIEW_SCHEDULED') interview += 1;
+      if (it.interaction_type === 'REJECTED') rejected += 1;
+    });
+    console.log('🔄 Funnel data:', { viewed, applied, interview, rejected });
+    return { viewed, applied, interview, rejected };
+  }, [interactionsForCharts]);
+
   const fetchBehaviorPatterns = async () => {
     if (!selectedCandidate) {
       setError('Please select a candidate');
@@ -451,6 +666,13 @@ const InteractionsAnalytics = () => {
     }
   }, [activeTab, selectedCandidate]);
 
+  // Prevent switching to disabled tabs
+  useEffect(() => {
+    if (activeTab === 'behavior' || activeTab === 'similar') {
+      setActiveTab('interactions');
+    }
+  }, [activeTab]);
+
   return (
     <div className="interactions-analytics">
       <div className="unified-header">
@@ -479,6 +701,384 @@ const InteractionsAnalytics = () => {
         </div>
       )}
 
+      {/* Analytics Dashboard */}
+      <div className="analytics-dashboard" style={{marginTop: '12px', marginBottom: '20px'}}>
+        {/* Improved Date Range & Chart Controls */}
+        <div style={{
+          background: '#fff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '16px'
+        }}>
+          {/* Date Range Controls */}
+          <div style={{display:'flex', gap:'16px', alignItems:'center'}}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+              <label style={{fontSize:14, fontWeight:600, color:'#374151', minWidth:'40px'}}>From:</label>
+              <input 
+                type="date" 
+                value={chartFilters.startDate}
+                onChange={(e) => setChartFilters({...chartFilters, startDate: e.target.value})}
+                style={{
+                  padding:'10px 12px', 
+                  border:'1px solid #d1d5db', 
+                  borderRadius:6, 
+                  fontSize:14,
+                  background:'#fff',
+                  minWidth:'140px'
+                }}
+              />
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+              <label style={{fontSize:14, fontWeight:600, color:'#374151', minWidth:'30px'}}>To:</label>
+              <input 
+                type="date" 
+                value={chartFilters.endDate}
+                onChange={(e) => setChartFilters({...chartFilters, endDate: e.target.value})}
+                style={{
+                  padding:'10px 12px', 
+                  border:'1px solid #d1d5db', 
+                  borderRadius:6, 
+                  fontSize:14,
+                  background:'#fff',
+                  minWidth:'140px'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+            <button 
+              onClick={() => {
+                setChartFilters({
+                  startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  endDate: new Date().toISOString().split('T')[0],
+                  types: { VIEWED: true, APPLIED: true, REJECTED: true, INTERVIEW_SCHEDULED: true },
+                  jobTitle: ''
+                });
+                fetchRecentInteractions(); // Refresh data
+              }}
+              style={{
+                background:'#3b82f6', 
+                color:'white', 
+                border:'none', 
+                borderRadius:6, 
+                padding:'10px 16px', 
+                cursor:'pointer',
+                fontSize:14,
+                fontWeight:500,
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = '#2563eb';
+                e.target.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = '#3b82f6';
+                e.target.style.transform = 'translateY(0)';
+              }}
+            >
+               Show Last 7 Days
+            </button>
+            <button 
+              onClick={() => setActiveChart(null)}
+              style={{
+                background:'#ef4444', 
+                color:'white', 
+                border:'none', 
+                borderRadius:6, 
+                padding:'10px 16px', 
+                cursor:'pointer',
+                fontSize:14,
+                fontWeight:500,
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = '#dc2626';
+                e.target.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = '#ef4444';
+                e.target.style.transform = 'translateY(0)';
+              }}
+            >
+               Hide Charts
+            </button>
+          </div>
+        </div>
+
+        {/* Tabbed Charts Section */}
+        <div style={{
+          background: '#fff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '12px',
+          marginBottom: '20px',
+          overflow: 'hidden'
+        }}>
+          {/* Chart Tabs */}
+          <div style={{
+            display: 'flex',
+            borderBottom: '1px solid #e5e7eb',
+            background: '#f9fafb'
+          }}>
+            {[
+              { id: 'daily-trends', label: 'Daily Trends', icon: '' },
+              { id: 'job-wise', label: 'Job-wise Applications', icon: '' },
+              { id: 'funnel', label: 'Candidate Funnel', icon: '' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveChart(tab.id)}
+                style={{
+                  flex: 1,
+                  padding: '16px 20px',
+                  border: 'none',
+                  background: activeChart === tab.id ? '#fff' : 'transparent',
+                  borderBottom: activeChart === tab.id ? '3px solid #3b82f6' : '3px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '14px',
+                  fontWeight: activeChart === tab.id ? '600' : '500',
+                  color: activeChart === tab.id ? '#1f2937' : '#6b7280'
+                }}
+              >
+                <span style={{fontSize: '16px'}}>{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Chart Content */}
+          <div style={{padding: '20px'}}>
+            {/* Daily Trends Chart */}
+            {activeChart === 'daily-trends' && (
+              <div style={{height: '45vh', minHeight: '400px'}}>
+                {dailyTrends.labels.length > 0 ? (
+                  <Bar
+                    data={{
+                      labels: dailyTrends.labels,
+                      datasets: [
+                        { 
+                          label:'Viewed', 
+                          data: dailyTrends.VIEWED, 
+                          backgroundColor:'#3b82f6',
+                          borderColor: '#2563eb',
+                          borderWidth: 1
+                        },
+                        { 
+                          label:'Applied', 
+                          data: dailyTrends.APPLIED, 
+                          backgroundColor:'#10b981',
+                          borderColor: '#059669',
+                          borderWidth: 1
+                        },
+                        { 
+                          label:'Rejected', 
+                          data: dailyTrends.REJECTED, 
+                          backgroundColor:'#ef4444',
+                          borderColor: '#dc2626',
+                          borderWidth: 1
+                        },
+                        { 
+                          label:'Interview', 
+                          data: dailyTrends.INTERVIEW_SCHEDULED, 
+                          backgroundColor:'#8b5cf6',
+                          borderColor: '#7c3aed',
+                          borderWidth: 1
+                        }
+                      ]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins:{ 
+                        legend:{ 
+                          position:'top',
+                          labels: {
+                            usePointStyle: true,
+                            padding: 20,
+                            font: { size: 12 }
+                          }
+                        }
+                      },
+                      scales:{ 
+                        x:{ 
+                          grid:{ display:true, color: 'rgba(0,0,0,0.1)' },
+                          title: {
+                            display: true,
+                            text: 'Date',
+                            font: { size: 12, weight: 'bold' }
+                          },
+                          ticks: {
+                            font: { size: 11 },
+                            maxRotation: 45,
+                            minRotation: 0
+                          }
+                        }, 
+                        y:{ 
+                          beginAtZero:true,
+                          title: {
+                            display: true,
+                            text: 'Count',
+                            font: { size: 12, weight: 'bold' }
+                          },
+                          ticks: {
+                            font: { size: 11 },
+                            stepSize: 1
+                          }
+                        } 
+                      },
+                      interaction: {
+                        intersect: false,
+                        mode: 'index'
+                      }
+                    }}
+                    height={400}
+                  />
+                ) : (
+                  <div style={{textAlign:'center', padding:'60px', color:'#6b7280'}}>
+                    <div style={{fontSize:18, marginBottom:8}}>No data available</div>
+                    <div>No interactions found for the selected date range.</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Job-wise Applications Chart */}
+            {activeChart === 'job-wise' && (
+              <div style={{height: '45vh', minHeight: '400px'}}>
+                {jobWise.length > 0 ? (
+                  <Bar
+                    data={{
+                      labels: jobWise.map(j => j.title.length > 25 ? j.title.substring(0, 25) + '...' : j.title),
+                      datasets: [
+                        { 
+                          label:'Viewed', 
+                          data: jobWise.map(j => j.VIEWED || 0), 
+                          backgroundColor:'#3b82f6',
+                          borderColor: '#2563eb',
+                          borderWidth: 1
+                        },
+                        { 
+                          label:'Applied', 
+                          data: jobWise.map(j => j.APPLIED || 0), 
+                          backgroundColor:'#10b981',
+                          borderColor: '#059669',
+                          borderWidth: 1
+                        },
+                        { 
+                          label:'Rejected', 
+                          data: jobWise.map(j => j.REJECTED || 0), 
+                          backgroundColor:'#ef4444',
+                          borderColor: '#dc2626',
+                          borderWidth: 1
+                        }
+                      ]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins:{ 
+                        legend:{ 
+                          position:'top',
+                          labels: {
+                            usePointStyle: true,
+                            padding: 20,
+                            font: { size: 12 }
+                          }
+                        }
+                      },
+                      scales:{ 
+                        x:{ 
+                          title: {
+                            display: true,
+                            text: 'Job Titles',
+                            font: { size: 12, weight: 'bold' }
+                          },
+                          ticks: {
+                            font: { size: 11 },
+                            maxRotation: 45,
+                            minRotation: 0
+                          }
+                        },
+                        y: {
+                          beginAtZero:true,
+                          title: {
+                            display: true,
+                            text: 'Count',
+                            font: { size: 12, weight: 'bold' }
+                          },
+                          ticks: {
+                            font: { size: 11 },
+                            stepSize: 1
+                          }
+                        }
+                      }
+                    }}
+                    height={400}
+                  />
+                ) : (
+                  <div style={{textAlign:'center', padding:'60px', color:'#6b7280'}}>
+                    <div style={{fontSize:18, marginBottom:8}}>No data available</div>
+                    <div>No job applications found for the selected date range.</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Candidate Funnel Chart - Compact Widget */}
+            {activeChart === 'funnel' && (
+              <div style={{height: '120px', display: 'flex', alignItems: 'center'}}>
+                {(funnel.viewed + funnel.applied + funnel.interview + funnel.rejected) > 0 ? (
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'16px', width: '100%'}}>
+                    {[
+                      {label:'Viewed', value:funnel.viewed, color:'#3b82f6'},
+                      {label:'Applied', value:funnel.applied, color:'#10b981'},
+                      {label:'Interview', value:funnel.interview, color:'#8b5cf6'},
+                      {label:'Rejected', value:funnel.rejected, color:'#ef4444'}
+                    ].map(step => (
+                      <div key={step.label} style={{
+                        background:'#f9fafb', 
+                        border:'1px solid #e5e7eb', 
+                        borderRadius:8, 
+                        padding:12, 
+                        textAlign:'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        height: '100px'
+                      }}>
+                        <div style={{fontSize:12, fontWeight:600, color:'#374151', marginBottom:4}}>{step.label}</div>
+                        <div style={{height:4, background:'#e5e7eb', borderRadius:999, marginBottom:6}}>
+                          <div style={{width:`${step.value === 0 ? 2 : 100}%`, maxWidth:'100%', height:'100%', background:step.color, borderRadius:999}} />
+                        </div>
+                        <div style={{fontSize:20, fontWeight:700, color:step.color}}>{step.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{textAlign:'center', padding:'20px', color:'#6b7280', width: '100%'}}>
+                    <div style={{fontSize:16, marginBottom:4}}>No data available</div>
+                    <div style={{fontSize:12}}>No candidate funnel data found for the selected date range.</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
       <div className="tabs">
         <button 
           className={`tab ${activeTab === 'interactions' ? 'active' : ''}`}
@@ -487,14 +1087,18 @@ const InteractionsAnalytics = () => {
           Interaction History
         </button>
         <button 
-          className={`tab ${activeTab === 'behavior' ? 'active' : ''}`}
-          onClick={() => setActiveTab('behavior')}
+          className={`tab disabled ${activeTab === 'behavior' ? 'active' : ''}`}
+          onClick={() => {}} // Disabled - no action
+          disabled
+          title="Behavior Patterns feature is currently disabled"
         >
           Behavior Patterns
         </button>
         <button 
-          className={`tab ${activeTab === 'similar' ? 'active' : ''}`}
-          onClick={() => setActiveTab('similar')}
+          className={`tab disabled ${activeTab === 'similar' ? 'active' : ''}`}
+          onClick={() => {}} // Disabled - no action
+          disabled
+          title="Similar Users feature is currently disabled"
         >
           Similar Users
         </button>
@@ -506,11 +1110,11 @@ const InteractionsAnalytics = () => {
             <h2>Interaction History</h2>
             
             {/* Dashboard Layout with Sidebar */}
-            <div className="dashboard-layout">
+            <div className="dashboard-layout" style={{maxWidth: '100%', overflow: 'hidden'}}>
               {/* Filters Sidebar */}
               <div className="filters-sidebar">
                 <div className="sidebar-header">
-                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
+                  <h3 className="sidebar-title">Filter & Search</h3>
                 </div>
 
                 {/* Smart Search Section */}
@@ -669,7 +1273,7 @@ const InteractionsAnalytics = () => {
               </div>
 
               {/* Results Content */}
-              <div className="candidates-content">
+              <div className="candidates-content" style={{maxWidth: '100%', overflow: 'hidden'}}>
                 <div className="results-header">
                   <h3 className="results-title">
                     {selectedCandidate 
@@ -677,6 +1281,80 @@ const InteractionsAnalytics = () => {
                       : 'Recent Interactions'
                     }
                   </h3>
+                </div>
+
+                {/* Table Filter Bar */}
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '16px 20px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  gap: '16px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: '200px'}}>
+                    <label style={{fontSize: '14px', fontWeight: '600', color: '#374151', minWidth: '80px'}}>
+                      Candidate:
+                    </label>
+                    <input
+                      type="text"
+                      value={searchName}
+                      onChange={(e) => setSearchName(e.target.value)}
+                      placeholder="Search by candidate name..."
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        background: '#fff',
+                        flex: 1,
+                        minWidth: '120px'
+                      }}
+                    />
+                  </div>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: '200px'}}>
+                    <label style={{fontSize: '14px', fontWeight: '600', color: '#374151', minWidth: '60px'}}>
+                      Job:
+                    </label>
+                    <input
+                      type="text"
+                      value={searchJobTitle}
+                      onChange={(e) => setSearchJobTitle(e.target.value)}
+                      placeholder="Search by job title..."
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        background: '#fff',
+                        flex: 1,
+                        minWidth: '120px'
+                      }}
+                    />
+                  </div>
+                  <div style={{marginLeft: 'auto'}}>
+                    <button
+                      onClick={() => {
+                        setSearchName('');
+                        setSearchJobTitle('');
+                      }}
+                      style={{
+                        padding: '8px 16px',
+                        background: '#6b7280',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
                 </div>
 
               {/* Summary Cards */}
@@ -804,15 +1482,19 @@ const InteractionsAnalytics = () => {
         )}
 
         {activeTab === 'behavior' && (
-          <div className="analytics-section">
+          <div className="analytics-section disabled-section">
             <h2>Behavior Patterns</h2>
+            <div className="disabled-message">
+              <p>🚫 Behavior Patterns feature is currently disabled</p>
+              <p>This functionality is temporarily unavailable.</p>
+            </div>
             
             {/* Dashboard Layout with Sidebar */}
             <div className="dashboard-layout">
               {/* Filters Sidebar */}
               <div className="filters-sidebar">
                 <div className="sidebar-header">
-                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
+                  <h3 className="sidebar-title">Filter & Search</h3>
                 </div>
 
                 {/* Smart Search Section */}
@@ -1066,15 +1748,19 @@ const InteractionsAnalytics = () => {
         )}
 
         {activeTab === 'similar' && (
-          <div className="analytics-section">
+          <div className="analytics-section disabled-section">
             <h2>Similar Users</h2>
+            <div className="disabled-message">
+              <p>🚫 Similar Users feature is currently disabled</p>
+              <p>This functionality is temporarily unavailable.</p>
+            </div>
             
             {/* Dashboard Layout with Sidebar */}
             <div className="dashboard-layout">
               {/* Filters Sidebar */}
               <div className="filters-sidebar">
                 <div className="sidebar-header">
-                  <h3 className="sidebar-title">Search & Filter Candidates</h3>
+                  <h3 className="sidebar-title">Filter & Search</h3>
                 </div>
 
                 {/* Smart Search Section */}
