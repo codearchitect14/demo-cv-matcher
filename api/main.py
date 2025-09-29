@@ -14,7 +14,7 @@ from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
 # timeout_middleware removed
 from middleware.performance_middleware import performance_middleware
-from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public
+from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public, sub_recruiter
 from api.routers.assessments_fast import router as assessments_fast_router
 from services.api_service import api_service
 from services.cache_service import cache_service
@@ -167,6 +167,7 @@ app.include_router(applications_public.router, prefix="/api/v1/applications-publ
 app.include_router(company.router, prefix="/api/v1/company", tags=["Company"])
 app.include_router(company_public.router, prefix="/api/v1/company", tags=["Company Public"])
 app.include_router(assessments_fast_router, prefix="/api/v1", tags=["Assessments Fast"])
+app.include_router(sub_recruiter.router, prefix="/api/v1/recruiter", tags=["Sub-Recruiter"])
 
 # Health check endpoint
 @app.get("/health")

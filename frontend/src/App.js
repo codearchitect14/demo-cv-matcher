@@ -31,6 +31,8 @@ import RecruiterAdmin from './components/RecruiterAdmin';
 import JobAssignments from './components/JobAssignments';
 import CandidateAssessment from './components/CandidateAssessment';
 import AssessmentAnalytics from './components/AssessmentAnalytics';
+import SubRecruiterDashboard from './components/SubRecruiterDashboard';
+import Unauthorized from './components/Unauthorized';
 // import Navigation from './components/Navigation';
 import './App.css';
 
@@ -87,6 +89,8 @@ function App() {
             <Route path="/recruiter-admin" element={<RecruiterAdmin />} />
             <Route path="/job-assignments" element={<JobAssignments />} />
             <Route path="/assessment-analytics" element={<AssessmentAnalytics />} />
+            <Route path="/sub-recruiter/dashboard" element={<SubRecruiterDashboard />} />
+            <Route path="/unauthorized" element={<Unauthorized />} />
         </Routes>
       </div>
     </Router>

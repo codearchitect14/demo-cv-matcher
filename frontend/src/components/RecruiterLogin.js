@@ -71,9 +71,15 @@ const RecruiterLogin = () => {
         localStorage.setItem('recruiterToken', data.access_token);
         localStorage.setItem('recruiterUser', JSON.stringify(data.user));
         
-        // Always redirect to recruiter dashboard (same UI for everyone)
-        alert('Login successful!');
-        navigate('/recruiter/dashboard');
+        // Check if this is the sub-recruiter and redirect accordingly
+        if (formData.email === 'tayyab10@boolmind.com') {
+          alert('Login successful! Redirecting to Sub-Recruiter Dashboard...');
+          navigate('/sub-recruiter/dashboard');
+        } else {
+          // Regular recruiter dashboard
+          alert('Login successful!');
+          navigate('/recruiter/dashboard');
+        }
       } else {
         const errorData = await response.json();
         alert(`Login failed: ${typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail)}`);

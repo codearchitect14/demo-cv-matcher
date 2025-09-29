@@ -1,0 +1,454 @@
+Schema Summary (condensed)
+
+Total tables: 16
+
+Table: alembic_version
+Columns:
+  - Column | Type | Null | Default
+  - version_num | character varying | NO | None
+Constraints:
+  - PK: version_num
+  - CHECK: version_num IS NOT NULL
+  - CHECK: None
+
+Table: applications
+Columns:
+  - Column | Type | Null | Default
+  - job_id | integer | NO | None
+  - candidate_id | integer | NO | None
+  - status | USER-DEFINED | NO | None
+  - id | integer | NO | nextval('applications_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+  - candidate_score | numeric | YES | None
+  - is_qualified | boolean | YES | None
+Constraints:
+  - PK: id
+  - FK: candidate_id
+  - FK: job_id
+  - CHECK: None
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: candidate_id IS NOT NULL
+  - CHECK: status IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+
+Table: assessments
+Columns:
+  - Column | Type | Null | Default
+  - application_id | integer | NO | None
+  - candidate_id | integer | NO | None
+  - job_id | integer | NO | None
+  - status | character varying | NO | 'pending'::character varying
+  - score | numeric | YES | None
+  - start_time | timestamp without time zone | YES | None
+  - completion_time | timestamp without time zone | YES | None
+  - cheat_attempts | integer | YES | 0
+  - mcq_count | integer | YES | 0
+  - created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP
+  - updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP
+Constraints:
+  - PK: application_id
+  - CHECK: None
+  - CHECK: application_id IS NOT NULL
+  - CHECK: None
+  - CHECK: candidate_id IS NOT NULL
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: status IS NOT NULL
+  - CHECK: None
+
+Table: audit_logs
+Columns:
+  - Column | Type | Null | Default
+  - user_id | integer | NO | None
+  - admin_id | integer | YES | None
+  - action_type | USER-DEFINED | NO | None
+  - details | text | YES | None
+  - ip_address | character varying | YES | None
+  - user_agent | character varying | YES | None
+  - id | integer | NO | nextval('audit_logs_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+Constraints:
+  - PK: id
+  - FK: user_id
+  - CHECK: None
+  - CHECK: user_id IS NOT NULL
+  - CHECK: action_type IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+
+Table: candidate_experience
+Columns:
+  - Column | Type | Null | Default
+  - candidate_id | integer | NO | None
+  - skill | character varying | NO | None
+  - years | integer | NO | None
+  - description | text | YES | None
+  - id | integer | NO | nextval('candidate_experience_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+Constraints:
+  - PK: id
+  - FK: candidate_id
+  - CHECK: None
+  - CHECK: candidate_id IS NOT NULL
+  - CHECK: skill IS NOT NULL
+  - CHECK: None
+  - CHECK: years IS NOT NULL
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+
+Table: candidate_skills
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('candidate_skills_id_seq'::regclass)
+  - candidate_id | integer | NO | None
+  - skill_id | integer | NO | None
+  - years_experience | double precision | NO | '0'::double precision
+  - proficiency_level | character varying | NO | 'beginner'::character varying
+  - last_used | timestamp with time zone | YES | None
+  - experience_description | text | YES | None
+  - projects_worked | text | YES | None
+  - created_at | timestamp with time zone | NO | now()
+  - updated_at | timestamp with time zone | NO | now()
+  - deleted_at | timestamp with time zone | YES | None
+Constraints:
+  - PK: id
+  - FK: candidate_id
+  - FK: skill_id
+  - CHECK: updated_at IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: candidate_id IS NOT NULL
+  - CHECK: None
+  - CHECK: skill_id IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: years_experience IS NOT NULL
+  - CHECK: proficiency_level IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: created_at IS NOT NULL
+
+Table: candidates
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('candidates_id_seq'::regclass)
+  - name | character varying | NO | None
+  - location | character varying | NO | None
+  - password_hash | character varying | YES | None
+  - expected_salary_min | integer | YES | None
+  - expected_salary_max | integer | YES | None
+  - domain | character varying | NO | None
+  - summary | text | YES | None
+  - email | character varying | NO | None
+  - consent_given | boolean | NO | None
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+  - role | character varying | NO | 'user'::character varying
+  - total_experience_years | integer | YES | None
+Constraints:
+  - PK: id
+  - CHECK: None
+  - CHECK: consent_given IS NOT NULL
+  - CHECK: role IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+  - CHECK: name IS NOT NULL
+  - CHECK: location IS NOT NULL
+  - CHECK: None
+  - CHECK: domain IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: email IS NOT NULL
+
+Table: companies
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('companies_id_seq'::regclass)
+  - name | character varying | NO | None
+  - domain | character varying | NO | None
+  - description | text | YES | None
+  - max_recruiters | integer | NO | 10
+  - max_jobs | integer | NO | 100
+  - contact_email | character varying | YES | None
+  - contact_phone | character varying | YES | None
+  - address | text | YES | None
+  - is_active | boolean | NO | true
+  - subscription_plan | character varying | NO | 'basic'::character varying
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+Constraints:
+  - PK: id
+  - UNIQUE: name
+  - CHECK: None
+  - CHECK: is_active IS NOT NULL
+  - CHECK: None
+  - CHECK: subscription_plan IS NOT NULL
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+  - CHECK: name IS NOT NULL
+  - CHECK: None
+  - CHECK: domain IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: max_recruiters IS NOT NULL
+  - CHECK: None
+  - CHECK: max_jobs IS NOT NULL
+
+Table: interaction_log
+Columns:
+  - Column | Type | Null | Default
+  - user_id | integer | NO | None
+  - job_id | integer | NO | None
+  - interaction_type | USER-DEFINED | NO | None
+  - timestamp | timestamp with time zone | NO | now()
+  - id | integer | NO | nextval('interaction_log_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+  - user_type | character varying | YES | None
+Constraints:
+  - PK: id
+  - FK: job_id
+  - FK: user_id
+  - CHECK: user_id IS NOT NULL
+  - CHECK: None
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: interaction_type IS NOT NULL
+  - CHECK: None
+  - CHECK: timestamp IS NOT NULL
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+
+Table: interactions
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('interactions_id_seq'::regclass)
+  - candidate_id | integer | YES | None
+  - job_id | integer | YES | None
+  - interaction_type | character varying | NO | None
+  - created_at | timestamp without time zone | YES | now()
+Constraints:
+  - PK: id
+  - FK: candidate_id
+  - FK: job_id
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+  - CHECK: interaction_type IS NOT NULL
+
+Table: job_mandatory_skills
+Columns:
+  - Column | Type | Null | Default
+  - job_id | integer | NO | None
+  - skill | character varying | NO | None
+  - min_experience | integer | NO | None
+  - id | integer | NO | nextval('job_mandatory_skills_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+Constraints:
+  - PK: id
+  - FK: job_id
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: skill IS NOT NULL
+  - CHECK: None
+  - CHECK: min_experience IS NOT NULL
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+
+Table: job_mcqs
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('job_mcqs_id_seq'::regclass)
+  - job_id | integer | NO | None
+  - question_number | integer | NO | None
+  - question | text | NO | None
+  - option_a | text | NO | None
+  - option_b | text | NO | None
+  - option_c | text | NO | None
+  - option_d | text | NO | None
+  - correct_answer | character | NO | None
+  - created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP
+Constraints:
+  - PK: id
+  - UNIQUE: job_id, question_number
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: question_number IS NOT NULL
+  - CHECK: question IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: option_a IS NOT NULL
+  - CHECK: None
+  - CHECK: option_b IS NOT NULL
+  - CHECK: option_c IS NOT NULL
+  - CHECK: None
+  - CHECK: option_d IS NOT NULL
+  - CHECK: None
+  - CHECK: correct_answer IS NOT NULL
+  - CHECK: None
+  - CHECK: (correct_answer = ANY (ARRAY['A'::bpchar, 'B'::bpchar, 'C...
+  - CHECK: None
+
+Table: job_skills
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('job_skills_id_seq'::regclass)
+  - job_id | integer | NO | None
+  - skill_id | integer | NO | None
+  - min_years_experience | double precision | NO | '0'::double precision
+  - priority | character varying | NO | 'required'::character varying
+  - description | text | YES | None
+  - created_at | timestamp with time zone | NO | now()
+  - updated_at | timestamp with time zone | NO | now()
+  - deleted_at | timestamp with time zone | YES | None
+Constraints:
+  - PK: id
+  - FK: job_id
+  - FK: skill_id
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: job_id IS NOT NULL
+  - CHECK: None
+  - CHECK: skill_id IS NOT NULL
+  - CHECK: None
+  - CHECK: min_years_experience IS NOT NULL
+  - CHECK: priority IS NOT NULL
+  - CHECK: None
+  - CHECK: created_at IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: updated_at IS NOT NULL
+
+Table: jobs
+Columns:
+  - Column | Type | Null | Default
+  - title | character varying | NO | None
+  - company | character varying | YES | None
+  - location | character varying | NO | None
+  - salary_min | integer | YES | None
+  - salary_max | integer | YES | None
+  - domain | character varying | NO | None
+  - total_years_required | integer | NO | None
+  - job_description | text | NO | None
+  - id | integer | NO | nextval('jobs_id_seq'::regclass)
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+  - recruiter_id | integer | YES | None
+  - is_active | boolean | NO | true
+  - threshold_score | integer | NO | 70
+  - company_id | integer | NO | None
+Constraints:
+  - PK: id
+  - FK: company_id
+  - FK: recruiter_id
+  - CHECK: None
+  - CHECK: is_active IS NOT NULL
+  - CHECK: threshold_score IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: company_id IS NOT NULL
+  - CHECK: None
+  - CHECK: title IS NOT NULL
+  - CHECK: None
+  - CHECK: location IS NOT NULL
+  - CHECK: domain IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: total_years_required IS NOT NULL
+  - CHECK: job_description IS NOT NULL
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+
+Table: recruiters
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('recruiters_id_seq'::regclass)
+  - full_name | character varying | NO | None
+  - email | character varying | NO | None
+  - phone_number | character varying | YES | None
+  - password_hash | character varying | NO | None
+  - company_name | character varying | NO | None
+  - company_description | text | YES | None
+  - role | character varying | NO | None
+  - is_active | boolean | NO | None
+  - email_verified | boolean | NO | None
+  - created_at | timestamp with time zone | YES | now()
+  - updated_at | timestamp with time zone | YES | now()
+  - domain | character varying | NO | None
+  - company_size | character varying | NO | None
+  - company_id | integer | NO | None
+Constraints:
+  - PK: id
+  - FK: company_id
+  - CHECK: None
+  - CHECK: role IS NOT NULL
+  - CHECK: is_active IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: email_verified IS NOT NULL
+  - CHECK: None
+  - CHECK: domain IS NOT NULL
+  - CHECK: company_size IS NOT NULL
+  - CHECK: None
+  - CHECK: company_id IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: id IS NOT NULL
+  - CHECK: full_name IS NOT NULL
+  - CHECK: None
+  - CHECK: email IS NOT NULL
+  - CHECK: None
+  - CHECK: password_hash IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: company_name IS NOT NULL
+
+Table: skills
+Columns:
+  - Column | Type | Null | Default
+  - id | integer | NO | nextval('skills_id_seq'::regclass)
+  - name | character varying | NO | None
+  - category | character varying | NO | None
+  - description | text | YES | None
+  - aliases | text | YES | None
+  - parent_skill_id | integer | YES | None
+  - is_active | boolean | NO | true
+  - created_at | timestamp with time zone | NO | now()
+  - updated_at | timestamp with time zone | NO | now()
+  - deleted_at | timestamp with time zone | YES | None
+Constraints:
+  - PK: id
+  - CHECK: id IS NOT NULL
+  - CHECK: None
+  - CHECK: None
+  - CHECK: name IS NOT NULL
+  - CHECK: None
+  - CHECK: category IS NOT NULL
+  - CHECK: is_active IS NOT NULL
+  - CHECK: None
+  - CHECK: created_at IS NOT NULL
+  - CHECK: None
+  - CHECK: updated_at IS NOT NULL
+  - CHECK: None
+
+Recruiters table: role/permission-related columns
+  - role (character varying)
