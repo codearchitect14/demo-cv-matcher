@@ -15,6 +15,10 @@ from middleware.security import security_middleware
 # timeout_middleware removed
 from middleware.performance_middleware import performance_middleware
 from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public, sub_recruiter
+from api.routers import super_admin_fast as super_admin_router
+from api.routers import super_admin_admins as super_admin_admins_router
+from api.routers import offer_plans
+from api.routers import company_subscriptions
 from api.routers.assessments_fast import router as assessments_fast_router
 from services.api_service import api_service
 from services.cache_service import cache_service
@@ -168,6 +172,10 @@ app.include_router(company.router, prefix="/api/v1/company", tags=["Company"])
 app.include_router(company_public.router, prefix="/api/v1/company", tags=["Company Public"])
 app.include_router(assessments_fast_router, prefix="/api/v1", tags=["Assessments Fast"])
 app.include_router(sub_recruiter.router, prefix="/api/v1/recruiter", tags=["Sub-Recruiter"])
+app.include_router(super_admin_router.router, prefix="/api/v1/super-admin", tags=["Super Admin"])
+app.include_router(super_admin_admins_router.router, prefix="/api/v1/super-admin", tags=["Super Admin - Company Admins"])
+app.include_router(offer_plans.router, prefix="/api/v1/super-admin", tags=["Super Admin - Offer Plans"])
+app.include_router(company_subscriptions.router, prefix="/api/v1/super-admin", tags=["Super Admin - Company Subscriptions"])
 
 # Health check endpoint
 @app.get("/health")

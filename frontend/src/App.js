@@ -32,6 +32,8 @@ import JobAssignments from './components/JobAssignments';
 import CandidateAssessment from './components/CandidateAssessment';
 import AssessmentAnalytics from './components/AssessmentAnalytics';
 import SubRecruiterDashboard from './components/SubRecruiterDashboard';
+import SuperAdminLogin from './components/SuperAdminLogin';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
 import Unauthorized from './components/Unauthorized';
 // import Navigation from './components/Navigation';
 import './App.css';
@@ -90,6 +92,8 @@ function App() {
             <Route path="/job-assignments" element={<JobAssignments />} />
             <Route path="/assessment-analytics" element={<AssessmentAnalytics />} />
             <Route path="/sub-recruiter/dashboard" element={<SubRecruiterDashboard />} />
+        <Route path="/super-admin-login" element={<SuperAdminLogin />} />
+        <Route path="/super-admin-dashboard" element={<SuperAdminDashboard />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
         </Routes>
       </div>

@@ -76,7 +76,7 @@ _user_sessions = {}
 
 class TokenData(BaseModel):
     email: Optional[str] = None
-    user_id: Optional[int] = None
+    user_id: Optional[str] = None  # Changed to str to support UUID strings for super admins
     role: Optional[str] = None
 
 class TokenResponse(BaseModel):
@@ -213,7 +213,7 @@ def verify_token(token: str) -> Optional[TokenData]:
     try:
         payload = jwt.decode(token, SecurityConfig.SECRET_KEY, algorithms=[SecurityConfig.ALGORITHM])
         email: str = payload.get("sub")
-        user_id: int = payload.get("user_id")
+        user_id: str = payload.get("user_id")
         role: str = payload.get("role", "user")
         
         if email is None:

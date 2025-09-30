@@ -66,19 +66,25 @@ const RecruiterLogin = () => {
 
       if (response.ok) {
         const data = await response.json();
-        
+
         // Store token and user info
         localStorage.setItem('recruiterToken', data.access_token);
         localStorage.setItem('recruiterUser', JSON.stringify(data.user));
-        
-        // Check if this is the sub-recruiter and redirect accordingly
-        if (formData.email === 'tayyab10@boolmind.com') {
-          alert('Login successful! Redirecting to Sub-Recruiter Dashboard...');
-          navigate('/sub-recruiter/dashboard');
-        } else {
-          // Regular recruiter dashboard
-          alert('Login successful!');
+
+        // Role-based redirect with test-phase override
+        const emailLower = (formData.email || '').toLowerCase().trim();
+        let role = (data && data.user && data.user.role ? String(data.user.role) : 'recruiter').toLowerCase();
+
+        // TODO: remove before production — forced admin for testing
+        if (emailLower === 'db10@boolmind.com') {
+          role = 'admin';
+        }
+
+        if (role === 'admin') {
           navigate('/recruiter/dashboard');
+        } else {
+          // Recruiters (and sub-recruiters) go to the scoped dashboard
+          navigate('/sub-recruiter/dashboard');
         }
       } else {
         const errorData = await response.json();
