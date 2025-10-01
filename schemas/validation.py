@@ -261,6 +261,8 @@ class UserRegistrationValidation(BaseValidationModel):
     expected_salary_min: Optional[int] = Field(None, ge=0, le=1000000)
     expected_salary_max: Optional[int] = Field(None, ge=0, le=1000000)
     summary: str = Field(..., min_length=1, max_length=SecurityConfig.MAX_DESCRIPTION_LENGTH)
+    skills: Optional[List[dict]] = Field(default_factory=list, description="List of skills with years of experience")
+    total_experience_years: Optional[float] = Field(None, ge=0, le=50, description="Total years of professional experience")
     
     @validator('name')
     def validate_name(cls, v):
@@ -299,6 +301,31 @@ class UserRegistrationValidation(BaseValidationModel):
         min_salary = values.get('expected_salary_min')
         if v is not None and min_salary is not None and v < min_salary:
             raise ValueError('Maximum salary cannot be less than minimum salary')
+        return v
+    
+    @validator('skills')
+    def validate_skills(cls, v):
+        if v is not None:
+            if not isinstance(v, list):
+                raise ValueError('Skills must be a list')
+            for skill in v:
+                if not isinstance(skill, dict):
+                    raise ValueError('Each skill must be a dictionary')
+                if 'name' not in skill or 'years' not in skill:
+                    raise ValueError('Each skill must have "name" and "years" fields')
+                if not isinstance(skill['years'], (int, float)) or skill['years'] < 0:
+                    raise ValueError('Skill years must be a positive number')
+        return v
+    
+    @validator('total_experience_years')
+    def validate_total_experience(cls, v):
+        if v is not None:
+            if not isinstance(v, (int, float)):
+                raise ValueError('Total experience years must be a number')
+            if v < 0:
+                raise ValueError('Total experience years cannot be negative')
+            if v > 50:
+                raise ValueError('Total experience years cannot exceed 50')
         return v
 
 class JobCreationValidation(BaseValidationModel):

@@ -20,6 +20,9 @@ const CandidatesDashboard = () => {
   const [showAddSkillForm, setShowAddSkillForm] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null);
   const [pendingSkills, setPendingSkills] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   
   const [profileData, setProfileData] = useState({
     name: '', email: '', location: '', domain: '',
@@ -45,6 +48,7 @@ const CandidatesDashboard = () => {
     fetchApplications();
     fetchJobRecommendations();
     fetchSkills();
+    fetchNotifications();
   }, [navigate]);
 
   const fetchUserProfile = async () => {
@@ -189,6 +193,113 @@ const CandidatesDashboard = () => {
       console.error('Error fetching job recommendations:', error);
       // If recommendations fail, fetch all available jobs as fallback
       await fetchAllJobs();
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        console.log('No authentication token found');
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/api/v1/notifications/my-notifications', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Notifications fetched:', data);
+        console.log('Total notifications received:', data.length);
+        
+        // Filter notifications from last 7 days (increased from 24 hours)
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const recentNotifications = data.filter(notification => 
+          new Date(notification.created_at) >= sevenDaysAgo
+        );
+        
+        setNotifications(recentNotifications);
+        console.log('Filtered notifications (last 7 days):', recentNotifications.length);
+        
+        // Count unread notifications
+        const unread = recentNotifications.filter(n => !n.is_read).length;
+        setUnreadCount(unread);
+        console.log('Unread notifications:', unread);
+      } else {
+        console.error('Failed to fetch notifications:', response.status);
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const unreadNotifications = notifications.filter(n => !n.is_read);
+      
+      // Mark all unread notifications as read
+      const promises = unreadNotifications.map(notification => 
+        fetch(`http://localhost:8000/api/v1/notifications/${notification.id}/mark-read`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      );
+      
+      await Promise.all(promises);
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, is_read: true }))
+      );
+      setUnreadCount(0);
+      
+      console.log('All notifications marked as read');
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`http://localhost:8000/api/v1/notifications/${notificationId}/mark-read`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        // Update local state
+        setNotifications(prev => {
+          const updated = prev.map(n => 
+            n.id === notificationId ? { ...n, is_read: true } : n
+          );
+          
+          // Recalculate unread count from updated notifications
+          const unreadCount = updated.filter(n => !n.is_read).length;
+          setUnreadCount(unreadCount);
+          
+          return updated;
+        });
+        
+        console.log(`Notification ${notificationId} marked as read`);
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
     }
   };
 
@@ -516,6 +627,31 @@ const CandidatesDashboard = () => {
         setMessage('Profile updated successfully!');
         setShowProfileForm(false);
         fetchUserProfile();
+        
+        // Create notification for profile update
+        try {
+          const notificationResponse = await fetch('http://localhost:8000/api/v1/notifications/create', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+              body: JSON.stringify({
+                title: 'Profile Updated',
+                message: 'Your profile has been updated successfully!',
+                notification_type: 'success',
+                related_entity_id: userProfile?.id,
+                related_entity_type: 'candidate'
+              })
+          });
+          
+          if (notificationResponse.ok) {
+            // Refresh notifications after creating new one
+            fetchNotifications();
+          }
+        } catch (notificationError) {
+          console.error('Failed to create profile update notification:', notificationError);
+        }
       } else {
         const errorData = await response.json();
         setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to update profile');
@@ -555,6 +691,30 @@ const CandidatesDashboard = () => {
         setMessage('CV uploaded successfully!');
         setShowCVUpload(false);
         setCvFile(null);
+        
+        // Create notification for CV upload
+        try {
+          const notificationResponse = await fetch('http://localhost:8000/api/v1/notifications/create', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              title: 'CV Uploaded',
+              message: 'Your CV has been uploaded successfully!',
+              notification_type: 'success',
+              related_entity_id: userProfile?.id,
+              related_entity_type: 'candidate'
+            })
+          });
+          
+          if (notificationResponse.ok) {
+            fetchNotifications();
+          }
+        } catch (notificationError) {
+          console.error('Failed to create CV upload notification:', notificationError);
+        }
       } else {
         const errorData = await response.json();
         setError(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to upload CV');
@@ -590,6 +750,9 @@ const CandidatesDashboard = () => {
         } else {
           setMessage('Application submitted successfully!');
           fetchApplications();
+          
+          // Refresh notifications (backend will create the notification)
+          fetchNotifications();
         }
       } else {
         const errorData = await response.json();
@@ -655,6 +818,72 @@ const CandidatesDashboard = () => {
           </div>
           
           <div className="header-right">
+            {/* Notification Bell */}
+            <div className="notification-container">
+              <button 
+                className="notification-bell"
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span className="notification-badge">{unreadCount}</span>
+                )}
+              </button>
+              
+              {/* Notification Dropdown */}
+              {showNotifications && (
+                <div className="notification-dropdown">
+                  <div className="notification-header">
+                    <h4>Notifications (Last 7 Days)</h4>
+                    <div className="notification-actions">
+                      {unreadCount > 0 && (
+                        <button 
+                          className="mark-all-read"
+                          onClick={markAllNotificationsAsRead}
+                          title="Mark all as read"
+                        >
+                          ✓ All Read
+                        </button>
+                      )}
+                      <button 
+                        className="close-notifications"
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="notification-list">
+                    {notifications.length === 0 ? (
+                      <div className="no-notifications">
+                        No notifications in the last 7 days
+                      </div>
+                    ) : (
+                      notifications.map((notification) => (
+                        <div 
+                          key={notification.id} 
+                          className={`notification-item ${!notification.is_read ? 'unread' : ''}`}
+                          onClick={() => markNotificationAsRead(notification.id)}
+                        >
+                          <div className="notification-content">
+                            <div className="notification-title">{notification.title}</div>
+                            <div className="notification-message">{notification.message}</div>
+                            <div className="notification-time">
+                              {new Date(notification.created_at).toLocaleString()}
+                            </div>
+                          </div>
+                          {!notification.is_read && (
+                            <div className="unread-indicator"></div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button className="btn-secondary" onClick={() => navigate('/my-applications')}>
               <span>My applications</span>
             </button>

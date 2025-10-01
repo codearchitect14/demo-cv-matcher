@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../api';
+import ForgotPassword from './ForgotPassword';
 import './LoginNew.css';
 
 const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
@@ -13,6 +14,7 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   useEffect(() => {
     setIsVisible(true);
@@ -82,6 +84,15 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
     console.log(`${provider} login clicked`);
   };
 
+  // Show forgot password component if requested
+  if (showForgotPassword) {
+    return (
+      <ForgotPassword 
+        onBackToLogin={() => setShowForgotPassword(false)}
+      />
+    );
+  }
+
   return (
     <div className={`login-new-container ${isVisible ? 'visible' : ''}`}>
       <div className="login-new-background">
@@ -143,6 +154,7 @@ const LoginNew = ({ onSwitchToSignUp, onSignInSuccess }) => {
             <button 
               type="button" 
               className="forgot-link"
+              onClick={() => setShowForgotPassword(true)}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
             >
               Forgot your password?

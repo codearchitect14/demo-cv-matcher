@@ -13,6 +13,8 @@ from api.routers.auth import get_current_user
 from config.connection_pool import global_pool
 from schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 from middleware.recruiter_auth import get_current_recruiter, RecruiterContext
+from services.email_service import email_service
+from services.notification_service import notification_service
 
 async def auto_update_application_statuses(rows):
     """Automatically update application status based on assessment scores"""
@@ -66,6 +68,49 @@ async def auto_update_application_statuses(rows):
                         print(f"✅ Auto-updated application {app_id}: {new_status} (assessment score: {score}%) - logged interaction")
                     except Exception as log_error:
                         print(f"⚠️ Failed to log status change interaction: {log_error}")
+                    
+                    # Send status update email and notification
+                    try:
+                        # Get candidate and job details for email
+                        candidate_details = await global_pool.fetchrow("""
+                            SELECT email, name FROM candidates WHERE id = $1
+                        """, candidate_id)
+                        
+                        job_details = await global_pool.fetchrow("""
+                            SELECT title, company FROM jobs WHERE id = $1
+                        """, job_id)
+                        
+                        if candidate_details and job_details:
+                            candidate_email = candidate_details['email']
+                            candidate_name = candidate_details['name']
+                            job_title = job_details['title']
+                            company_name = job_details['company'] or "Unknown Company"
+                            
+                            # Send status update email
+                            await email_service.send_status_update_email(
+                                candidate_email=candidate_email,
+                                candidate_name=candidate_name,
+                                job_title=job_title,
+                                company_name=company_name,
+                                old_status="APPLIED",
+                                new_status=new_status
+                            )
+                            logger.info(f"Status update email sent to {candidate_email}")
+                            
+                            # Create in-app notification
+                            await notification_service.create_notification(
+                                user_id=candidate_id,
+                                user_type="candidate",
+                                title="Application Status Updated",
+                                message=f"Your application for '{job_title}' status has changed to {new_status}.",
+                                notification_type="info" if new_status == "INTERVIEW_SCHEDULED" else "warning",
+                                related_entity_type="application",
+                                related_entity_id=app_id
+                            )
+                            logger.info(f"Status update notification created for candidate {candidate_id}")
+                            
+                    except Exception as notification_error:
+                        logger.error(f"Failed to send status update notification: {notification_error}")
                 else:
                     print(f"⚠️ Could not find application details for ID {app_id}")
                 
@@ -616,6 +661,50 @@ async def create_application_public(
         except Exception as log_error:
             print(f"⚠️ Failed to log interaction: {log_error}")
         
+        # Send application confirmation email
+        try:
+            # Get candidate and job details for email
+            candidate_details = await global_pool.fetchrow("""
+                SELECT email, name FROM candidates WHERE id = $1
+            """, application_data.candidate_id)
+            
+            job_details = await global_pool.fetchrow("""
+                SELECT title, company FROM jobs WHERE id = $1
+            """, application_data.job_id)
+            
+            if candidate_details and job_details:
+                candidate_email = candidate_details['email']
+                candidate_name = candidate_details['name']
+                job_title = job_details['title']
+                company_name = job_details['company'] or "Unknown Company"
+                
+                # Send application confirmation email
+                await email_service.send_application_confirmation_email(
+                    candidate_email=candidate_email,
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    company_name=company_name
+                )
+                print(f"✅ Application confirmation email sent to {candidate_email}")
+        except Exception as email_error:
+            print(f"⚠️ Failed to send application confirmation email: {email_error}")
+        
+        # Create in-app notification
+        try:
+            job_title = job_details['title'] if job_details else "Job Application"
+            await notification_service.create_notification(
+                user_id=application_data.candidate_id,
+                user_type="candidate",
+                title="Job Application Submitted",
+                message=f"Your job application for '{job_title}' has been submitted successfully!",
+                notification_type="success",
+                related_entity_type="application",
+                related_entity_id=application_id
+            )
+            print(f"✅ Application notification created for candidate {application_data.candidate_id}")
+        except Exception as notification_error:
+            print(f"⚠️ Failed to create application notification: {notification_error}")
+        
         # Return simple success response to avoid greenlet issues
         return {
             "id": application_id,
@@ -697,6 +786,43 @@ async def create_application(
                 print(f"DEBUG: Qualification check failed for application {application_id}")
             
             await db.commit()
+            
+            # Send application confirmation email
+            try:
+                # Get job details for email
+                job_query = text("SELECT title, company FROM jobs WHERE id = :job_id")
+                job_result = await db.execute(job_query, {"job_id": application_data.job_id})
+                job_row = job_result.fetchone()
+                
+                if job_row:
+                    job_title = job_row[0]
+                    company_name = job_row[1] if job_row[1] else "Unknown Company"
+                    
+                    await email_service.send_application_confirmation_email(
+                        candidate_email=current_user.email,
+                        candidate_name=current_user.name,
+                        job_title=job_title,
+                        company_name=company_name
+                    )
+                    logger.info(f"Application confirmation email sent to {current_user.email}")
+            except Exception as e:
+                logger.error(f"Failed to send application confirmation email: {str(e)}")
+            
+            # Create in-app notification
+            try:
+                job_title = job_row[0] if job_row else "Job Application"
+                await notification_service.create_notification(
+                    user_id=current_user.id,
+                    user_type="candidate",
+                    title="Application Submitted Successfully",
+                    message=f"Your application for '{job_title}' has been submitted successfully.",
+                    notification_type="success",
+                    related_entity_type="application",
+                    related_entity_id=application_id
+                )
+                logger.info(f"Application notification created for user {current_user.id}")
+            except Exception as e:
+                logger.error(f"Failed to create application notification: {str(e)}")
             
             # Get the updated application data
             updated_query = text("""

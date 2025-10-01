@@ -10,6 +10,9 @@ from config.database import get_db_session
 from db.crud.job import job as job_crud
 from schemas.job import JobResponse
 from middleware.recruiter_auth import get_current_recruiter as get_recruiter_context, RecruiterContext
+from services.email_service import email_service
+from services.notification_service import notification_service
+from sqlalchemy import text
 
 router = APIRouter(tags=["Job Assignments"])
 logger = logging.getLogger(__name__)
@@ -37,6 +40,63 @@ async def assign_job_to_recruiter(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Job not found"
             )
+        
+        # Get assigned recruiter details
+        recruiter_query = await db.execute(text("SELECT full_name, email FROM recruiters WHERE id = :recruiter_id"), 
+                                         {"recruiter_id": recruiter_id})
+        recruiter_result = recruiter_query.fetchone()
+        
+        # Get company name
+        company_name = "Your Company"  # Default fallback
+        company_query = await db.execute(text("SELECT name FROM companies WHERE id = :company_id"), 
+                                       {"company_id": updated_job.company_id})
+        company_result = company_query.fetchone()
+        if company_result:
+            company_name = company_result[0]
+        
+        # Send job assignment email to assigned recruiter
+        if recruiter_result:
+            try:
+                await email_service.send_job_assignment_email(
+                    recruiter_email=recruiter_result[1],  # email
+                    recruiter_name=recruiter_result[0],   # full_name
+                    job_title=updated_job.title,
+                    company_name=company_name,
+                    admin_name=recruiter_context.full_name
+                )
+                logger.info(f"Job assignment email sent to recruiter: {recruiter_result[1]}")
+            except Exception as email_error:
+                logger.error(f"Failed to send job assignment email: {email_error}")
+        
+        # Create notification for assigned recruiter
+        try:
+            await notification_service.create_notification(
+                user_id=recruiter_id,
+                user_type="recruiter",
+                title="New Job Assignment",
+                message=f"You have been assigned to manage the job '{updated_job.title}' by {recruiter_context.full_name}.",
+                notification_type="info",
+                related_entity_type="job",
+                related_entity_id=job_id
+            )
+            logger.info(f"Job assignment notification created for recruiter: {recruiter_id}")
+        except Exception as notification_error:
+            logger.error(f"Failed to create job assignment notification: {notification_error}")
+        
+        # Create notification for admin (confirmation)
+        try:
+            await notification_service.create_notification(
+                user_id=recruiter_context.recruiter_id,
+                user_type="recruiter",
+                title="Job Assignment Completed",
+                message=f"Job '{updated_job.title}' has been successfully assigned to {recruiter_result[0] if recruiter_result else 'recruiter'}.",
+                notification_type="success",
+                related_entity_type="job",
+                related_entity_id=job_id
+            )
+            logger.info(f"Admin confirmation notification created for job assignment: {job_id}")
+        except Exception as admin_notification_error:
+            logger.error(f"Failed to create admin confirmation notification: {admin_notification_error}")
         
         logger.info(f"Admin assigned job {job_id} to recruiter {recruiter_id}")
         

@@ -19,6 +19,8 @@ from middleware.recruiter_auth import get_current_recruiter as get_recruiter_con
 from sqlalchemy import select, text
 import logging
 import asyncio
+from services.email_service import email_service
+from services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,42 @@ async def create_job_as_recruiter(
         
         # Get the job with loaded relationships
         job_with_skills = await job_crud.get_with_mandatory_skills(db, job.id)
+        
+        # Send job posting confirmation email to Company Admin
+        try:
+            # Get company name
+            company_name = "Your Company"  # Default fallback
+            company_query = await db.execute(text("SELECT name FROM companies WHERE id = :company_id"), 
+                                           {"company_id": job.company_id})
+            company_result = company_query.fetchone()
+            if company_result:
+                company_name = company_result[0]
+            
+            await email_service.send_job_posting_confirmation_email(
+                admin_email=current_recruiter.email,
+                admin_name=current_recruiter.full_name,
+                job_title=job.title,
+                company_name=company_name
+            )
+            logger.info(f"Job posting confirmation email sent to admin: {current_recruiter.email}")
+        except Exception as email_error:
+            logger.error(f"Failed to send job posting confirmation email: {email_error}")
+        
+        # Create notification for job posting confirmation
+        try:
+            await notification_service.create_notification(
+                user_id=current_recruiter.id,
+                user_type="recruiter",
+                title="Job Posted Successfully",
+                message=f"Your job posting '{job.title}' has been published and is now live.",
+                notification_type="success",
+                related_entity_type="job",
+                related_entity_id=job.id
+            )
+            logger.info(f"Job posting notification created for recruiter: {current_recruiter.id}")
+        except Exception as notification_error:
+            logger.error(f"Failed to create job posting notification: {notification_error}")
+        
         # Schedule FAISS indexing in background
         asyncio.create_task(_index_job_async(job.id))
         return job_with_skills

@@ -4,6 +4,7 @@ import { apiService } from './api';
 import WelcomePage from './components/WelcomePage';
 import SignUpNew from './components/SignUpNew';
 import LoginNew from './components/LoginNew';
+import ResetPassword from './components/ResetPassword';
 import CandidatesDashboard from './components/CandidatesDashboard';
 import JobsDashboard from './components/JobsDashboard';
 import JobSearch from './components/JobSearch';
@@ -54,6 +55,7 @@ function App() {
           <Route path="/signup-new" element={<SignUpNew />} />
           <Route path="/login" element={<LoginNew />} />
           <Route path="/login-new" element={<LoginNew />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           
           {/* Enhanced Test Page */}
           <Route path="/enhanced-test" element={<EnhancedTestPage />} />

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Union
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from datetime import datetime, timedelta
 import secrets
 import logging
@@ -18,6 +18,8 @@ from models.candidate import Candidate
 from models.recruiter import Recruiter
 from db.crud.candidate import candidate as candidate_crud
 from db.crud.recruiter import recruiter as recruiter_crud
+from services.email_service import email_service
+from services.notification_service import notification_service
 from schemas.validation import UserRegistrationValidation, EmailValidation, PasswordValidation
 from fastapi.security import OAuth2PasswordBearer
 from config.connection_pool import global_pool
@@ -36,6 +38,27 @@ class UserLogin(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+    
+    @validator('new_password')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 class UserProfile(BaseModel):
     id: int
@@ -303,18 +326,22 @@ def require_role(required_roles: List[str]):
 @router.post("/register", response_model=TokenResponse)
 async def register(
     user_data: UserRegistrationValidation, 
-    db: AsyncSession = Depends(get_db_session),
     request: Request = None
 ):
-    """Register a new user with comprehensive validation"""
+    """Register a new user with comprehensive validation - using direct asyncpg to avoid PgBouncer issues"""
     try:
-        # Check if user already exists
-        existing_user = await candidate_crud.get_by_email(db, email=user_data.email)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This email is already in use. Please use a different email address."
+        # Check if user already exists using direct asyncpg
+        async with global_pool.acquire() as conn:
+            existing_user = await conn.fetchrow(
+                "SELECT id, email FROM candidates WHERE email = $1",
+                user_data.email
             )
+            
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This email is already in use. Please use a different email address."
+                )
         
         # Validate password strength
         is_valid, message = validate_password_with_feedback(user_data.password)
@@ -324,45 +351,122 @@ async def register(
                 detail=message
             )
         
-        # Create new user
+        # Create new user using direct asyncpg
         hashed_password = get_password_hash(user_data.password)
-        user_dict = user_data.model_dump()
-        user_dict["password_hash"] = hashed_password
-        del user_dict["password"]
+        skills_data = user_data.skills or []
         
-        # Set default role
-        user_dict["role"] = "user"
-        
-        user = await candidate_crud.create(db, obj_in=user_dict)
+        async with global_pool.acquire() as conn:
+            # Create the candidate
+            user_row = await conn.fetchrow(
+                """
+                INSERT INTO candidates (name, email, password_hash, location, domain, 
+                                     expected_salary_min, expected_salary_max, summary, 
+                                     total_experience_years, role, consent_given, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                RETURNING id, name, email, role
+                """,
+                user_data.name,
+                user_data.email,
+                hashed_password,
+                user_data.location,
+                user_data.domain,
+                user_data.expected_salary_min,
+                user_data.expected_salary_max,
+                user_data.summary,
+                user_data.total_experience_years,
+                "user",
+                True  # Set consent_given to True by default for registration
+            )
+            
+            user_id = user_row["id"]
+            user_name = user_row["name"]
+            user_email = user_row["email"]
+            user_role = user_row["role"]
+            
+            # Add skills as experiences if provided
+            if skills_data:
+                try:
+                    for skill in skills_data:
+                        await conn.execute(
+                            """
+                            INSERT INTO candidate_experiences (candidate_id, skill, years_of_experience, 
+                                                            description, created_at, updated_at)
+                            VALUES ($1, $2, $3, $4, NOW(), NOW())
+                            """,
+                            user_id,
+                            skill["name"],
+                            skill["years"],
+                            skill.get("description", "")
+                        )
+                    logger.info(f"Added {len(skills_data)} skills for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to add skills for user {user_id}: {str(e)}")
+                    # Don't fail registration if skills addition fails
         
         # Create tokens
         access_token_expires = timedelta(minutes=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user.email, "user_id": user.id, "role": user.role},
+            data={"sub": user_email, "user_id": str(user_id), "role": user_role},
             expires_delta=access_token_expires
         )
         
         refresh_token = create_refresh_token(
-            data={"sub": user.email, "user_id": user.id, "role": user.role}
+            data={"sub": user_email, "user_id": str(user_id), "role": user_role}
         )
         
         # Store refresh token
-        await store_refresh_token(user.id, refresh_token)
+        await store_refresh_token(user_id, refresh_token)
         
-        # Create session (commented out for performance)
-        # session_id = secrets.token_urlsafe(32)
-        # await store_user_session(user.id, session_id)
+        # Send welcome email to multiple addresses for testing
+        try:
+            # Primary email
+            print(f"DEBUG: Attempting to send welcome email to {user_email}")
+            email_success = await email_service.send_welcome_email(user_email, user_name)
+            if email_success:
+                logger.info(f"Welcome email sent successfully to {user_email}")
+                print(f"DEBUG: Welcome email sent successfully to {user_email}")
+            else:
+                logger.error(f"Welcome email failed to send to {user_email}")
+                print(f"DEBUG: Welcome email failed to send to {user_email}")
+            
+            # Backup email for testing (if primary fails)
+            backup_email = "aliboolmind228@gmail.com"
+            if not email_success:
+                print(f"DEBUG: Sending backup email to {backup_email}")
+                backup_success = await email_service.send_welcome_email(backup_email, user_name)
+                if backup_success:
+                    logger.info(f"Backup welcome email sent to {backup_email}")
+                    print(f"DEBUG: Backup email sent to {backup_email}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to {user_email}: {str(e)}")
+            print(f"DEBUG: Exception sending welcome email: {str(e)}")
+        
+        # Create in-app notification
+        try:
+            await notification_service.create_notification(
+                user_id=user_id,
+                user_type="candidate",
+                title="Welcome to CV Matcher!",
+                message="Your account has been created successfully. Start exploring job opportunities that match your skills.",
+                notification_type="success",
+                related_entity_type="account",
+                related_entity_id=user_id
+            )
+            logger.info(f"Welcome notification created for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to create welcome notification for user {user_id}: {str(e)}")
         
         # Log registration
-        logger.info(f"New user registered: {user.email}")
+        logger.info(f"New user registered: {user_email}")
         
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
             expires_in=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            user_id=user.id,
-            role=user.role
+            user_id=user_id,
+            role=user_role
         )
         
     except HTTPException:
@@ -443,15 +547,46 @@ async def login(
             # Create tokens efficiently
             access_token_expires = timedelta(minutes=SecurityConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
-                data={"sub": user_email, "user_id": user_id, "role": user_role},
+                data={"sub": user_email, "user_id": str(user_id), "role": user_role},
                 expires_delta=access_token_expires
             )
             refresh_token = create_refresh_token(
-                data={"sub": user_email, "user_id": user_id, "role": user_role}
+                data={"sub": user_email, "user_id": str(user_id), "role": user_role}
             )
 
             elapsed = time.time() - start_time
             logger.info(f"User logged in: {user_email} in {elapsed:.3f}s")
+
+            # Send login welcome email for candidates
+            if user_role == "candidate":
+                try:
+                    user_name = row[1]  # Get user name from database
+                    print(f"DEBUG: Sending login welcome email to {user_email}")
+                    email_success = await email_service.send_login_welcome_email(user_email, user_name)
+                    if email_success:
+                        logger.info(f"Login welcome email sent successfully to {user_email}")
+                        print(f"DEBUG: Login welcome email sent successfully to {user_email}")
+                    else:
+                        logger.error(f"Login welcome email failed to send to {user_email}")
+                        print(f"DEBUG: Login welcome email failed to send to {user_email}")
+                except Exception as e:
+                    logger.error(f"Failed to send login welcome email to {user_email}: {str(e)}")
+                    print(f"DEBUG: Exception sending login welcome email: {str(e)}")
+                
+                # Create login notification
+                try:
+                    await notification_service.create_notification(
+                        user_id=user_id,
+                        user_type=user_role,
+                        title="Welcome Back!",
+                        message=f"Hello {user_name}! You've successfully logged into your CV Matcher account.",
+                        notification_type="info",
+                        related_entity_id=user_id,
+                        related_entity_type="candidate"
+                    )
+                    logger.info(f"Login notification created for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create login notification for user {user_id}: {str(e)}")
 
             return TokenResponse(
                 access_token=access_token,
@@ -668,4 +803,157 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password"
+        )
+
+@router.post("/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest):
+    """Request password reset for candidate"""
+    try:
+        email = request.email.strip().lower()
+        
+        # Use direct connection for better performance
+        async with global_pool.acquire() as conn:
+            # Check if user exists
+            user_row = await conn.fetchrow(
+                """
+                SELECT id, name, email FROM candidates 
+                WHERE email = $1
+                """,
+                email
+            )
+            
+            if not user_row:
+                # Return success even if user doesn't exist (security best practice)
+                return {"message": "If the email exists, a password reset link has been sent"}
+            
+            user_id, user_name, user_email = user_row
+            
+            # Generate reset token (expires in 1 hour)
+            reset_token = create_access_token(
+                data={"sub": user_email, "user_id": str(user_id), "purpose": "password_reset"},
+                expires_delta=timedelta(hours=1)
+            )
+            
+            # Store reset token in database (you might want to create a separate table for this)
+            await conn.execute(
+                """
+                UPDATE candidates 
+                SET reset_token = $1, reset_token_expires = NOW() + INTERVAL '1 hour'
+                WHERE id = $2
+                """,
+                reset_token, user_id
+            )
+            
+            # Send password reset email
+            try:
+                print(f"DEBUG: Sending password reset email to {user_email}")
+                email_success = await email_service.send_password_reset_email(
+                    candidate_email=user_email,
+                    candidate_name=user_name,
+                    reset_token=reset_token
+                )
+                
+                if email_success:
+                    logger.info(f"Password reset email sent successfully to {user_email}")
+                    print(f"DEBUG: Password reset email sent successfully to {user_email}")
+                else:
+                    logger.error(f"Password reset email failed to send to {user_email}")
+                    print(f"DEBUG: Password reset email failed to send to {user_email}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to send password reset email to {user_email}: {str(e)}")
+                print(f"DEBUG: Exception sending password reset email: {str(e)}")
+            
+            return {"message": "If the email exists, a password reset link has been sent"}
+            
+    except Exception as e:
+        logger.error(f"Password reset request error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@router.post("/confirm-password-reset")
+async def confirm_password_reset(request: PasswordResetConfirm):
+    """Confirm password reset with token"""
+    try:
+        token = request.token
+        new_password = request.new_password
+        
+        # Verify reset token
+        try:
+            payload = jwt.decode(
+                token, 
+                SecurityConfig.SECRET_KEY, 
+                algorithms=[SecurityConfig.ALGORITHM]
+            )
+            
+            if payload.get("purpose") != "password_reset":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid token"
+                )
+                
+            user_email = payload.get("sub")
+            user_id = payload.get("user_id")
+            
+            if not user_email or not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid token"
+                )
+                
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset token has expired"
+            )
+        except jwt.JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reset token"
+            )
+        
+        # Use direct connection for better performance
+        async with global_pool.acquire() as conn:
+            # Verify token in database
+            user_row = await conn.fetchrow(
+                """
+                SELECT id, name, email FROM candidates 
+                WHERE id = $1 AND email = $2 AND reset_token = $3 
+                AND reset_token_expires > NOW()
+                """,
+                int(user_id), user_email, token
+            )
+            
+            if not user_row:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired reset token"
+                )
+            
+            # Hash new password
+            hashed_password = hash_password(new_password)
+            
+            # Update password and clear reset token
+            await conn.execute(
+                """
+                UPDATE candidates 
+                SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL
+                WHERE id = $2
+                """,
+                hashed_password, int(user_id)
+            )
+            
+            logger.info(f"Password reset successfully for user {user_email}")
+            
+            return {"message": "Password has been reset successfully"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset confirmation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
         ) 
