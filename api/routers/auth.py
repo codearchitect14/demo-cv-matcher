@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, validator
 from datetime import datetime, timedelta
 import secrets
 import logging
+from jose import JWTError, jwt
 
 from config.database import get_db_session
 from config.security import (
@@ -557,36 +558,53 @@ async def login(
             elapsed = time.time() - start_time
             logger.info(f"User logged in: {user_email} in {elapsed:.3f}s")
 
-            # Send login welcome email for candidates
-            if user_role == "candidate":
-                try:
-                    user_name = row[1]  # Get user name from database
-                    print(f"DEBUG: Sending login welcome email to {user_email}")
-                    email_success = await email_service.send_login_welcome_email(user_email, user_name)
-                    if email_success:
-                        logger.info(f"Login welcome email sent successfully to {user_email}")
-                        print(f"DEBUG: Login welcome email sent successfully to {user_email}")
-                    else:
-                        logger.error(f"Login welcome email failed to send to {user_email}")
-                        print(f"DEBUG: Login welcome email failed to send to {user_email}")
-                except Exception as e:
-                    logger.error(f"Failed to send login welcome email to {user_email}: {str(e)}")
-                    print(f"DEBUG: Exception sending login welcome email: {str(e)}")
+            # Send login welcome email and notification for candidates (async, non-blocking)
+            if user_role in ["candidate", "user"]:
+                import asyncio
+                user_name = row[1]  # Get user name from database
                 
-                # Create login notification
-                try:
-                    await notification_service.create_notification(
-                        user_id=user_id,
-                        user_type=user_role,
-                        title="Welcome Back!",
-                        message=f"Hello {user_name}! You've successfully logged into your CV Matcher account.",
-                        notification_type="info",
-                        related_entity_id=user_id,
-                        related_entity_type="candidate"
-                    )
-                    logger.info(f"Login notification created for user {user_id}")
-                except Exception as e:
-                    logger.error(f"Failed to create login notification for user {user_id}: {str(e)}")
+                async def send_candidate_login_notifications():
+                    try:
+                        # Send email
+                        logger.info(f"[EMAIL-TASK] Starting login email for {user_email}")
+                        print(f"DEBUG: Sending login welcome email to {user_email}")
+                        email_success = await email_service.send_login_welcome_email(user_email, user_name)
+                        if email_success:
+                            logger.info(f"[EMAIL-SUCCESS] Login welcome email sent to {user_email}")
+                            print(f"DEBUG: Login welcome email sent successfully to {user_email}")
+                        else:
+                            logger.error(f"[EMAIL-FAILED] Login welcome email failed to send to {user_email}")
+                            print(f"DEBUG: Login welcome email failed to send to {user_email}")
+                    except Exception as e:
+                        logger.error(f"[EMAIL-EXCEPTION] Failed to send login welcome email to {user_email}: {str(e)}", exc_info=True)
+                        print(f"DEBUG: Exception sending login welcome email: {str(e)}")
+                    
+                    # Create notification
+                    try:
+                        await notification_service.create_notification(
+                            user_id=user_id,
+                            user_type=user_role,
+                            title="Welcome Back!",
+                            message=f"Hello {user_name}! You've successfully logged into your CV Matcher account.",
+                            notification_type="info",
+                            related_entity_id=user_id,
+                            related_entity_type="candidate"
+                        )
+                        logger.info(f"[NOTIFICATION-SUCCESS] Login notification created for user {user_id}")
+                    except Exception as e:
+                        logger.error(f"[NOTIFICATION-FAILED] Failed to create login notification for user {user_id}: {str(e)}", exc_info=True)
+                
+                async def handle_background_task():
+                    """Wrapper to handle background task exceptions"""
+                    try:
+                        await send_candidate_login_notifications()
+                    except Exception as e:
+                        logger.error(f"[BACKGROUND-TASK-ERROR] Unhandled exception in login notifications task: {str(e)}", exc_info=True)
+                
+                # Start email and notification sending in background (don't await)
+                task = asyncio.create_task(handle_background_task())
+                # Add task name for better debugging
+                task.set_name(f"login_notifications_{user_id}")
 
             return TokenResponse(
                 access_token=access_token,
@@ -903,12 +921,7 @@ async def confirm_password_reset(request: PasswordResetConfirm):
                     detail="Invalid token"
                 )
                 
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Reset token has expired"
-            )
-        except jwt.JWTError:
+        except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid reset token"

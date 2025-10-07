@@ -76,7 +76,7 @@ const CompanyManagement = () => {
       const response = await fetch('http://localhost:8000/api/v1/company/my-company', {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
       });

@@ -70,37 +70,50 @@ async def create_notification(
 
 @router.get("/my-notifications", response_model=List[NotificationResponse])
 async def get_my_notifications(
-    recruiter_context: RecruiterContext = Depends(get_recruiter_context),
-    db: AsyncSession = Depends(get_db_session)
+    recruiter_context: RecruiterContext = Depends(get_recruiter_context)
 ):
     """Get notifications for the current recruiter"""
     try:
-        async with db.begin():
+        import asyncpg
+        import os
+        
+        # Use direct asyncpg connection to avoid PgBouncer issues
+        conn = await asyncpg.connect(
+            os.getenv('DATABASE_URL').replace('postgresql+asyncpg://', 'postgresql://'),
+            statement_cache_size=0,
+            command_timeout=5
+        )
+        
+        try:
             # Get notifications for the current recruiter
-            result = await db.execute(text("""
+            rows = await conn.fetch("""
                 SELECT id, title, message, notification_type, is_read, 
                        related_entity_type, related_entity_id, created_at, read_at
                 FROM notifications 
-                WHERE user_id = :user_id AND user_type = 'recruiter'
+                WHERE user_id = $1 AND user_type = 'recruiter'
                 ORDER BY created_at DESC
                 LIMIT 50
-            """), {"user_id": recruiter_context.recruiter_id})
+            """, recruiter_context.recruiter_id)
             
             notifications = []
-            for row in result.fetchall():
+            for row in rows:
                 notifications.append(NotificationResponse(
-                    id=str(row[0]),
-                    title=row[1],
-                    message=row[2],
-                    notification_type=row[3],
-                    is_read=row[4],
-                    related_entity_type=row[5],
-                    related_entity_id=row[6],
-                    created_at=row[7].isoformat() if row[7] else "",
-                    read_at=row[8].isoformat() if row[8] else None
+                    id=str(row['id']),
+                    title=row['title'],
+                    message=row['message'],
+                    notification_type=row['notification_type'],
+                    is_read=row['is_read'],
+                    related_entity_type=row['related_entity_type'],
+                    related_entity_id=row['related_entity_id'],
+                    created_at=row['created_at'].isoformat() if row['created_at'] else "",
+                    read_at=row['read_at'].isoformat() if row['read_at'] else None,
+                    updated_at=row['created_at'].isoformat() if row['created_at'] else ""
                 ))
             
             return notifications
+            
+        finally:
+            await conn.close()
             
     except Exception as e:
         logger.error(f"Error fetching recruiter notifications: {e}")
@@ -148,26 +161,38 @@ async def mark_notification_as_read(
 
 @router.put("/mark-all-read")
 async def mark_all_notifications_as_read(
-    recruiter_context: RecruiterContext = Depends(get_recruiter_context),
-    db: AsyncSession = Depends(get_db_session)
+    recruiter_context: RecruiterContext = Depends(get_recruiter_context)
 ):
     """Mark all notifications as read for the current recruiter"""
     try:
-        async with db.begin():
+        import asyncpg
+        import os
+        
+        # Use direct asyncpg connection to avoid PgBouncer issues
+        conn = await asyncpg.connect(
+            os.getenv('DATABASE_URL').replace('postgresql+asyncpg://', 'postgresql://'),
+            statement_cache_size=0,
+            command_timeout=5
+        )
+        
+        try:
             # Update all notifications as read
-            result = await db.execute(text("""
+            result = await conn.execute("""
                 UPDATE notifications 
                 SET is_read = true, read_at = NOW()
-                WHERE user_id = :user_id AND user_type = 'recruiter' AND is_read = false
-                RETURNING COUNT(*)
-            """), {"user_id": recruiter_context.recruiter_id})
+                WHERE user_id = $1 AND user_type = 'recruiter' AND is_read = false
+            """, recruiter_context.recruiter_id)
             
-            count = result.fetchone()[0] if result.fetchone() else 0
+            # Get count of updated rows
+            count = int(result.split()[-1]) if result else 0
             
             return {
                 "message": f"Marked {count} notifications as read",
                 "count": count
             }
+            
+        finally:
+            await conn.close()
             
     except Exception as e:
         logger.error(f"Error marking all recruiter notifications as read: {e}")

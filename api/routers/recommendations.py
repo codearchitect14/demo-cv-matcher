@@ -23,6 +23,7 @@ from schemas.recommendation import (
 )
 from models.candidate import Candidate
 from api.routers.auth import get_current_user
+from middleware.recruiter_auth import get_current_recruiter, RecruiterContext
 
 router = APIRouter(tags=["Recommendations"])
 
@@ -348,14 +349,41 @@ async def get_candidate_job_recommendations(
 async def get_recruiter_candidate_recommendations(
     request: RecruiterRecommendationRequest,
     db: AsyncSession = Depends(get_db_session),
+    recruiter_context: RecruiterContext = Depends(get_current_recruiter),
     debug: bool = Query(False)
 ):
-    """Get candidate recommendations - SIMPLE VERSION"""
+    """Get candidate recommendations - WITH COMPANY ISOLATION"""
     try:
         from config.connection_pool import global_pool
         import asyncio
         
         limit = min(max(request.limit or 10, 1), 20)
+        
+        # SECURITY: Verify the job belongs to the recruiter's company
+        job_ownership_query = """
+            SELECT j.id, j.title, j.company_id, c.name as company_name
+            FROM jobs j
+            LEFT JOIN companies c ON j.company_id = c.id
+            WHERE j.id = $1
+        """
+        
+        job_info = await global_pool.fetchrow(job_ownership_query, request.job_id)
+        if not job_info:
+            logger.warning(f"Job {request.job_id} not found - potential security issue")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found"
+            )
+        
+        # SECURITY: Check if job belongs to recruiter's company
+        if job_info['company_id'] != recruiter_context.company_id:
+            logger.warning(f"SECURITY ALERT: Recruiter {recruiter_context.recruiter_id} from company {recruiter_context.company_id} tried to access job {request.job_id} from company {job_info['company_id']}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Job does not belong to your company"
+            )
+        
+        logger.info(f"✅ Company access verified: Recruiter {recruiter_context.recruiter_id} accessing job {request.job_id} from company {job_info['company_name']}")
         
         # Enhanced query with all necessary data for unified scoring
         query = """

@@ -211,3 +211,4 @@ if __name__ == "__main__":
         print("\n❌ Qualification recalculation failed. Please check the error messages above.")
 
 
+

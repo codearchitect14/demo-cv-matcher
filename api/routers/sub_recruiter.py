@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from config.connection_pool import global_pool
+from middleware.recruiter_auth import get_current_recruiter, RecruiterContext
 import logging
 import asyncpg
 
@@ -38,18 +39,21 @@ async def get_assigned_jobs():
     try:
         # Use direct asyncpg connection to avoid PgBouncer issues
         async with global_pool.acquire() as conn:
-            # First, find the recruiter ID for tayyab10@boolmind.com
-            recruiter_query = "SELECT id FROM recruiters WHERE email = 'tayyab10@boolmind.com'"
-            recruiter_result = await conn.fetchrow(recruiter_query)
+            # Get all recruiters with role 'recruiter' (sub-recruiters)
+            recruiter_query = "SELECT id FROM recruiters WHERE role = 'recruiter'"
+            recruiter_results = await conn.fetch(recruiter_query)
             
-            if not recruiter_result:
-                logger.warning("Recruiter tayyab10@boolmind.com not found, using default ID 1")
-                recruiter_id = 1
-            else:
-                recruiter_id = recruiter_result['id']
-                logger.info(f"Found recruiter ID {recruiter_id} for tayyab10@boolmind.com")
-            # Query to get assigned jobs with application counts
-            query = """
+            if not recruiter_results:
+                logger.warning("No sub-recruiters found, returning empty list")
+                return {"jobs": [], "total": 0}
+            
+            # Get jobs assigned to all sub-recruiters
+            recruiter_ids = [r['id'] for r in recruiter_results]
+            logger.info(f"Found {len(recruiter_ids)} sub-recruiters: {recruiter_ids}")
+            
+            # Query to get assigned jobs with application counts for all sub-recruiters
+            recruiter_ids_placeholders = ','.join([f'${i+1}' for i in range(len(recruiter_ids))])
+            query = f"""
                 SELECT 
                     j.id,
                     j.title,
@@ -57,6 +61,7 @@ async def get_assigned_jobs():
                     j.company,
                     j.created_at,
                     j.is_active,
+                    j.recruiter_id,
                     COUNT(a.id) as total_applications,
                     COUNT(CASE WHEN a.status = 'APPLIED' THEN 1 END) as applied_count,
                     COUNT(CASE WHEN a.status = 'INTERVIEW_SCHEDULED' THEN 1 END) as interview_count,
@@ -64,12 +69,12 @@ async def get_assigned_jobs():
                     COUNT(CASE WHEN a.status = 'HIRED' THEN 1 END) as hired_count
                 FROM jobs j
                 LEFT JOIN applications a ON j.id = a.job_id
-                WHERE j.recruiter_id = $1
-                GROUP BY j.id, j.title, j.location, j.company, j.created_at, j.is_active
+                WHERE j.recruiter_id IN ({recruiter_ids_placeholders})
+                GROUP BY j.id, j.title, j.location, j.company, j.created_at, j.is_active, j.recruiter_id
                 ORDER BY j.created_at DESC
             """
             
-            rows = await conn.fetch(query, recruiter_id)
+            rows = await conn.fetch(query, *recruiter_ids)
             jobs = []
             
             for row in rows:
@@ -97,21 +102,18 @@ async def get_assigned_jobs():
         raise HTTPException(status_code=500, detail="Failed to fetch assigned jobs")
 
 @router.get("/job-candidates/{job_id}")
-async def get_job_candidates(job_id: int):
-    """Get all candidates for a specific job assigned to the sub-recruiter (public endpoint)"""
+async def get_job_candidates(
+    job_id: int,
+    current_recruiter: RecruiterContext = Depends(get_current_recruiter)
+):
+    """Get all candidates for a specific job assigned to the sub-recruiter (authenticated endpoint)"""
     try:
         # Use direct asyncpg connection to avoid PgBouncer issues
         async with global_pool.acquire() as conn:
-            # First, find the recruiter ID for tayyab10@boolmind.com
-            recruiter_query = "SELECT id FROM recruiters WHERE email = 'tayyab10@boolmind.com'"
-            recruiter_result = await conn.fetchrow(recruiter_query)
+            # Use the authenticated recruiter's ID from JWT token
+            recruiter_id = current_recruiter.recruiter_id
+            logger.info(f"Found recruiter ID {recruiter_id} for {current_recruiter.email}")
             
-            if not recruiter_result:
-                logger.warning("Recruiter tayyab10@boolmind.com not found, using default ID 1")
-                recruiter_id = 1
-            else:
-                recruiter_id = recruiter_result['id']
-                logger.info(f"Found recruiter ID {recruiter_id} for tayyab10@boolmind.com")
             # First verify the job is assigned to this recruiter
             verify_query = """
                 SELECT id FROM jobs 
@@ -164,58 +166,113 @@ async def get_job_candidates(job_id: int):
         logger.error(f"Error fetching job candidates: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch candidates")
 
+from pydantic import BaseModel
+
+class StatusUpdateRequest(BaseModel):
+    candidate_id: int
+    job_id: int
+    status: str
+
 @router.put("/update-candidate-status")
 async def update_candidate_status(
-    candidate_id: int,
-    job_id: int,
-    status: str
+    request: StatusUpdateRequest,
+    current_recruiter: RecruiterContext = Depends(get_current_recruiter)
 ):
-    """Update candidate application status (public endpoint)"""
+    """Update candidate application status and send email notification"""
     try:
+        candidate_id = request.candidate_id
+        job_id = request.job_id
+        status = request.status
+        
         # Use direct asyncpg connection to avoid PgBouncer issues
         async with global_pool.acquire() as conn:
-            # First, find the recruiter ID for tayyab10@boolmind.com
-            recruiter_query = "SELECT id FROM recruiters WHERE email = 'tayyab10@boolmind.com'"
-            recruiter_result = await conn.fetchrow(recruiter_query)
+            # Use the authenticated recruiter's ID from JWT token
+            recruiter_id = current_recruiter.recruiter_id
+            logger.info(f"Recruiter {recruiter_id} ({current_recruiter.email}) updating status for candidate {candidate_id}")
             
-            if not recruiter_result:
-                logger.warning("Recruiter tayyab10@boolmind.com not found, using default ID 1")
-                recruiter_id = 1
-            else:
-                recruiter_id = recruiter_result['id']
-                logger.info(f"Found recruiter ID {recruiter_id} for tayyab10@boolmind.com")
             # Verify the job is assigned to this recruiter
             verify_query = """
-                SELECT id FROM jobs 
+                SELECT id, title, company FROM jobs 
                 WHERE id = $1 AND recruiter_id = $2
             """
             
-            verify_result = await conn.fetchrow(verify_query, job_id, recruiter_id)
+            job_result = await conn.fetchrow(verify_query, job_id, recruiter_id)
             
-            if not verify_result:
+            if not job_result:
                 raise HTTPException(status_code=403, detail="Job not assigned to you")
+            
+            # Get candidate details for email
+            candidate_query = """
+                SELECT name, email FROM candidates WHERE id = $1
+            """
+            candidate_result = await conn.fetchrow(candidate_query, candidate_id)
+            
+            if not candidate_result:
+                raise HTTPException(status_code=404, detail="Candidate not found")
             
             # Update the application status
             update_query = """
                 UPDATE applications 
                 SET status = $1, updated_at = NOW()
                 WHERE candidate_id = $2 AND job_id = $3
+                RETURNING status
             """
             
-            result = await conn.execute(update_query, status, candidate_id, job_id)
+            result = await conn.fetchrow(update_query, status, candidate_id, job_id)
             
-            if result == "UPDATE 0":
+            if not result:
                 raise HTTPException(status_code=404, detail="Application not found")
             
-            # Log the interaction
+            # Log the interaction (using correct column names: user_id, user_type)
+            # Map application status to valid interaction type
+            interaction_type_map = {
+                "APPLIED": "applied",
+                "INTERVIEW_SCHEDULED": "edited",
+                "REJECTED": "rejected",
+                "OFFERED": "edited",
+                "HIRED": "edited"
+            }
+            interaction_type = interaction_type_map.get(status, "edited")
+            
             log_query = """
-                INSERT INTO interaction_log (candidate_id, job_id, interaction_type, user_id, user_type, created_at)
-                VALUES ($1, $2, $3, $4, 'recruiter', NOW())
+                INSERT INTO interaction_log (user_id, job_id, interaction_type, user_type, timestamp)
+                VALUES ($1, $2, $3, $4, NOW())
             """
             
-            await conn.execute(log_query, candidate_id, job_id, status, recruiter_id)
+            await conn.execute(log_query, recruiter_id, job_id, interaction_type, 'recruiter')
             
-            return {"message": "Status updated successfully", "status": status}
+            # Send email notification to candidate
+            try:
+                from services.email_service import email_service
+                
+                candidate_name = candidate_result['name']
+                candidate_email = candidate_result['email']
+                job_title = job_result['title']
+                company_name = job_result['company']
+                
+                # Send status change email
+                email_sent = await email_service.send_application_status_change_email(
+                    candidate_email=candidate_email,
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    company_name=company_name,
+                    new_status=status
+                )
+                
+                if email_sent:
+                    logger.info(f"✅ Status change email sent to {candidate_email} for job {job_title}")
+                else:
+                    logger.error(f"❌ Failed to send status change email to {candidate_email}")
+                    
+            except Exception as email_error:
+                logger.error(f"❌ Error sending status change email: {email_error}")
+                # Don't fail the status update if email fails
+            
+            return {
+                "message": "Status updated successfully",
+                "status": status,
+                "email_sent": email_sent if 'email_sent' in locals() else False
+            }
         
     except HTTPException:
         raise

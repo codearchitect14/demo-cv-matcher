@@ -13,6 +13,7 @@ class CompanyBase(BaseModel):
     contact_phone: Optional[str] = Field(None, max_length=20, description="Company contact phone")
     address: Optional[str] = Field(None, max_length=500, description="Company address")
     subscription_plan: str = Field("basic", description="Subscription plan")
+    status: str = Field("ACTIVE", description="Company status: PENDING, ACTIVE, REJECTED, SUSPENDED")
 
     @validator('subscription_plan')
     def validate_subscription_plan(cls, v):
@@ -42,6 +43,7 @@ class CompanyUpdate(BaseModel):
     contact_phone: Optional[str] = Field(None, max_length=20)
     address: Optional[str] = Field(None, max_length=500)
     is_active: Optional[bool] = Field(None)
+    status: Optional[str] = Field(None, description="PENDING, ACTIVE, REJECTED, SUSPENDED")
     subscription_plan: Optional[str] = Field(None)
 
     @validator('subscription_plan')
@@ -62,6 +64,7 @@ class CompanyResponse(CompanyBase):
     """Schema for company response"""
     id: int
     is_active: bool
+    status: str
     created_at: datetime
     updated_at: datetime
 
@@ -76,5 +79,6 @@ class CompanyStats(BaseModel):
     active_jobs: int
     total_applications: int
     pending_applications: int
+
 
 

@@ -25,7 +25,8 @@ class SuperAdminProfile(BaseModel):
     is_active: bool
 
 
-async def _get_conn():
+def _get_conn():
+    """Get connection from pool - returns context manager"""
     from config.connection_pool import global_pool
     return global_pool.acquire()
 
@@ -40,7 +41,7 @@ async def super_admin_required(request: Request) -> SuperAdminProfile:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin access required")
 
     # Load profile from DB (id/email)
-    async with _get_conn() as conn:
+    async with global_pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT id::text as id, email, full_name, is_active
@@ -69,8 +70,7 @@ async def super_admin_login(payload: SuperAdminLoginRequest):
     if attempts >= 5:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts. Try later.")
 
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT id::text as id, email, password_hash, full_name, is_active
@@ -111,11 +111,6 @@ async def super_admin_login(payload: SuperAdminLoginRequest):
                 "role": "super_admin",
             },
         }
-    finally:
-        try:
-            await conn.close()
-        except Exception:
-            pass
 
 
 @router.get("/me", response_model=SuperAdminProfile)
@@ -135,8 +130,7 @@ class OverviewResponse(BaseModel):
 
 @router.get("/overview", response_model=OverviewResponse)
 async def super_admin_overview(_: SuperAdminProfile = Depends(super_admin_required)):
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         # Use COALESCE to handle missing tables gracefully
         row = await conn.fetchrow(
             """
@@ -155,11 +149,6 @@ async def super_admin_overview(_: SuperAdminProfile = Depends(super_admin_requir
             jobs=row["jobs"],
             applications=row["applications"],
         )
-    finally:
-        try:
-            await conn.close()
-        except Exception:
-            pass
 
 
 class PageParams(BaseModel):
@@ -169,8 +158,7 @@ class PageParams(BaseModel):
 
 @router.get("/companies")
 async def list_companies(limit: int = 20, offset: int = 0, _: SuperAdminProfile = Depends(super_admin_required)):
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT id, name, domain, created_at
@@ -181,17 +169,11 @@ async def list_companies(limit: int = 20, offset: int = 0, _: SuperAdminProfile 
             limit, offset,
         )
         return {"items": [dict(r) for r in rows]}
-    finally:
-        try:
-            await conn.close()
-        except Exception:
-            pass
 
 
 @router.get("/admins")
 async def list_admins(limit: int = 20, offset: int = 0, _: SuperAdminProfile = Depends(super_admin_required)):
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT id, email, full_name, role, is_active, created_at
@@ -203,11 +185,6 @@ async def list_admins(limit: int = 20, offset: int = 0, _: SuperAdminProfile = D
             limit, offset,
         )
         return {"items": [dict(r) for r in rows]}
-    finally:
-        try:
-            await conn.close()
-        except Exception:
-            pass
 
 
 # ===== Companies CRUD =====
@@ -225,19 +202,16 @@ async def create_company(payload: dict = Body(...), _: SuperAdminProfile = Depen
     if not name or not domain:
         raise HTTPException(status_code=400, detail="name and domain are required")
 
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO companies (name, domain, description, subscription_plan, is_active)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, name, domain, description, subscription_plan, is_active, created_at
+            INSERT INTO companies (name, domain, description, subscription_plan, is_active, status)
+            VALUES ($1, $2, $3, $4, $5, 'ACTIVE')
+            RETURNING id, name, domain, description, subscription_plan, is_active, status, created_at
             """,
             name, domain, description, subscription_plan, is_active,
         )
         return dict(row)
-    finally:
-        await conn.close()
 
 
 @router.put("/companies/{company_id}")
@@ -253,8 +227,7 @@ async def update_company(company_id: int, payload: dict = Body(...), _: SuperAdm
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         row = await conn.fetchrow(
             f"""
             UPDATE companies
@@ -267,19 +240,14 @@ async def update_company(company_id: int, payload: dict = Body(...), _: SuperAdm
         if not row:
             raise HTTPException(status_code=404, detail="Company not found")
         return dict(row)
-    finally:
-        await conn.close()
 
 
 @router.delete("/companies/{company_id}")
 async def delete_company(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
-    conn = await _get_conn()
-    try:
+    async with global_pool.acquire() as conn:
         res = await conn.execute("DELETE FROM companies WHERE id = $1", company_id)
         if res == "DELETE 0":
             raise HTTPException(status_code=404, detail="Company not found")
         return {"deleted": True}
-    finally:
-        await conn.close()
 
 

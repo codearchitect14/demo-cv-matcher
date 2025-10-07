@@ -54,73 +54,92 @@ const SuperAdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('companies');
   const [subscriptions, setSubscriptions] = useState([]);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [showPlanSelectionModal, setShowPlanSelectionModal] = useState(false);
+  const [companyForPlanAssignment, setCompanyForPlanAssignment] = useState(null);
+
+  // Define fetch functions outside useEffect so they can be called from anywhere
+  const fetchOverview = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/super-admin/overview', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setOverview(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch overview:', e);
+    }
+  };
+
+  const fetchCompanies = async (statusFilter = 'ALL') => {
+    try {
+      const url = statusFilter === 'ALL' 
+        ? 'http://localhost:8000/api/v1/super-admin/companies?limit=50'
+        : `http://localhost:8000/api/v1/super-admin/companies?limit=50&status=${statusFilter}`;
+      
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCompanies(data.items || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch companies:', e);
+    }
+  };
+
+  const fetchAdmins = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/super-admin/admins?limit=10', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdmins(data.items || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch admins:', e);
+    }
+  };
+
+  const fetchOfferPlans = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/super-admin/offer-plans', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOfferPlans(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch offer plans:', e);
+    }
+  };
+
+  const fetchSubscriptions = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/super-admin/company-subscriptions', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptions(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch subscriptions:', e);
+    }
+  };
 
   useEffect(() => {
     if (!token) {
       navigate('/super-admin-login');
       return;
     }
-    const fetchOverview = async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/v1/super-admin/overview', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          setOverview(await res.json());
-        }
-      } catch (e) {}
-    };
-    const fetchCompanies = async (status = 'ALL') => {
-      try {
-        const url = status === 'ALL' 
-          ? 'http://localhost:8000/api/v1/super-admin/companies?limit=50'
-          : `http://localhost:8000/api/v1/super-admin/companies?limit=50&status=${status}`;
-        
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setCompanies(data.items || []);
-        }
-      } catch (e) {}
-    };
-    const fetchAdmins = async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/v1/super-admin/admins?limit=10', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setAdmins(data.items || []);
-        }
-      } catch (e) {}
-    };
-    const fetchOfferPlans = async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/v1/super-admin/offer-plans', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setOfferPlans(data || []);
-        }
-      } catch (e) {}
-    };
+    
     fetchOverview();
-    fetchCompanies();
+    fetchCompanies(activeStatusFilter);
     fetchAdmins();
-    const fetchSubscriptions = async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/v1/super-admin/company-subscriptions', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setSubscriptions(data || []);
-        }
-      } catch (e) {}
-    };
     fetchOfferPlans();
     fetchSubscriptions();
   }, [token, navigate]);
@@ -255,6 +274,7 @@ const SuperAdminDashboard = () => {
         const error = await res.json();
         throw new Error(error.detail || 'Delete failed');
       }
+      alert('Admin deleted successfully');
       // Refresh admins
       const list = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${selectedCompany.id}/admins`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await list.json();
@@ -264,63 +284,136 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  const approveCompany = async (company) => {
-    if (!window.confirm(`Approve company "${company.name}"?`)) return;
+  const toggleAdminStatus = async (admin) => {
+    const newStatus = !admin.is_active;
+    const action = newStatus ? 'activate' : 'deactivate';
+    
+    if (!window.confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} admin "${admin.full_name}"?`)) return;
+    
     try {
+      console.log('Toggling admin status:', {adminId: admin.id, oldStatus: admin.is_active, newStatus});
+      const res = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${selectedCompany.id}/admins/${admin.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ is_active: newStatus === true })  // Ensure boolean
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Status update failed');
+      }
+      
+      alert(`Admin ${action}d successfully. Email notification sent.`);
+      
+      // Refresh admins
+      const list = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${selectedCompany.id}/admins`, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+      const data = await list.json();
+      setCompanyAdmins(data.items || []);
+    } catch (e) {
+      alert(e.message || `Failed to ${action} admin`);
+    }
+  };
+
+  const approveCompany = async (company) => {
+    if (!window.confirm(`Approve company "${company.name}"? Email notification will be sent to the admin.`)) return;
+    try {
+      console.log('Approving company:', company.id);
       const res = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${company.id}/approve`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Approval failed');
-      alert('Company approved successfully');
-      fetchCompanies(activeStatusFilter);
+      console.log('Approve response status:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Approve error:', error);
+        throw new Error(error.detail || 'Approval failed');
+      }
+      const data = await res.json();
+      console.log('Approve success:', data);
+      alert('✅ Company approved successfully! Email sent to admin.');
+      await fetchOverview();
+      await fetchCompanies(activeStatusFilter);
     } catch (e) {
-      alert('Approval failed');
+      console.error('Approve failed:', e);
+      alert('❌ ' + (e.message || 'Approval failed'));
     }
   };
 
   const rejectCompany = async (company) => {
-    if (!window.confirm(`Reject company "${company.name}"?`)) return;
+    if (!window.confirm(`Reject company "${company.name}"? Email notification will be sent to the admin.`)) return;
     try {
+      console.log('Rejecting company:', company.id);
       const res = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${company.id}/reject`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Rejection failed');
-      alert('Company rejected');
-      fetchCompanies(activeStatusFilter);
+      console.log('Reject response:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Reject error:', error);
+        throw new Error(error.detail || 'Rejection failed');
+      }
+      alert('✅ Company rejected. Email sent to admin.');
+      await fetchOverview();
+      await fetchCompanies(activeStatusFilter);
     } catch (e) {
-      alert('Rejection failed');
+      console.error('Reject failed:', e);
+      alert('❌ ' + (e.message || 'Rejection failed'));
     }
   };
 
   const suspendCompany = async (company) => {
-    if (!window.confirm(`Suspend company "${company.name}"?`)) return;
+    if (!window.confirm(`Suspend company "${company.name}"? Email notification will be sent to the admin.`)) return;
     try {
+      console.log('Suspending company:', company.id);
       const res = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${company.id}/suspend`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Suspension failed');
-      alert('Company suspended');
-      fetchCompanies(activeStatusFilter);
+      console.log('Suspend response:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Suspend error:', error);
+        throw new Error(error.detail || 'Suspension failed');
+      }
+      alert('✅ Company suspended. Email sent to admin.');
+      await fetchOverview();
+      await fetchCompanies(activeStatusFilter);
     } catch (e) {
-      alert('Suspension failed');
+      console.error('Suspend failed:', e);
+      alert('❌ ' + (e.message || 'Suspension failed'));
     }
   };
 
   const activateCompany = async (company) => {
-    if (!window.confirm(`Activate company "${company.name}"?`)) return;
+    if (!window.confirm(`Activate company "${company.name}"? Email notification will be sent to the admin.`)) return;
     try {
+      console.log('Activating company:', company.id);
       const res = await fetch(`http://localhost:8000/api/v1/super-admin/companies/${company.id}/activate`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Activation failed');
-      alert('Company activated');
-      fetchCompanies(activeStatusFilter);
+      console.log('Activate response:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Activate error:', error);
+        throw new Error(error.detail || 'Activation failed');
+      }
+      alert('✅ Company activated. Email sent to admin.');
+      await fetchOverview();
+      await fetchCompanies(activeStatusFilter);
     } catch (e) {
-      alert('Activation failed');
+      console.error('Activate failed:', e);
+      alert('❌ ' + (e.message || 'Activation failed'));
     }
   };
 
@@ -426,16 +519,139 @@ const SuperAdminDashboard = () => {
 
   const togglePlanStatus = async (plan) => {
     try {
+      console.log('Toggling plan status:', plan.id);
       const res = await fetch(`http://localhost:8000/api/v1/super-admin/offer-plans/${plan.id}/toggle-status`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Status update failed');
+      console.log('Toggle status response:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Toggle error:', error);
+        throw new Error(error.detail || 'Status update failed');
+      }
       const data = await res.json();
-      alert(data.message);
-      fetchOfferPlans();
+      alert(data.message || '✅ Plan status updated');
+      await fetchOfferPlans();
     } catch (e) {
-      alert('Status update failed');
+      console.error('Toggle failed:', e);
+      alert('❌ ' + (e.message || 'Status update failed'));
+    }
+  };
+
+  const openPlanSelectionModal = (company) => {
+    setCompanyForPlanAssignment(company);
+    setShowPlanSelectionModal(true);
+  };
+
+  const assignPlanToCompany = async (plan) => {
+    if (!companyForPlanAssignment) return;
+    
+    if (!window.confirm(`Assign ${plan.plan_name} ($${plan.price}/month) to ${companyForPlanAssignment.name}?`)) return;
+    
+    try {
+      console.log('Assigning subscription:', {companyId: companyForPlanAssignment.id, planId: plan.id});
+      const res = await fetch(`http://localhost:8000/api/v1/super-admin/company-subscriptions`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          company_id: parseInt(companyForPlanAssignment.id),
+          offer_plan_id: plan.id,
+          status: 'Active'
+        })
+      });
+      console.log('Assign subscription response:', res.status);
+      
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Assign error:', error);
+        throw new Error(error.detail || 'Failed to assign subscription');
+      }
+      
+      const data = await res.json();
+      alert(`✅ ${plan.plan_name} assigned to ${companyForPlanAssignment.name}! Emails sent to company admin and super admin.`);
+      setShowPlanSelectionModal(false);
+      setCompanyForPlanAssignment(null);
+      await fetchSubscriptions();
+      await fetchCompanies(activeStatusFilter);
+    } catch (e) {
+      console.error('Assign subscription failed:', e);
+      alert('❌ ' + (e.message || 'Failed to assign subscription'));
+    }
+  };
+
+  const approveSubscription = async (subscriptionId) => {
+    if (!window.confirm('Approve this subscription request? Company admin will be notified via email.')) return;
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/super-admin/company-subscriptions/${subscriptionId}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Approval failed');
+      }
+      
+      const data = await res.json();
+      alert(`✅ ${data.plan || 'Subscription'} approved! Email sent to company admin.`);
+      await fetchSubscriptions();
+    } catch (e) {
+      alert('❌ ' + (e.message || 'Failed to approve subscription'));
+    }
+  };
+
+  const rejectSubscription = async (subscriptionId) => {
+    const reason = prompt('Reason for rejection (optional):');
+    if (reason === null) return; // User cancelled
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/super-admin/company-subscriptions/${subscriptionId}/reject`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ reason: reason || '' })
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Rejection failed');
+      }
+      
+      const data = await res.json();
+      alert(`✅ Subscription request rejected. Email sent to company admin.`);
+      await fetchSubscriptions();
+    } catch (e) {
+      alert('❌ ' + (e.message || 'Failed to reject subscription'));
+    }
+  };
+
+  const cancelSubscription = async (subscriptionId) => {
+    if (!window.confirm('Cancel this active subscription?')) return;
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/super-admin/company-subscriptions/${subscriptionId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Cancellation failed');
+      }
+      
+      const data = await res.json();
+      alert(`✅ ${data.message || 'Subscription cancelled'}`);
+      await fetchSubscriptions();
+    } catch (e) {
+      alert('❌ ' + (e.message || 'Failed to cancel subscription'));
     }
   };
 
@@ -599,20 +815,28 @@ const SuperAdminDashboard = () => {
                   <td style={{padding: 8, borderBottom: '1px solid #f1f5f9'}}>{c.applications_count || 0}</td>
                   <td style={{padding: 8, borderBottom: '1px solid #f1f5f9'}}>{new Date(c.created_at).toLocaleDateString()}</td>
                   <td style={{padding: 8, borderBottom: '1px solid #f1f5f9'}}>
-                    {c.status === 'PENDING' && (
-                      <>
-                        <button onClick={()=>approveCompany(c)} style={{marginRight:4, backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Approve</button>
-                        <button onClick={()=>rejectCompany(c)} style={{marginRight:8, backgroundColor:'#ef4444', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Reject</button>
-                      </>
-                    )}
-                    {c.status === 'ACTIVE' && (
-                      <button onClick={()=>suspendCompany(c)} style={{marginRight:8, backgroundColor:'#f59e0b', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Suspend</button>
-                    )}
-                    {c.status === 'SUSPENDED' && (
-                      <button onClick={()=>activateCompany(c)} style={{marginRight:8, backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Activate</button>
-                    )}
-                    <button onClick={()=>openManageAdmins(c)} style={{marginRight:8, backgroundColor:'#3b82f6', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Admins</button>
-                    <button onClick={()=>deleteCompany(c)} style={{color:'#b91c1c', border:'none', background:'none'}}>Delete</button>
+                    <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
+                      {c.status === 'PENDING' && (
+                        <>
+                          <button onClick={()=>approveCompany(c)} style={{backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Approve</button>
+                          <button onClick={()=>rejectCompany(c)} style={{backgroundColor:'#ef4444', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Reject</button>
+                        </>
+                      )}
+                      {c.status === 'ACTIVE' && (
+                        <>
+                          <button onClick={()=>suspendCompany(c)} style={{backgroundColor:'#f59e0b', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Suspend</button>
+                          <button onClick={()=>openPlanSelectionModal(c)} style={{backgroundColor:'#8b5cf6', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Assign Plan</button>
+                        </>
+                      )}
+                      {c.status === 'SUSPENDED' && (
+                        <button onClick={()=>activateCompany(c)} style={{backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Activate</button>
+                      )}
+                      {c.status === 'REJECTED' && (
+                        <span style={{fontSize:12, color:'#6b7280'}}>Rejected</span>
+                      )}
+                      <button onClick={()=>openManageAdmins(c)} style={{backgroundColor:'#3b82f6', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}>Admins</button>
+                      <button onClick={()=>deleteCompany(c)} style={{color:'#b91c1c', border:'none', background:'none', fontSize:12}}>Delete</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -767,18 +991,29 @@ const SuperAdminDashboard = () => {
                         {sub.expires_at ? new Date(sub.expires_at).toLocaleDateString() : 'No Expiry'}
                       </td>
                       <td style={{padding: 8, borderBottom: '1px solid #f1f5f9'}}>
-                        <button 
-                          onClick={() => {/* TODO: Add edit subscription functionality */}} 
-                          style={{marginRight:4, backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => {/* TODO: Add cancel subscription functionality */}} 
-                          style={{color:'#b91c1c', border:'none', background:'none'}}
-                        >
-                          Cancel
-                        </button>
+                        {sub.status === 'Pending' ? (
+                          <>
+                            <button 
+                              onClick={() => approveSubscription(sub.id)} 
+                              style={{marginRight:4, backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}
+                            >
+                              Approve
+                            </button>
+                            <button 
+                              onClick={() => rejectSubscription(sub.id)} 
+                              style={{backgroundColor:'#ef4444', color:'white', border:'none', padding:'4px 8px', borderRadius:4, fontSize:12}}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <button 
+                            onClick={() => cancelSubscription(sub.id)} 
+                            style={{color:'#b91c1c', border:'none', background:'none', fontSize:12}}
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -888,9 +1123,32 @@ const SuperAdminDashboard = () => {
                     <td style={{padding:8}}>{admin.email}</td>
                     <td style={{padding:8}}>{admin.phone_number || 'N/A'}</td>
                     <td style={{padding:8}}>{admin.role}</td>
-                    <td style={{padding:8}}>{admin.is_active ? 'Active' : 'Inactive'}</td>
                     <td style={{padding:8}}>
-                      <button onClick={() => openEditAdmin(admin)} style={{marginRight:8, backgroundColor:'#10b981', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Edit</button>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 12,
+                        fontSize: 12,
+                        backgroundColor: admin.is_active ? '#d1fae5' : '#fee2e2',
+                        color: admin.is_active ? '#065f46' : '#991b1b'
+                      }}>
+                        {admin.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style={{padding:8}}>
+                      <button 
+                        onClick={() => toggleAdminStatus(admin)} 
+                        style={{
+                          marginRight:4, 
+                          backgroundColor: admin.is_active ? '#f59e0b' : '#10b981', 
+                          color:'white', 
+                          border:'none', 
+                          padding:'4px 8px', 
+                          borderRadius:4
+                        }}
+                      >
+                        {admin.is_active ? 'Suspend' : 'Activate'}
+                      </button>
+                      <button onClick={() => openEditAdmin(admin)} style={{marginRight:4, backgroundColor:'#3b82f6', color:'white', border:'none', padding:'4px 8px', borderRadius:4}}>Edit</button>
                       <button onClick={() => deleteAdmin(admin)} style={{color:'#b91c1c', border:'none', background:'none'}}>Delete</button>
                     </td>
                   </tr>
@@ -1198,6 +1456,158 @@ const SuperAdminDashboard = () => {
               <button 
                 onClick={() => setShowOfferPlanModal(false)}
                 style={{flex:1, backgroundColor:'#6b7280', color:'white', border:'none', padding:'8px', borderRadius:4}}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plan Selection Modal */}
+      {showPlanSelectionModal && companyForPlanAssignment && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1004}}>
+          <div style={{background:'white', borderRadius:12, padding:32, width:'90%', maxWidth:1200, maxHeight:'85vh', overflow:'auto'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24}}>
+              <div>
+                <h2 style={{margin:0, color:'#1f2937'}}>Select Subscription Plan</h2>
+                <p style={{margin:'8px 0 0 0', color:'#6b7280'}}>Choose a plan to assign to <strong>{companyForPlanAssignment.name}</strong></p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowPlanSelectionModal(false);
+                  setCompanyForPlanAssignment(null);
+                }} 
+                style={{background:'none', border:'none', fontSize:28, cursor:'pointer', color:'#6b7280'}}
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Plan Cards Grid */}
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:20}}>
+              {offerPlans
+                .filter(plan => plan.status === 'Active')
+                .map(plan => (
+                <div 
+                  key={plan.id}
+                  onClick={() => assignPlanToCompany(plan)}
+                  style={{
+                    border:'2px solid #e5e7eb',
+                    borderRadius:12,
+                    padding:24,
+                    cursor:'pointer',
+                    transition:'all 0.2s',
+                    background:'white',
+                    position:'relative',
+                    overflow:'hidden'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#8b5cf6';
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 12px 24px rgba(139, 92, 246, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  {/* Plan Header */}
+                  <div style={{marginBottom:16}}>
+                    <div style={{
+                      display:'inline-block',
+                      background:'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                      color:'white',
+                      padding:'6px 16px',
+                      borderRadius:20,
+                      fontSize:12,
+                      fontWeight:600,
+                      marginBottom:12
+                    }}>
+                      {plan.plan_name}
+                    </div>
+                    <div style={{fontSize:36, fontWeight:'bold', color:'#1f2937'}}>
+                      ${plan.price}
+                      <span style={{fontSize:16, color:'#6b7280', fontWeight:400}}>/month</span>
+                    </div>
+                  </div>
+
+                  {/* Plan Features */}
+                  <div style={{marginBottom:20}}>
+                    <div style={{display:'flex', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #f3f4f6'}}>
+                      <span style={{fontSize:14, color:'#059669', marginRight:8}}>✓</span>
+                      <span style={{fontSize:14, color:'#374151'}}>
+                        {plan.job_post_limit ? `${plan.job_post_limit} Job Posts` : 'Unlimited Job Posts'}
+                      </span>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #f3f4f6'}}>
+                      <span style={{fontSize:14, color:'#059669', marginRight:8}}>✓</span>
+                      <span style={{fontSize:14, color:'#374151'}}>
+                        {plan.recruiter_limit} Recruiter{plan.recruiter_limit > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #f3f4f6'}}>
+                      <span style={{fontSize:14, color:'#059669', marginRight:8}}>✓</span>
+                      <span style={{fontSize:14, color:'#374151'}}>
+                        {plan.candidate_views ? `${plan.candidate_views.toLocaleString()} Candidate Views` : 'Unlimited Candidate Views'}
+                      </span>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #f3f4f6'}}>
+                      <span style={{fontSize:14, color:'#059669', marginRight:8}}>✓</span>
+                      <span style={{fontSize:14, color:'#374151'}}>
+                        {plan.analytics_level} Analytics
+                      </span>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', padding:'8px 0'}}>
+                      <span style={{fontSize:14, color:'#059669', marginRight:8}}>✓</span>
+                      <span style={{fontSize:14, color:'#374151'}}>
+                        {plan.support_level} Support
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Select Button */}
+                  <button
+                    style={{
+                      width:'100%',
+                      background:'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                      color:'white',
+                      border:'none',
+                      padding:'12px',
+                      borderRadius:8,
+                      fontSize:14,
+                      fontWeight:600,
+                      cursor:'pointer'
+                    }}
+                  >
+                    Select This Plan
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {offerPlans.filter(plan => plan.status === 'Active').length === 0 && (
+              <div style={{textAlign:'center', padding:60, color:'#6b7280'}}>
+                <p style={{fontSize:18, marginBottom:12}}>No active offer plans available</p>
+                <p style={{fontSize:14}}>Please create offer plans in the "Offer Plans" tab first.</p>
+              </div>
+            )}
+
+            <div style={{marginTop:24, textAlign:'center'}}>
+              <button 
+                onClick={() => {
+                  setShowPlanSelectionModal(false);
+                  setCompanyForPlanAssignment(null);
+                }}
+                style={{
+                  backgroundColor:'#6b7280',
+                  color:'white',
+                  border:'none',
+                  padding:'10px 24px',
+                  borderRadius:6,
+                  cursor:'pointer'
+                }}
               >
                 Cancel
               </button>

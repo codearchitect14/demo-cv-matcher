@@ -9,9 +9,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from config.database import get_db_session
-import jwt
+from jose import JWTError, jwt
 import os
 from datetime import datetime
+from config.security import SecurityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,8 @@ class RecruiterAuthMiddleware:
     """Middleware for recruiter authentication and authorization"""
     
     def __init__(self):
-        self.secret_key = os.getenv("SECRET_KEY")
-        self.algorithm = os.getenv("ALGORITHM", "HS256")
+        self.secret_key = SecurityConfig.SECRET_KEY
+        self.algorithm = SecurityConfig.ALGORITHM
     
     async def get_current_recruiter(
         self, 
@@ -55,27 +56,14 @@ class RecruiterAuthMiddleware:
                     detail="Invalid token: missing recruiter email"
                 )
             
-            # Get recruiter details from database using direct connection with timeout
-            import asyncpg
-            import asyncio
-            conn = None
-            try:
-                conn = await asyncpg.connect(
-                    os.getenv('DATABASE_URL'), 
-                    statement_cache_size=0,
-                    command_timeout=8  # 3 second timeout
-                )
-                recruiter = await conn.fetchrow("""
-                    SELECT id, full_name, email, role, is_active, company_id
-                    FROM recruiters 
-                    WHERE email = $1
-                """, recruiter_email)
-            finally:
-                if conn:
-                    try:
-                        await conn.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing recruiter auth connection: {e}")
+            # Get recruiter details from database using connection pool (FAST!)
+            from config.connection_pool import global_pool
+            
+            recruiter = await global_pool.fetchrow("""
+                SELECT id, full_name, email, role, is_active, company_id
+                FROM recruiters 
+                WHERE email = $1
+            """, recruiter_email)
             
             if not recruiter:
                 raise HTTPException(
@@ -101,12 +89,7 @@ class RecruiterAuthMiddleware:
                 company_id=recruiter['company_id']
             )
             
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired"
-            )
-        except jwt.JWTError:
+        except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
@@ -129,27 +112,14 @@ class RecruiterAuthMiddleware:
             if recruiter_context.is_admin:
                 return True
             
-            # Check if recruiter is assigned to this job using direct connection with timeout
-            import asyncpg
-            import asyncio
-            conn = None
-            try:
-                conn = await asyncpg.connect(
-                    os.getenv('DATABASE_URL'), 
-                    statement_cache_size=0,
-                    command_timeout=8
-                )
-                job = await conn.fetchrow("""
-                    SELECT recruiter_id 
-                    FROM jobs 
-                    WHERE id = $1
-                """, job_id)
-            finally:
-                if conn:
-                    try:
-                        await conn.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing job access check connection: {e}")
+            # Check if recruiter is assigned to this job using connection pool (FAST!)
+            from config.connection_pool import global_pool
+            
+            job = await global_pool.fetchrow("""
+                SELECT recruiter_id 
+                FROM jobs 
+                WHERE id = $1
+            """, job_id)
             
             if not job:
                 return False
@@ -171,28 +141,15 @@ class RecruiterAuthMiddleware:
             if recruiter_context.is_admin:
                 return True
             
-            # Check if recruiter is assigned to the job for this application using direct connection with timeout
-            import asyncpg
-            import asyncio
-            conn = None
-            try:
-                conn = await asyncpg.connect(
-                    os.getenv('DATABASE_URL'), 
-                    statement_cache_size=0,
-                    command_timeout=8
-                )
-                job = await conn.fetchrow("""
-                    SELECT j.recruiter_id 
-                    FROM applications a
-                    JOIN jobs j ON a.job_id = j.id
-                    WHERE a.id = $1
-                """, application_id)
-            finally:
-                if conn:
-                    try:
-                        await conn.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing application access check connection: {e}")
+            # Check if recruiter is assigned to the job for this application using connection pool (FAST!)
+            from config.connection_pool import global_pool
+            
+            job = await global_pool.fetchrow("""
+                SELECT j.recruiter_id 
+                FROM applications a
+                JOIN jobs j ON a.job_id = j.id
+                WHERE a.id = $1
+            """, application_id)
             
             if not job:
                 return False

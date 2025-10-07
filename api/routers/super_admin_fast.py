@@ -103,6 +103,25 @@ async def super_admin_login(payload: SuperAdminLoginRequest):
             data={"sub": row["email"], "user_id": str(row["id"]), "role": "super_admin"},
             expires_delta=expires,
         )
+        
+        # Send login notification email to super admin
+        try:
+            from services.email_service import email_service
+            
+            admin_name = row["full_name"] or "Super Admin"
+            admin_email = row["email"]
+            
+            email_sent = await email_service.send_super_admin_login_email(
+                admin_email=admin_email,
+                admin_name=admin_name
+            )
+            
+            if email_sent:
+                logger.info(f"✅ Login email sent to super admin: {admin_email}")
+            else:
+                logger.warning(f"⚠️ Failed to send login email to super admin: {admin_email}")
+        except Exception as email_error:
+            logger.error(f"❌ Error sending super admin login email: {email_error}")
 
         return {
             "access_token": token,
@@ -218,9 +237,9 @@ async def create_company(payload: dict = Body(...), _: SuperAdminProfile = Depen
     async with global_pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO companies (name, domain, description, subscription_plan, is_active)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, name, domain, description, subscription_plan, is_active, created_at
+            INSERT INTO companies (name, domain, description, subscription_plan, is_active, status)
+            VALUES ($1, $2, $3, $4, $5, 'ACTIVE')
+            RETURNING id, name, domain, description, subscription_plan, is_active, status, created_at
             """,
             name, domain, description, subscription_plan, is_active,
         )
@@ -257,73 +276,193 @@ async def update_company(company_id: int, payload: dict = Body(...), _: SuperAdm
 
 @router.put("/companies/{company_id}/approve")
 async def approve_company(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
-    """Approve a pending company"""
+    """Approve a pending company and send notification email"""
     async with global_pool.acquire() as conn:
+        # Get company and admin details for email
+        company_details = await conn.fetchrow(
+            """
+            SELECT c.id, c.name, c.status as old_status,
+                   r.full_name as admin_name, r.email as admin_email
+            FROM companies c
+            LEFT JOIN recruiters r ON c.id = r.company_id AND LOWER(r.role) = 'admin'
+            WHERE c.id = $1 AND c.status = 'PENDING'
+            LIMIT 1
+            """,
+            company_id
+        )
+        
+        if not company_details:
+            raise HTTPException(status_code=404, detail="Company not found or not pending")
+        
+        # Update status
         row = await conn.fetchrow(
             """
             UPDATE companies 
             SET status = 'ACTIVE', updated_at = now()
-            WHERE id = $1 AND status = 'PENDING'
+            WHERE id = $1
             RETURNING id, name, status
             """,
             company_id
         )
-        if not row:
-            raise HTTPException(status_code=404, detail="Company not found or not pending")
+        
+        # Send approval email to company admin
+        if company_details['admin_email']:
+            try:
+                from services.email_service import email_service
+                await email_service.send_company_approval_email(
+                    company_name=company_details['name'],
+                    admin_name=company_details['admin_name'] or 'Admin',
+                    admin_email=company_details['admin_email']
+                )
+                logger.info(f"✅ Approval email sent to {company_details['admin_email']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send approval email: {e}")
+        
         return {"message": "Company approved successfully", "company": dict(row)}
 
 
 @router.put("/companies/{company_id}/reject")
 async def reject_company(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
-    """Reject a pending company"""
+    """Reject a pending company and send notification email"""
     async with global_pool.acquire() as conn:
+        # Get company and admin details for email
+        company_details = await conn.fetchrow(
+            """
+            SELECT c.id, c.name, c.status as old_status,
+                   r.full_name as admin_name, r.email as admin_email
+            FROM companies c
+            LEFT JOIN recruiters r ON c.id = r.company_id AND LOWER(r.role) = 'admin'
+            WHERE c.id = $1 AND c.status = 'PENDING'
+            LIMIT 1
+            """,
+            company_id
+        )
+        
+        if not company_details:
+            raise HTTPException(status_code=404, detail="Company not found or not pending")
+        
+        # Update status
         row = await conn.fetchrow(
             """
             UPDATE companies 
             SET status = 'REJECTED', updated_at = now()
-            WHERE id = $1 AND status = 'PENDING'
+            WHERE id = $1
             RETURNING id, name, status
             """,
             company_id
         )
-        if not row:
-            raise HTTPException(status_code=404, detail="Company not found or not pending")
+        
+        # Send rejection email to company admin
+        if company_details['admin_email']:
+            try:
+                from services.email_service import email_service
+                await email_service.send_company_rejection_email(
+                    company_name=company_details['name'],
+                    admin_name=company_details['admin_name'] or 'Admin',
+                    admin_email=company_details['admin_email']
+                )
+                logger.info(f"✅ Rejection email sent to {company_details['admin_email']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send rejection email: {e}")
+        
         return {"message": "Company rejected", "company": dict(row)}
 
 
 @router.put("/companies/{company_id}/suspend")
 async def suspend_company(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
-    """Suspend an active company"""
+    """Suspend an active company and send notification email"""
     async with global_pool.acquire() as conn:
+        # Get company and admin details
+        company_details = await conn.fetchrow(
+            """
+            SELECT c.id, c.name, c.status as old_status,
+                   r.full_name as admin_name, r.email as admin_email
+            FROM companies c
+            LEFT JOIN recruiters r ON c.id = r.company_id AND LOWER(r.role) = 'admin'
+            WHERE c.id = $1 AND c.status = 'ACTIVE'
+            LIMIT 1
+            """,
+            company_id
+        )
+        
+        if not company_details:
+            raise HTTPException(status_code=404, detail="Company not found or not active")
+        
+        # Update status
         row = await conn.fetchrow(
             """
             UPDATE companies 
             SET status = 'SUSPENDED', updated_at = now()
-            WHERE id = $1 AND status = 'ACTIVE'
+            WHERE id = $1
             RETURNING id, name, status
             """,
             company_id
         )
-        if not row:
-            raise HTTPException(status_code=404, detail="Company not found or not active")
+        
+        # Send status change email
+        if company_details['admin_email']:
+            try:
+                from services.email_service import email_service
+                await email_service.send_company_status_change_email(
+                    company_name=company_details['name'],
+                    admin_name=company_details['admin_name'] or 'Admin',
+                    admin_email=company_details['admin_email'],
+                    new_status='SUSPENDED',
+                    old_status=company_details['old_status']
+                )
+                logger.info(f"✅ Suspension email sent to {company_details['admin_email']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send suspension email: {e}")
+        
         return {"message": "Company suspended", "company": dict(row)}
 
 
 @router.put("/companies/{company_id}/activate")
 async def activate_company(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
-    """Activate a suspended company"""
+    """Activate a suspended company and send notification email"""
     async with global_pool.acquire() as conn:
+        # Get company and admin details
+        company_details = await conn.fetchrow(
+            """
+            SELECT c.id, c.name, c.status as old_status,
+                   r.full_name as admin_name, r.email as admin_email
+            FROM companies c
+            LEFT JOIN recruiters r ON c.id = r.company_id AND LOWER(r.role) = 'admin'
+            WHERE c.id = $1 AND c.status = 'SUSPENDED'
+            LIMIT 1
+            """,
+            company_id
+        )
+        
+        if not company_details:
+            raise HTTPException(status_code=404, detail="Company not found or not suspended")
+        
+        # Update status
         row = await conn.fetchrow(
             """
             UPDATE companies 
             SET status = 'ACTIVE', updated_at = now()
-            WHERE id = $1 AND status = 'SUSPENDED'
+            WHERE id = $1
             RETURNING id, name, status
             """,
             company_id
         )
-        if not row:
-            raise HTTPException(status_code=404, detail="Company not found or not suspended")
+        
+        # Send activation email
+        if company_details['admin_email']:
+            try:
+                from services.email_service import email_service
+                await email_service.send_company_status_change_email(
+                    company_name=company_details['name'],
+                    admin_name=company_details['admin_name'] or 'Admin',
+                    admin_email=company_details['admin_email'],
+                    new_status='ACTIVE',
+                    old_status=company_details['old_status']
+                )
+                logger.info(f"✅ Activation email sent to {company_details['admin_email']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send activation email: {e}")
+        
         return {"message": "Company activated", "company": dict(row)}
 
 

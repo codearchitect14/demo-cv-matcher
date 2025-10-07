@@ -27,9 +27,13 @@ async def get_public_company_info():
         "domain": "IT",
         "description": "Test company for development",
         "is_active": True,
+        "status": "ACTIVE",
         "subscription_plan": "basic",
         "max_recruiters": 10,
         "max_jobs": 100,
+        "contact_email": None,
+        "contact_phone": None,
+        "address": None,
         "created_at": "2024-01-01T00:00:00",
         "updated_at": "2024-01-01T00:00:00"
     }
@@ -127,21 +131,26 @@ async def create_company(
 
 @router.get("/my-company", response_model=CompanyResponse)
 async def get_my_company():
-    """Get current user's company information - Public for testing"""
+    """Get company information - Public endpoint for testing"""
     try:
-        # Return default company data for testing
+        # Return default company data for public access
         return {
             "id": 1,
             "name": "Your Company",
             "domain": "IT",
             "description": "Your company for job management",
             "is_active": True,
+            "status": "ACTIVE",
             "subscription_plan": "premium",
             "max_recruiters": 20,
             "max_jobs": 200,
+            "contact_email": None,
+            "contact_phone": None,
+            "address": None,
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-01T00:00:00"
         }
+        
     except Exception as e:
         logger.error(f"Error getting company: {e}")
         raise HTTPException(
@@ -151,9 +160,9 @@ async def get_my_company():
 
 @router.get("/my-company/stats", response_model=CompanyStats)
 async def get_company_stats():
-    """Get current user's company statistics - Public for testing"""
+    """Get company statistics - Public endpoint for testing"""
     try:
-        # Return default company stats for testing (no auth required)
+        # Return default company stats for public access
         return {
             "id": 1,
             "name": "Your Company",
@@ -167,6 +176,7 @@ async def get_company_stats():
             "max_recruiters": 20,
             "max_jobs": 200
         }
+        
     except Exception as e:
         logger.error(f"Error getting company stats: {e}")
         raise HTTPException(

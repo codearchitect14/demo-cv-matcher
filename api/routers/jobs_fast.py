@@ -2,6 +2,11 @@ from fastapi import APIRouter, HTTPException, status
 from typing import Optional, List
 import logging
 import time
+import asyncio
+
+# Import email and notification services
+from services.email_service import email_service
+from services.notification_service import notification_service
 
 router = APIRouter(tags=["Jobs Fast"])
 logger = logging.getLogger(__name__)
@@ -91,6 +96,51 @@ async def create_job_public_fast(request_data: dict):
             )
         
         logger.info(f"Real job creation successful: {title} (ID: {row['id']})")
+        
+        # Send job assignment email if recruiter is assigned during creation
+        if recruiter_id and recruiter_id != 1:  # Skip if default recruiter (admin)
+            async def send_assignment_email():
+                try:
+                    # Get recruiter details
+                    recruiter_query = await global_pool.fetchrow(
+                        "SELECT full_name, email FROM recruiters WHERE id = $1",
+                        recruiter_id
+                    )
+                    
+                    if recruiter_query:
+                        recruiter_name = recruiter_query['full_name']
+                        recruiter_email = recruiter_query['email']
+                        
+                        # Get company name
+                        company_name = company  # Use the company from job data
+                        
+                        # Send assignment email
+                        await email_service.send_job_assignment_email(
+                            recruiter_email=recruiter_email,
+                            recruiter_name=recruiter_name,
+                            job_title=title,
+                            company_name=company_name,
+                            admin_name="Company Admin"  # Default admin name
+                        )
+                        logger.info(f"Job assignment email sent to recruiter: {recruiter_email}")
+                        
+                        # Create notification for assigned recruiter
+                        await notification_service.create_notification(
+                            user_id=recruiter_id,
+                            user_type="recruiter",
+                            title="New Job Assignment",
+                            message=f"You have been assigned to manage the job '{title}' by Company Admin.",
+                            notification_type="info",
+                            related_entity_type="job",
+                            related_entity_id=row['id']
+                        )
+                        logger.info(f"Job assignment notification created for recruiter: {recruiter_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Error sending job assignment email/notification: {e}")
+            
+            # Send email and notification asynchronously (non-blocking)
+            asyncio.create_task(send_assignment_email())
         
         return {
             "id": row['id'],

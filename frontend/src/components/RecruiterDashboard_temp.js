@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './RecruiterDashboard.css';
 
@@ -140,7 +140,7 @@ const RecruiterDashboard = () => {
       description: "Create, edit, and manage your job postings",
       action: () => navigate('/jobs-dashboard'),
       color: "#667eea",
-      icon: "ðŸ“‹",
+      icon: "📋",
       gradient: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
     },
     {
@@ -148,7 +148,7 @@ const RecruiterDashboard = () => {
       description: "Search and match candidates for your jobs",
       action: () => navigate('/enhanced-recruiter-recommendations'),
       color: "#e74c3c",
-      icon: "ðŸ‘¥",
+      icon: "👥",
       gradient: "linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)"
     },
     {
@@ -156,7 +156,7 @@ const RecruiterDashboard = () => {
       description: "Track job performance and candidate interactions",
       action: () => navigate('/interactions-analytics'),
       color: "#28a745",
-      icon: "ðŸ“Š",
+      icon: "📊",
       gradient: "linear-gradient(135deg, #28a745 0%, #20c997 100%)"
     },
     {
@@ -172,7 +172,7 @@ const RecruiterDashboard = () => {
         }
       },
       color: "#fd7e14",
-      icon: "ðŸ“",
+      icon: "📝",
       gradient: "linear-gradient(135deg, #fd7e14 0%, #ff6b35 100%)"
     }
   ];
@@ -338,7 +338,7 @@ const RecruiterDashboard = () => {
               }}
               onClick={action.action}
             >
-              <div className="action-icon">{action.icon || 'âš™ï¸'}</div>
+              <div className="action-icon">{action.icon || '⚙️'}</div>
               <div className="action-content">
                 <h3 className="action-title">{action.title}</h3>
                 <p className="action-description">{action.description}</p>

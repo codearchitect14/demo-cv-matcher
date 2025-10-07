@@ -23,6 +23,11 @@ class CandidateContactRequest(BaseModel):
     job_title: Optional[str] = None
     company_name: Optional[str] = None
 
+class SendMessageRequest(BaseModel):
+    candidate_id: int
+    message: str
+    job_id: Optional[int] = None
+
 @router.post("/send-message")
 async def send_candidate_contact_message(
     contact_request: CandidateContactRequest,
@@ -147,4 +152,106 @@ async def get_candidate_info_for_contact(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get candidate information"
+        )
+
+@router.post("/send-message-new")
+async def send_message_to_candidate(
+    request: SendMessageRequest,
+    recruiter_context: RecruiterContext = Depends(get_recruiter_context),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Allows a Company Admin to send a custom email message to a candidate.
+    Also creates an in-app notification for the admin confirming the message sent.
+    """
+    if not recruiter_context.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Company Admins can contact candidates directly."
+        )
+
+    try:
+        # Fetch candidate details
+        candidate_row = await db.execute(text("SELECT name, email FROM candidates WHERE id = :candidate_id"),
+                                        {"candidate_id": request.candidate_id})
+        candidate = candidate_row.fetchone()
+
+        if not candidate:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+        candidate_name = candidate[0]
+        candidate_email = candidate[1]
+
+        # Fetch company name
+        company_name = "Your Company"  # Default fallback
+        company_query = await db.execute(text("SELECT name FROM companies WHERE id = :company_id"),
+                                       {"company_id": recruiter_context.company_id})
+        company_result = company_query.fetchone()
+        if company_result:
+            company_name = company_result[0]
+
+        # Fetch job title if job_id is provided - WITH COMPANY ISOLATION
+        job_title = None
+        if request.job_id:
+            # SECURITY: Verify job belongs to recruiter's company
+            job_query = await db.execute(text("""
+                SELECT j.title, j.company_id 
+                FROM jobs j 
+                WHERE j.id = :job_id
+            """), {"job_id": request.job_id})
+            job_result = job_query.fetchone()
+            
+            if job_result:
+                # SECURITY: Check if job belongs to recruiter's company
+                if job_result[1] != recruiter_context.company_id:
+                    logger.warning(f"SECURITY ALERT: Recruiter {recruiter_context.recruiter_id} from company {recruiter_context.company_id} tried to contact candidate for job {request.job_id} from company {job_result[1]}")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: Job does not belong to your company"
+                    )
+                job_title = job_result[0]
+                logger.info(f"✅ Job access verified: Recruiter {recruiter_context.recruiter_id} contacting candidate for job {request.job_id} from their company")
+
+        # Send email and notification asynchronously (non-blocking)
+        import asyncio
+        
+        async def send_email_and_notification():
+            try:
+                # Send email to candidate
+                await email_service.send_candidate_contact_email(
+                    candidate_email=candidate_email,
+                    candidate_name=candidate_name,
+                    admin_name=recruiter_context.name,
+                    company_name=company_name,
+                    message=request.message,
+                    job_title=job_title
+                )
+                logger.info(f"Candidate contact email sent to {candidate_email} by admin {recruiter_context.recruiter_id}")
+
+                # Create notification for admin
+                await notification_service.create_notification(
+                    user_id=recruiter_context.recruiter_id,
+                    user_type="recruiter",
+                    title="Message Sent Successfully",
+                    message=f"Your message has been successfully sent to {candidate_name}.",
+                    notification_type="success",
+                    related_entity_type="candidate",
+                    related_entity_id=request.candidate_id
+                )
+                logger.info(f"Admin notification created for candidate contact: {recruiter_context.recruiter_id}")
+            except Exception as e:
+                logger.error(f"Error in async email/notification task: {e}")
+        
+        # Start the async task without waiting for it to complete
+        asyncio.create_task(send_email_and_notification())
+
+        return {"message": "Message sent successfully and notification created."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message to candidate: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send message to candidate."
         )

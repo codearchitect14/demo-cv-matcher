@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 @router.get("/companies/{company_id}/admins")
 async def list_company_admins(company_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
     """List all admins/recruiters for a specific company"""
-    conn = await _get_conn()
-    try:
+    async with _get_conn() as conn:
         rows = await conn.fetch(
             """
             SELECT id, full_name, email, phone_number, role, is_active, created_at
@@ -26,8 +25,6 @@ async def list_company_admins(company_id: int, _: SuperAdminProfile = Depends(su
             company_id,
         )
         return {"items": [dict(r) for r in rows]}
-    finally:
-        await conn.close()
 
 
 @router.post("/companies/{company_id}/admins")
@@ -45,8 +42,7 @@ async def create_company_admin(company_id: int, payload: dict = Body(...), _: Su
     if role not in ["admin", "recruiter"]:
         raise HTTPException(status_code=400, detail="role must be 'admin' or 'recruiter'")
     
-    conn = await _get_conn()
-    try:
+    async with _get_conn() as conn:
         # Check if company exists
         company = await conn.fetchrow("SELECT id FROM companies WHERE id = $1", company_id)
         if not company:
@@ -70,8 +66,6 @@ async def create_company_admin(company_id: int, payload: dict = Body(...), _: Su
             full_name, email, phone_number, hashed_password, role, company_id,
         )
         return dict(row)
-    finally:
-        await conn.close()
 
 
 @router.put("/companies/{company_id}/admins/{admin_id}")
@@ -81,16 +75,35 @@ async def update_company_admin(
     payload: dict = Body(...), 
     _: SuperAdminProfile = Depends(super_admin_required)
 ):
-    """Update an admin/recruiter for a specific company"""
+    """Update an admin/recruiter for a specific company and send email notification"""
     fields = []
     params = []
     idx = 1
     
+    # Track if is_active is being changed for email notification
+    is_active_changed = "is_active" in payload
+    new_is_active = bool(payload.get("is_active")) if is_active_changed else None
+    
     for key in ["full_name", "phone_number", "role", "is_active"]:
         if key in payload:
             idx += 1
-            fields.append(f"{key} = ${idx}")
-            params.append(payload[key])
+            # Convert is_active to boolean explicitly - handle all cases
+            if key == "is_active":
+                value = payload[key]
+                # Handle various input types: bool, int, str
+                if isinstance(value, bool):
+                    boolean_value = value
+                elif isinstance(value, int):
+                    boolean_value = value != 0
+                elif isinstance(value, str):
+                    boolean_value = value.lower() in ['true', '1', 'yes']
+                else:
+                    boolean_value = bool(value)
+                fields.append(f"{key} = ${idx}")
+                params.append(boolean_value)
+            else:
+                fields.append(f"{key} = ${idx}")
+                params.append(payload[key])
     
     # Handle password update separately
     if "password" in payload and payload["password"]:
@@ -101,8 +114,17 @@ async def update_company_admin(
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
     
-    conn = await _get_conn()
-    try:
+    async with _get_conn() as conn:
+        # Get old values before update for email notification
+        old_admin = await conn.fetchrow(
+            "SELECT full_name, email, is_active FROM recruiters WHERE id = $1 AND company_id = $2",
+            admin_id, company_id
+        )
+        
+        if not old_admin:
+            raise HTTPException(status_code=404, detail="Admin not found in this company")
+        
+        # Update the admin
         row = await conn.fetchrow(
             f"""
             UPDATE recruiters
@@ -112,18 +134,35 @@ async def update_company_admin(
             """,
             admin_id, company_id, *params,
         )
+        
         if not row:
             raise HTTPException(status_code=404, detail="Admin not found in this company")
+        
+        # Send email notification if is_active status changed
+        if is_active_changed and old_admin['is_active'] != new_is_active:
+            try:
+                from services.email_service import email_service
+                
+                status_text = "Activated" if new_is_active else "Deactivated"
+                old_status_text = "Active" if old_admin['is_active'] else "Inactive"
+                
+                await email_service.send_admin_status_change_email(
+                    admin_name=row['full_name'],
+                    admin_email=row['email'],
+                    new_status=status_text,
+                    old_status=old_status_text
+                )
+                logger.info(f"✅ Admin status change email sent to {row['email']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send admin status change email: {e}")
+        
         return dict(row)
-    finally:
-        await conn.close()
 
 
 @router.delete("/companies/{company_id}/admins/{admin_id}")
 async def delete_company_admin(company_id: int, admin_id: int, _: SuperAdminProfile = Depends(super_admin_required)):
     """Delete an admin/recruiter from a specific company"""
-    conn = await _get_conn()
-    try:
+    async with _get_conn() as conn:
         # Check if this is the last admin of the company
         admin_count = await conn.fetchval(
             "SELECT COUNT(*) FROM recruiters WHERE company_id = $1 AND LOWER(role) = 'admin' AND is_active = true",
@@ -149,8 +188,6 @@ async def delete_company_admin(company_id: int, admin_id: int, _: SuperAdminProf
         if res == "DELETE 0":
             raise HTTPException(status_code=404, detail="Admin not found in this company")
         return {"deleted": True}
-    finally:
-        await conn.close()
 
 
 @router.post("/companies/{company_id}/admins/{admin_id}/reset-password")
@@ -165,8 +202,7 @@ async def reset_admin_password(
     if not new_password:
         raise HTTPException(status_code=400, detail="password is required")
     
-    conn = await _get_conn()
-    try:
+    async with _get_conn() as conn:
         row = await conn.fetchrow(
             """
             UPDATE recruiters
@@ -179,5 +215,3 @@ async def reset_admin_password(
         if not row:
             raise HTTPException(status_code=404, detail="Admin not found in this company")
         return {"message": "Password reset successfully", "admin": dict(row)}
-    finally:
-        await conn.close()

@@ -136,3 +136,4 @@ async def create_candidate_public_fast(request_data: dict):
         )
 
 
+

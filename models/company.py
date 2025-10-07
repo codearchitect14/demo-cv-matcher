@@ -32,10 +32,12 @@ class Company(BaseModel):
     
     # System fields
     is_active = Column(Boolean, nullable=False, default=True, index=True)
+    status = Column(String(20), nullable=False, default="ACTIVE", index=True)  # PENDING, ACTIVE, REJECTED, SUSPENDED
     subscription_plan = Column(String(50), nullable=False, default="basic")  # basic, premium, enterprise
     
     # Relationships
     recruiters = relationship("Recruiter", back_populates="company", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="company", cascade="all, delete-orphan")
+
 
 

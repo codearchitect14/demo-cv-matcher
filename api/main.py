@@ -14,11 +14,12 @@ from middleware.rate_limiter import rate_limiter, rate_limiting_middleware
 from middleware.security import security_middleware
 # timeout_middleware removed
 from middleware.performance_middleware import performance_middleware
-from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public, sub_recruiter, notifications, email_test, candidate_contact, recruiter_notifications
+from api.routers import auth, candidates, jobs, applications, recommendations, interactions, analytics, system, search, gdpr, recruiter, jobs_fast, company, company_public, recruiter_fast, job_assignments, applications_public, sub_recruiter, notifications, email_test, candidate_contact, recruiter_notifications, sub_recruiter_actions
 from api.routers import super_admin_fast as super_admin_router
 from api.routers import super_admin_admins as super_admin_admins_router
 from api.routers import offer_plans
 from api.routers import company_subscriptions
+from api.routers import company_admin_plans
 from api.routers.assessments_fast import router as assessments_fast_router
 from services.api_service import api_service
 from services.cache_service import cache_service
@@ -176,10 +177,12 @@ app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["
 app.include_router(email_test.router, prefix="/api/v1/email", tags=["Email Test"])
 app.include_router(candidate_contact.router, prefix="/api/v1/candidate-contact", tags=["Candidate Contact"])
 app.include_router(recruiter_notifications.router, prefix="/api/v1/recruiter-notifications", tags=["Recruiter Notifications"])
+app.include_router(sub_recruiter_actions.router, prefix="/api/v1/sub-recruiter", tags=["Sub-Recruiter Actions"])
 app.include_router(super_admin_router.router, prefix="/api/v1/super-admin", tags=["Super Admin"])
 app.include_router(super_admin_admins_router.router, prefix="/api/v1/super-admin", tags=["Super Admin - Company Admins"])
 app.include_router(offer_plans.router, prefix="/api/v1/super-admin", tags=["Super Admin - Offer Plans"])
 app.include_router(company_subscriptions.router, prefix="/api/v1/super-admin", tags=["Super Admin - Company Subscriptions"])
+app.include_router(company_admin_plans.router, prefix="/api/v1/company-admin/subscriptions", tags=["Company Admin - Subscriptions"])
 
 # Health check endpoint
 @app.get("/health")

@@ -525,9 +525,10 @@ async def get_job_recommendations(
 async def get_job(
     job_id: int,
     candidate_id: Optional[int] = Query(None, description="Candidate ID to log view interaction"),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_recruiter: Optional[Recruiter] = Depends(get_current_recruiter)
 ):
-    """Get job details by ID"""
+    """Get job details by ID - WITH COMPANY ISOLATION"""
     try:
         job = await job_crud.get_with_mandatory_skills(db, id=job_id)
         if not job:
@@ -535,6 +536,16 @@ async def get_job(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Job not found"
             )
+        
+        # SECURITY: If accessed by recruiter, verify company ownership
+        if current_recruiter:
+            if job.company_id != current_recruiter.company_id:
+                logger.warning(f"SECURITY ALERT: Recruiter {current_recruiter.id} from company {current_recruiter.company_id} tried to access job {job_id} from company {job.company_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Job does not belong to your company"
+                )
+            logger.info(f"✅ Job access verified: Recruiter {current_recruiter.id} accessing job {job_id} from their company")
         
         # Log the view interaction if candidate_id is provided
         if candidate_id:

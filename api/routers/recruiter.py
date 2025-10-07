@@ -65,10 +65,13 @@ async def register_recruiter(
     try:
         from config.connection_pool import global_pool
         
+        # Convert email to lowercase for consistency
+        email_lower = recruiter_data.email.lower().strip()
+        
         # Check if email already exists using direct query
         existing_check = await global_pool.fetchrow(
-            "SELECT id FROM recruiters WHERE email = $1",
-            recruiter_data.email
+            "SELECT id FROM recruiters WHERE LOWER(email) = $1",
+            email_lower
         )
         
         if existing_check:
@@ -83,49 +86,100 @@ async def register_recruiter(
         # Convert enum values to strings
         domain_value = recruiter_data.domain.value if recruiter_data.domain else None
         company_size_value = recruiter_data.company_size.value if recruiter_data.company_size else None
+        company_name = recruiter_data.company_name or f"Company of {recruiter_data.full_name}"
+        
+        # Check if company already exists (case-insensitive)
+        existing_company = await global_pool.fetchrow(
+            """
+            SELECT id, name, status FROM companies 
+            WHERE LOWER(name) = LOWER($1)
+            LIMIT 1
+            """,
+            company_name
+        )
+        
+        if existing_company:
+            # Company exists - join as additional admin
+            company_id = existing_company['id']
+            is_first_admin = False
+            logger.info(f"Joining existing company: {company_name} (ID: {company_id})")
+        else:
+            # Create new company (status PENDING for super admin approval)
+            company_id = await global_pool.fetchval(
+                """
+                INSERT INTO companies (name, domain, description, status, created_at, updated_at)
+                VALUES ($1, $2, $3, 'PENDING', NOW(), NOW())
+                RETURNING id
+                """,
+                company_name,
+                domain_value or 'General',
+                f"Company registered by {recruiter_data.full_name}"
+            )
+            is_first_admin = True
+            logger.info(f"Created new company: {company_name} (ID: {company_id}, Status: PENDING)")
         
         # Create recruiter using direct query
         recruiter_id = await global_pool.fetchval(
             """
             INSERT INTO recruiters (
                 full_name, email, password_hash, phone_number, company_name, 
-                company_size, domain, is_active, company_id, role, created_at, updated_at
+                company_size, domain, is_active, email_verified, company_id, role, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, NOW(), NOW())
             RETURNING id
             """,
             recruiter_data.full_name,
-            recruiter_data.email,
+            email_lower,
             hashed_password,
             recruiter_data.phone_number,
-            recruiter_data.company_name,
+            recruiter_data.company_name,  # Store the actual company name from registration
             company_size_value,
             domain_value,
             True,  # is_active
-            1,     # company_id (default for testing)
-            'admin' if recruiter_data.role == 'admin' else 'recruiter',  # role
+            company_id,  # Use the newly created company ID
+            'admin',  # role - self-registered recruiters become Company Admins
         )
+        
+        # Notify super admin ONLY if this is a NEW company registration
+        if is_first_admin:
+            try:
+                await email_service.send_company_registration_notification_to_super_admin(
+                    company_name=company_name,
+                    admin_name=recruiter_data.full_name,
+                    admin_email=email_lower,
+                    company_id=company_id
+                )
+                logger.info(f"✅ Super admin notified of new company registration: {company_name}")
+            except Exception as super_admin_email_error:
+                logger.error(f"❌ Failed to send super admin notification: {super_admin_email_error}")
+        else:
+            logger.info(f"ℹ️ Additional admin joined existing company: {company_name} (Super admin not notified)")
         
         # Send welcome email to the new recruiter
         try:
-            # Get company name
-            company_name = recruiter_data.company_name or "Your Company"
-            
             # Send welcome email with login credentials
             login_credentials = {
-                "email": recruiter_data.email,
+                "email": email_lower,
                 "password": recruiter_data.password  # Send the original password
             }
             
+            if is_first_admin:
+                # First admin - company creator
+                welcome_msg = f"Your company '{company_name}' has been registered and is awaiting Super Admin approval."
+            else:
+                # Additional admin - joining existing company
+                welcome_msg = f"You've been added as an admin to '{company_name}'."
+            
             await email_service.send_recruiter_welcome_email(
-                recruiter_email=recruiter_data.email,
+                recruiter_email=email_lower,
                 recruiter_name=recruiter_data.full_name,
                 company_name=company_name,
-                login_credentials=login_credentials
+                login_credentials=login_credentials,
+                user_type="admin"  # Self-registered recruiters become Company Admins
             )
-            logger.info(f"Welcome email sent to new recruiter: {recruiter_data.email}")
+            logger.info(f"Welcome email sent to new {'primary' if is_first_admin else 'additional'} admin: {email_lower}")
         except Exception as email_error:
-            logger.error(f"Failed to send welcome email to recruiter {recruiter_data.email}: {email_error}")
+            logger.error(f"Failed to send welcome email to recruiter {email_lower}: {email_error}")
         
         # Create notification for admin (if this is a sub-recruiter being created)
         try:
@@ -148,7 +202,7 @@ async def register_recruiter(
         recruiter_row = await global_pool.fetchrow(
             """
             SELECT id, full_name, email, phone_number, company_name, 
-                   company_size, domain, is_active, company_id, role, created_at, updated_at
+                   company_size, domain, is_active, email_verified, company_id, role, created_at, updated_at
             FROM recruiters WHERE id = $1
             """,
             recruiter_id
@@ -164,6 +218,7 @@ async def register_recruiter(
                 company_size=recruiter_row['company_size'],
                 domain=recruiter_row['domain'],
                 is_active=recruiter_row['is_active'],
+                email_verified=recruiter_row['email_verified'],
                 company_id=recruiter_row['company_id'],
                 role=recruiter_row['role'],
                 created_at=recruiter_row['created_at'],
@@ -188,36 +243,23 @@ async def register_recruiter(
 async def login_recruiter(
     login_data: RecruiterLogin
 ):
-    """Login recruiter - Optimized for performance with direct connection"""
+    """Login recruiter - Optimized for fast performance (<2s)"""
     import time
-    import asyncpg
     import asyncio
-    import os
-    from dotenv import load_dotenv
+    from config.connection_pool import global_pool
     
-    load_dotenv()
     start_time = time.time()
     
     try:
-        # Get recruiter by email using direct connection (working version)
-        conn = None
-        try:
-            conn = await asyncpg.connect(
-                os.getenv('DATABASE_URL'), 
-                statement_cache_size=0,
-                command_timeout=5
-            )
-            recruiter_obj = await conn.fetchrow("""
-                SELECT id, full_name, email, password_hash, is_active, role
-                FROM recruiters 
-                WHERE email = $1
-            """, login_data.email)
-        finally:
-            if conn:
-                try:
-                    await conn.close()
-                except Exception as e:
-                    logger.warning(f"Error closing recruiter login connection: {e}")
+        # Convert email to lowercase for case-insensitive login
+        email_lower = login_data.email.lower().strip()
+        
+        # Get recruiter by email using connection pool (FAST!)
+        recruiter_obj = await global_pool.fetchrow("""
+            SELECT id, full_name, email, password_hash, is_active, role, company_name, company_id
+            FROM recruiters 
+            WHERE LOWER(email) = $1
+        """, email_lower)
         if not recruiter_obj:
             # Burn comparable CPU to mitigate enumeration timing
             simulate_constant_time_verify()
@@ -252,6 +294,55 @@ async def login_recruiter(
         
         elapsed_time = time.time() - start_time
         logger.info(f"Recruiter logged in: {recruiter_obj['email']} (took {elapsed_time:.3f}s)")
+        
+        # Send login welcome email to recruiter (async, non-blocking)
+        async def send_login_email():
+            try:
+                # Use company name from recruiter record (stored during registration)
+                company_name = recruiter_obj.get('company_name') or "Your Company"
+                
+                # Use appropriate email template based on role
+                if recruiter_obj['role'] == 'admin':
+                    await email_service.send_admin_login_email(
+                        admin_email=recruiter_obj['email'],
+                        admin_name=recruiter_obj['full_name'],
+                        company_name=company_name
+                    )
+                else:
+                    # Use sub-recruiter login email template
+                    await email_service.send_recruiter_login_email(
+                        recruiter_email=recruiter_obj['email'],
+                        recruiter_name=recruiter_obj['full_name'],
+                        company_name=company_name
+                    )
+                logger.info(f"Login welcome email sent to recruiter: {recruiter_obj['email']}")
+            except Exception as email_error:
+                logger.error(f"Failed to send login welcome email: {email_error}")
+        
+        # Start email sending in background (don't await)
+        asyncio.create_task(send_login_email())
+        
+        # Create login notification for recruiter (async, non-blocking)
+        async def create_login_notification():
+            try:
+                # Use company name from recruiter record (stored during registration)
+                company_name = recruiter_obj.get('company_name') or "Your Company"
+                
+                await notification_service.create_notification(
+                    user_id=recruiter_obj['id'],
+                    user_type="recruiter",
+                    title="Welcome Back!",
+                    message=f"Hello {recruiter_obj['full_name']}! You've successfully logged into your {company_name} recruiter account.",
+                    notification_type="info",
+                    related_entity_type="recruiter",
+                    related_entity_id=recruiter_obj['id']
+                )
+                logger.info(f"Login notification created for recruiter: {recruiter_obj['id']}")
+            except Exception as notification_error:
+                logger.error(f"Failed to create login notification: {notification_error}")
+        
+        # Start notification creation in background (don't await)
+        asyncio.create_task(create_login_notification())
         
         return {
             "access_token": access_token,
@@ -475,6 +566,9 @@ async def create_recruiter_admin(
         # Set default company_id (for testing - should be 1)
         recruiter_dict["company_id"] = 1
         
+        # Set role as 'recruiter' for admin-created recruiters (sub-recruiters)
+        recruiter_dict["role"] = "recruiter"
+        
         # Convert enum values to strings for SQLAlchemy
         if "domain" in recruiter_dict:
             recruiter_dict["domain"] = recruiter_dict["domain"].value
@@ -500,11 +594,20 @@ async def create_recruiter_admin(
                 "password": recruiter_data.password  # Send the original password
             }
             
+            # Get admin name for sub-recruiter email
+            admin_name = "System Administrator"  # Default fallback
+            admin_query = await db.execute(text("SELECT full_name FROM recruiters WHERE id = :admin_id"), 
+                                         {"admin_id": current_user["id"]})
+            admin_result = admin_query.fetchone()
+            if admin_result:
+                admin_name = admin_result[0]
+            
             await email_service.send_recruiter_welcome_email(
                 recruiter_email=new_recruiter.email,
                 recruiter_name=new_recruiter.full_name,
                 company_name=company_name,
-                login_credentials=login_credentials
+                login_credentials=login_credentials,
+                user_type="recruiter"  # Admin-created recruiters are sub-recruiters
             )
             logger.info(f"Welcome email sent to new recruiter: {new_recruiter.email}")
         except Exception as email_error:
@@ -515,8 +618,8 @@ async def create_recruiter_admin(
             await notification_service.create_notification(
                 user_id=current_user["id"],  # Admin who created the recruiter
                 user_type="recruiter",  # Assuming admin is also a recruiter type
-                title="Recruiter Created Successfully",
-                message=f"New recruiter '{new_recruiter.full_name}' has been created and welcome email sent.",
+                title="Sub-Recruiter Created Successfully",
+                message=f"New sub-recruiter '{new_recruiter.full_name}' has been created and welcome email sent.",
                 notification_type="success",
                 related_entity_type="recruiter",
                 related_entity_id=new_recruiter.id
@@ -754,4 +857,4 @@ async def toggle_recruiter_status_admin(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to toggle recruiter status"
-        ) 
+        )

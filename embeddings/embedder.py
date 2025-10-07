@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from sentence_transformers import SentenceTransformer
 import logging
 import asyncio
@@ -10,6 +11,10 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import redis.asyncio as redis
 from config.security import SecurityConfig
+
+# Force offline mode to prevent HuggingFace connection attempts
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+os.environ['HF_DATASETS_OFFLINE'] = '1'
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +33,27 @@ class OptimizedEmbeddingService:
     
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        
+        # Try to load model with local_files_only first (offline mode)
+        try:
+            logger.info(f"Attempting to load model '{model_name}' from local cache...")
+            self.model = SentenceTransformer(model_name, local_files_only=True)
+            logger.info(f"Successfully loaded model '{model_name}' from local cache")
+        except Exception as e:
+            logger.warning(f"Failed to load model from local cache: {e}")
+            logger.info(f"Attempting to download model '{model_name}' from HuggingFace...")
+            try:
+                # If local loading fails, try downloading (requires internet)
+                self.model = SentenceTransformer(model_name, local_files_only=False)
+                logger.info(f"Successfully downloaded and loaded model '{model_name}'")
+            except Exception as download_error:
+                logger.error(f"Failed to load or download model: {download_error}")
+                raise RuntimeError(
+                    f"Cannot load model '{model_name}'. Please ensure you have internet connection "
+                    f"for the first download, or the model is cached locally at: "
+                    f"~/.cache/torch/sentence_transformers/"
+                ) from download_error
+        
         self.redis_client = redis.from_url(SecurityConfig.REDIS_URL, decode_responses=True)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.batch_size = 32

@@ -63,7 +63,7 @@ const RecruiterAdmin = () => {
 
     try {
       const url = editingRecruiter 
-        ? `http://localhost:8000/api/v1/recruiter/admin/${editingRecruiter.id}`
+        ? `http://localhost:8000/api/v1/recruiter-fast/admin/update-fast/${editingRecruiter.id}`
         : 'http://localhost:8000/api/v1/recruiter-fast/admin/create-fast';
       
       const method = editingRecruiter ? 'PUT' : 'POST';

@@ -22,11 +22,15 @@ const SubRecruiterDashboard = () => {
       setLoading(true);
       setError(''); // Clear any previous errors
       
-      console.log('Fetching assigned jobs (public endpoint)');
+      console.log('Fetching assigned jobs (authenticated endpoint)');
       
-      const response = await fetch('http://localhost:8000/api/v1/recruiter/assigned-jobs', {
+      // Get the recruiter token from localStorage
+      const recruiterToken = localStorage.getItem('recruiterToken');
+      
+      const response = await fetch('http://localhost:8000/api/v1/sub-recruiter/my-assigned-jobs', {
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${recruiterToken}`
         },
         signal: AbortSignal.timeout(30000) // 30 second timeout
       });
@@ -57,9 +61,13 @@ const SubRecruiterDashboard = () => {
       
       console.log('Fetching candidates for job:', jobId);
       
+      // Get the recruiter token from localStorage
+      const recruiterToken = localStorage.getItem('recruiterToken');
+      
       const response = await fetch(`http://localhost:8000/api/v1/recruiter/job-candidates/${jobId}`, {
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${recruiterToken}`
         }
       });
 
@@ -82,10 +90,14 @@ const SubRecruiterDashboard = () => {
 
   const updateCandidateStatus = async (candidateId, newStatus) => {
     try {
+      // Get the recruiter token from localStorage
+      const recruiterToken = localStorage.getItem('recruiterToken');
+      
       const response = await fetch(`http://localhost:8000/api/v1/recruiter/update-candidate-status`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${recruiterToken}`
         },
         body: JSON.stringify({
           candidate_id: candidateId,
@@ -128,12 +140,12 @@ const SubRecruiterDashboard = () => {
   };
 
   const getStatusCounts = (job) => {
-    // The backend already provides the counts in the applications object
+    // The backend provides the counts in lowercase
     return {
-      APPLIED: job.applications?.APPLIED || 0,
-      INTERVIEW_SCHEDULED: job.applications?.INTERVIEW_SCHEDULED || 0,
-      REJECTED: job.applications?.REJECTED || 0,
-      HIRED: job.applications?.HIRED || 0
+      APPLIED: job.applications?.applied || 0,
+      INTERVIEW_SCHEDULED: job.applications?.interview || 0,
+      REJECTED: job.applications?.rejected || 0,
+      HIRED: job.applications?.hired || 0
     };
   };
 

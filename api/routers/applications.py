@@ -61,10 +61,20 @@ async def auto_update_application_statuses(rows):
                     
                     # Log the status change interaction
                     try:
+                        # Map application status to valid interaction type
+                        interaction_type_map = {
+                            "APPLIED": "applied",
+                            "INTERVIEW_SCHEDULED": "edited",
+                            "REJECTED": "rejected",
+                            "OFFERED": "edited",
+                            "HIRED": "edited"
+                        }
+                        interaction_type = interaction_type_map.get(new_status, "edited")
+                        
                         await global_pool.execute("""
                             INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
                             VALUES ($1, 'candidate', $2, $3, NOW())
-                        """, candidate_id, job_id, new_status)
+                        """, candidate_id, job_id, interaction_type)
                         print(f"✅ Auto-updated application {app_id}: {new_status} (assessment score: {score}%) - logged interaction")
                     except Exception as log_error:
                         print(f"⚠️ Failed to log status change interaction: {log_error}")
@@ -653,11 +663,11 @@ async def create_application_public(
             await global_pool.execute(
                 """
                 INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
-                VALUES ($1, 'candidate', $2, 'APPLIED', NOW())
+                VALUES ($1, 'candidate', $2, 'applied', NOW())
                 """,
                 application_data.candidate_id, application_data.job_id
             )
-            print(f"✅ Logged APPLIED interaction for candidate {application_data.candidate_id} to job {application_data.job_id}")
+            print(f"✅ Logged applied interaction for candidate {application_data.candidate_id} to job {application_data.job_id}")
         except Exception as log_error:
             print(f"⚠️ Failed to log interaction: {log_error}")
         
@@ -689,7 +699,7 @@ async def create_application_public(
         except Exception as email_error:
             print(f"⚠️ Failed to send application confirmation email: {email_error}")
         
-        # Create in-app notification
+        # Create in-app notification for candidate
         try:
             job_title = job_details['title'] if job_details else "Job Application"
             await notification_service.create_notification(
@@ -704,6 +714,49 @@ async def create_application_public(
             print(f"✅ Application notification created for candidate {application_data.candidate_id}")
         except Exception as notification_error:
             print(f"⚠️ Failed to create application notification: {notification_error}")
+        
+        # Send notification to assigned sub-recruiter (if job is assigned)
+        try:
+            # Get job assignment details
+            job_assignment = await global_pool.fetchrow("""
+                SELECT j.recruiter_id, j.company_id, r.full_name as recruiter_name, r.email as recruiter_email
+                FROM jobs j
+                LEFT JOIN recruiters r ON j.recruiter_id = r.id
+                WHERE j.id = $1 AND j.recruiter_id IS NOT NULL
+            """, application_data.job_id)
+            
+            if job_assignment and job_assignment['recruiter_id']:
+                recruiter_id = job_assignment['recruiter_id']
+                recruiter_name = job_assignment['recruiter_name']
+                recruiter_email = job_assignment['recruiter_email']
+                candidate_name = candidate_details['name'] if candidate_details else "Candidate"
+                job_title = job_details['title'] if job_details else "Job"
+                
+                # Send email notification to sub-recruiter
+                await email_service.send_candidate_application_notification_email(
+                    recruiter_email=recruiter_email,
+                    recruiter_name=recruiter_name,
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    company_name=job_assignment.get('company_id', 'Company'),
+                    application_id=application_id
+                )
+                print(f"✅ Candidate application email sent to sub-recruiter {recruiter_email}")
+                
+                # Create in-app notification for sub-recruiter
+                await notification_service.create_notification(
+                    user_id=recruiter_id,
+                    user_type="recruiter",
+                    title="New Candidate Application",
+                    message=f"Candidate {candidate_name} applied for '{job_title}' position.",
+                    notification_type="info",
+                    related_entity_type="application",
+                    related_entity_id=application_id
+                )
+                print(f"✅ Application notification created for sub-recruiter {recruiter_id}")
+                
+        except Exception as recruiter_notification_error:
+            print(f"⚠️ Failed to send sub-recruiter notification: {recruiter_notification_error}")
         
         # Return simple success response to avoid greenlet issues
         return {

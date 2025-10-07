@@ -186,3 +186,4 @@ async def create_application_public_fast(request_data: dict):
         )
 
 
+

@@ -16,6 +16,8 @@ const CompanyAdminDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           setCompany(data);
+        } else {
+          console.error('Failed to fetch company info:', response.status);
         }
       } catch (error) {
         console.error('Error fetching company info:', error);

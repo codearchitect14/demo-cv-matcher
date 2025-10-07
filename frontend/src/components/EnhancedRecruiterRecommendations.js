@@ -16,6 +16,10 @@ const EnhancedRecruiterRecommendations = () => {
   const [selectedRecommendation, setSelectedRecommendation] = useState(null);
   const [jobDetails, setJobDetails] = useState(null);
   const [expandedCards, setExpandedCards] = useState(new Set());
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [contactMessage, setContactMessage] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   // Fetch recruiter's jobs on component mount
   useEffect(() => {
@@ -129,10 +133,54 @@ const EnhancedRecruiterRecommendations = () => {
     setExpandedCards(newExpanded);
   };
 
-  const showContactEmail = (candidateId) => {
-    // Generate a realistic email for demo purposes
-    const email = `candidate${candidateId}@example.com`;
-    alert(`Contact Email: ${email}\n\nYou can reach out to this candidate at the email above.`);
+  const handleContactCandidate = (candidate) => {
+    setSelectedCandidate(candidate);
+    setShowContactModal(true);
+    setContactMessage('');
+  };
+
+  const handleSendEmail = async () => {
+    if (!contactMessage.trim()) {
+      alert('Please enter a message before sending.');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/candidate-contact/send-message-new', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('recruiterToken')}`
+        },
+        body: JSON.stringify({
+          candidate_id: selectedCandidate.candidate_id,
+          message: contactMessage,
+          job_id: selectedJobId ? parseInt(selectedJobId) : null
+        })
+      });
+
+      if (response.ok) {
+        alert('Email sent successfully to candidate!');
+        setShowContactModal(false);
+        setSelectedCandidate(null);
+        setContactMessage('');
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to send email: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error sending email:', error);
+      alert('Failed to send email. Please try again.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const closeContactModal = () => {
+    setShowContactModal(false);
+    setSelectedCandidate(null);
+    setContactMessage('');
   };
 
   const handleFeedback = async (recommendation, feedbackType) => {
@@ -485,7 +533,7 @@ const EnhancedRecruiterRecommendations = () => {
                       className="btn-contact"
                       onClick={(e) => {
                         e.stopPropagation();
-                        showContactEmail(recommendation.candidate_id);
+                        handleContactCandidate(recommendation);
                       }}
                     >
                       Contact
@@ -557,6 +605,63 @@ const EnhancedRecruiterRecommendations = () => {
           )}
         </div>
       </div>
+
+      {/* Contact Modal */}
+      {showContactModal && selectedCandidate && (
+        <div className="modal-overlay" onClick={closeContactModal}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Contact Candidate</h2>
+              <button className="modal-close" onClick={closeContactModal}>✕</button>
+            </div>
+            
+            <div className="modal-content">
+              <div className="candidate-info">
+                <h3>{selectedCandidate.candidate_name || `Candidate #${selectedCandidate.candidate_id}`}</h3>
+                {jobDetails && (
+                  <div className="job-context">
+                    <p><strong>Job:</strong> {jobDetails.title}</p>
+                    <p><strong>Company:</strong> {jobDetails.company}</p>
+                    <p><strong>Location:</strong> {jobDetails.location}</p>
+                  </div>
+                )}
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="contact-message">Your Message:</label>
+                <textarea
+                  id="contact-message"
+                  value={contactMessage}
+                  onChange={(e) => setContactMessage(e.target.value)}
+                  placeholder="Write your message to the candidate..."
+                  rows="6"
+                  className="form-textarea"
+                />
+                <small className="form-help">
+                  This message will be sent to the candidate's email address along with job details.
+                </small>
+              </div>
+            </div>
+            
+            <div className="modal-actions">
+              <button 
+                className="btn-secondary" 
+                onClick={closeContactModal}
+                disabled={isSendingEmail}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn-primary" 
+                onClick={handleSendEmail}
+                disabled={isSendingEmail || !contactMessage.trim()}
+              >
+                {isSendingEmail ? 'Sending...' : 'Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
