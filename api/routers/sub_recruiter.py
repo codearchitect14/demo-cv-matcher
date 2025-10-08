@@ -224,11 +224,11 @@ async def update_candidate_status(
                 raise HTTPException(status_code=404, detail="Application not found")
             
             # Log the interaction (using correct column names: user_id, user_type)
-            # Map application status to valid interaction type
+            # Map application status to valid interaction type (use uppercase to match DB enum)
             interaction_type_map = {
-                "APPLIED": "applied",
+                "APPLIED": "APPLIED",
                 "INTERVIEW_SCHEDULED": "edited",
-                "REJECTED": "rejected",
+                "REJECTED": "REJECTED",
                 "OFFERED": "edited",
                 "HIRED": "edited"
             }

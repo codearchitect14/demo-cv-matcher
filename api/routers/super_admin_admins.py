@@ -78,7 +78,8 @@ async def update_company_admin(
     """Update an admin/recruiter for a specific company and send email notification"""
     fields = []
     params = []
-    idx = 1
+    # Start at 2 because $1 and $2 are reserved for WHERE clause (admin_id, company_id)
+    idx = 2
     
     # Track if is_active is being changed for email notification
     is_active_changed = "is_active" in payload

@@ -1022,6 +1022,7 @@ class EmailService:
         status_mapping = {
             'APPLIED': {'text': 'Application Received', 'color': '#3b82f6', 'message': 'Your application has been received and is under review.'},
             'INTERVIEW_SCHEDULED': {'text': 'Interview Scheduled', 'color': '#8b5cf6', 'message': 'Congratulations! You have been selected for an interview.'},
+            'OFFERED': {'text': 'Job Offer Extended', 'color': '#f59e0b', 'message': 'Congratulations! We are pleased to extend you a job offer for this position.'},
             'REJECTED': {'text': 'Application Not Selected', 'color': '#ef4444', 'message': 'Unfortunately, we have decided to move forward with other candidates.'},
             'HIRED': {'text': 'Congratulations - You\'re Hired!', 'color': '#10b981', 'message': 'Great news! You have been selected for this position.'}
         }
@@ -1078,15 +1079,18 @@ class EmailService:
                         <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
                             <span style="background: #3b82f6; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">APPLIED</span>
                             <span style="background: #8b5cf6; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">INTERVIEW SCHEDULED</span>
-                            <span style="background: #ef4444; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">REJECTED</span>
+                            <span style="background: #f59e0b; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">OFFERED</span>
                             <span style="background: #10b981; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">HIRED</span>
+                            <span style="background: #ef4444; color: white; padding: 8px 16px; border-radius: 15px; font-size: 14px;">REJECTED</span>
                         </div>
                         <p style="font-size: 13px; color: #64748b; margin-bottom: 0; margin-top: 10px;">Your recruiter will update your status as your application progresses.</p>
                     </div>
                     
-                    {'<p>Next Steps:</p><ul><li>Check your email for interview details</li><li>Prepare for your interview</li><li>Review the company and job description</li></ul>' if new_status == 'INTERVIEW_SCHEDULED' else ''}
+                    {'<p><strong>Next Steps:</strong></p><ul><li>Check your email for interview details</li><li>Prepare for your interview</li><li>Review the company and job description</li></ul>' if new_status == 'INTERVIEW_SCHEDULED' else ''}
                     
-                    {'<p>Next Steps:</p><ul><li>Review and complete any required onboarding documents</li><li>Prepare for your first day</li><li>Contact HR for any questions</li></ul>' if new_status == 'HIRED' else ''}
+                    {'<p><strong>Next Steps:</strong></p><ul><li>Review the job offer details carefully</li><li>Respond within the specified timeframe</li><li>Contact the recruiter if you have any questions</li></ul>' if new_status == 'OFFERED' else ''}
+                    
+                    {'<p><strong>Next Steps:</strong></p><ul><li>Review and complete any required onboarding documents</li><li>Prepare for your first day</li><li>Contact HR for any questions</li></ul>' if new_status == 'HIRED' else ''}
                     
                     {'<p>Thank you for your interest in this position. We encourage you to continue exploring other opportunities on our platform.</p>' if new_status == 'REJECTED' else ''}
                     
@@ -1111,7 +1115,7 @@ class EmailService:
                                                                      admin_email: str, company_id: int) -> bool:
         """Send notification to super admin when new company registers"""
         # Get super admin email from environment or use default
-        super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "alimughal228@gmail.com")
+        super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "aliboolmind228@gmail.com")
         
         subject = f" New Company Registration - {company_name}"
         
@@ -1348,7 +1352,7 @@ class EmailService:
         
         # Notify super admin
         if super_admin_notify:
-            super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "alimughal228@gmail.com")
+            super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "aliboolmind228@gmail.com")
             super_admin_subject = f" New Subscription - {company_name} selected {plan_name}"
             
             super_admin_content = f"""

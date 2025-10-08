@@ -554,11 +554,11 @@ async def get_job(
                 await global_pool.execute(
                     """
                     INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
-                    VALUES ($1, 'candidate', $2, 'VIEWED', NOW())
+                    VALUES ($1, 'candidate', $2, 'viewed', NOW())
                     """,
                     candidate_id, job_id
                 )
-                print(f"✅ Logged VIEWED interaction for candidate {candidate_id} viewing job {job_id}")
+                print(f"✅ Logged viewed interaction for candidate {candidate_id} viewing job {job_id}")
             except Exception as log_error:
                 print(f"⚠️ Failed to log view interaction: {log_error}")
         

@@ -12,10 +12,18 @@ const SubRecruiterDashboard = () => {
   const [error, setError] = useState('');
   const [showCandidateModal, setShowCandidateModal] = useState(false);
 
-  // Load assigned jobs on component mount (no authentication required)
+  // Load assigned jobs on component mount and check authentication
   useEffect(() => {
+    const recruiterToken = localStorage.getItem('recruiterToken');
+    
+    // If no token, redirect to login immediately
+    if (!recruiterToken) {
+      navigate('/recruiter-login');
+      return;
+    }
+    
     fetchAssignedJobs();
-  }, []);
+  }, [navigate]);
 
   const fetchAssignedJobs = async () => {
     try {
@@ -39,6 +47,15 @@ const SubRecruiterDashboard = () => {
       console.log('Response ok:', response.ok);
 
       if (!response.ok) {
+        // Handle authentication errors by redirecting to login
+        if (response.status === 401) {
+          console.error('Authentication failed - redirecting to login');
+          localStorage.removeItem('recruiterToken');
+          localStorage.removeItem('recruiterUser');
+          navigate('/recruiter-login');
+          return;
+        }
+        
         const errorText = await response.text();
         console.error('Response error:', errorText);
         throw new Error(`Failed to fetch assigned jobs: ${response.status} ${errorText}`);
@@ -49,7 +66,11 @@ const SubRecruiterDashboard = () => {
       setJobs(data.jobs || []);
     } catch (err) {
       console.error('Error fetching jobs:', err);
-      setError(`Failed to load assigned jobs: ${err.message}`);
+      
+      // Don't show error message if we're redirecting to login
+      if (!err.message.includes('401') && !err.message.includes('Authentication')) {
+        setError(`Failed to load assigned jobs: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -74,6 +95,15 @@ const SubRecruiterDashboard = () => {
       console.log('Candidates response status:', response.status);
 
       if (!response.ok) {
+        // Handle authentication errors by redirecting to login
+        if (response.status === 401) {
+          console.error('Authentication failed - redirecting to login');
+          localStorage.removeItem('recruiterToken');
+          localStorage.removeItem('recruiterUser');
+          navigate('/recruiter-login');
+          return;
+        }
+        
         const errorText = await response.text();
         console.error('Candidates response error:', errorText);
         throw new Error(`Failed to fetch candidates: ${response.status} ${errorText}`);
@@ -84,7 +114,11 @@ const SubRecruiterDashboard = () => {
       setCandidates(data.candidates || []);
     } catch (err) {
       console.error('Error fetching candidates:', err);
-      setError(`Failed to load candidates: ${err.message}`);
+      
+      // Don't show error message if we're redirecting to login
+      if (!err.message.includes('401') && !err.message.includes('Authentication')) {
+        setError(`Failed to load candidates: ${err.message}`);
+      }
     }
   };
 
@@ -92,6 +126,12 @@ const SubRecruiterDashboard = () => {
     try {
       // Get the recruiter token from localStorage
       const recruiterToken = localStorage.getItem('recruiterToken');
+      
+      if (!recruiterToken) {
+        throw new Error('Not authenticated. Please log in again.');
+      }
+      
+      console.log('Updating candidate status:', { candidateId, jobId: selectedJob.id, newStatus });
       
       const response = await fetch(`http://localhost:8000/api/v1/recruiter/update-candidate-status`, {
         method: 'PUT',
@@ -107,15 +147,36 @@ const SubRecruiterDashboard = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update status');
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        
+        if (response.status === 401) {
+          throw new Error('Session expired. Please log in again.');
+        }
+        
+        throw new Error(errorData.detail || 'Failed to update status');
       }
+
+      const result = await response.json();
+      console.log('Status update result:', result);
+
+      // Show success message
+      alert(`Status updated successfully to ${newStatus}${result.email_sent ? ' (Email sent to candidate)' : ''}`);
 
       // Refresh candidates list
       fetchJobCandidates(selectedJob.id);
       setShowCandidateModal(false);
     } catch (err) {
-      setError('Failed to update candidate status');
+      const errorMessage = err.message || 'Failed to update candidate status';
+      setError(errorMessage);
+      alert(errorMessage);
       console.error('Error updating status:', err);
+      
+      // If authentication error, redirect to login
+      if (err.message.includes('Session expired') || err.message.includes('Not authenticated')) {
+        localStorage.removeItem('recruiterToken');
+        localStorage.removeItem('recruiterUser');
+        navigate('/recruiter-login');
+      }
     }
   };
 

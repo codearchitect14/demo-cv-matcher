@@ -14,7 +14,7 @@ async def create_super_admin():
     from config.security import get_password_hash
     
     # Super admin details
-    email = "alimughal228@gmail.com"
+    email = "aliboolmind228@gmail.com"
     full_name = "Ali Mughal"
     password = "SuperAdmin@123"  # Change this to your desired password
     
@@ -85,7 +85,7 @@ async def create_super_admin():
     print("=" * 60)
     print()
     print("Next steps:")
-    print("1. Update .env file with: SUPER_ADMIN_EMAIL=alimughal228@gmail.com")
+    print("1. Update .env file with: SUPER_ADMIN_EMAIL=aliboolmind228@gmail.com")
     print("2. Restart your backend server")
     print("3. Login at: http://localhost:3000/super-admin/login")
     print(f"4. Use email: {email}")

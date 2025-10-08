@@ -61,11 +61,11 @@ async def auto_update_application_statuses(rows):
                     
                     # Log the status change interaction
                     try:
-                        # Map application status to valid interaction type
+                        # Map application status to valid interaction type (use uppercase to match DB enum)
                         interaction_type_map = {
-                            "APPLIED": "applied",
+                            "APPLIED": "APPLIED",
                             "INTERVIEW_SCHEDULED": "edited",
-                            "REJECTED": "rejected",
+                            "REJECTED": "REJECTED",
                             "OFFERED": "edited",
                             "HIRED": "edited"
                         }
@@ -663,11 +663,11 @@ async def create_application_public(
             await global_pool.execute(
                 """
                 INSERT INTO interaction_log (user_id, user_type, job_id, interaction_type, timestamp)
-                VALUES ($1, 'candidate', $2, 'applied', NOW())
+                VALUES ($1, 'candidate', $2, 'APPLIED', NOW())
                 """,
                 application_data.candidate_id, application_data.job_id
             )
-            print(f"✅ Logged applied interaction for candidate {application_data.candidate_id} to job {application_data.job_id}")
+            print(f"✅ Logged APPLIED interaction for candidate {application_data.candidate_id} to job {application_data.job_id}")
         except Exception as log_error:
             print(f"⚠️ Failed to log interaction: {log_error}")
         
